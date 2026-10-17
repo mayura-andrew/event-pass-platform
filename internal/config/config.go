@@ -40,6 +40,11 @@ type Config struct {
 	SMTPPassword string
 	SMTPFrom     string // "Space Apps Colombo <no-reply@example.org>"
 	SMTPSecurity string // starttls | tls | none
+
+	// Pass email queue: one message per EmailSendInterval, at most
+	// EmailDailyLimit per rolling 24 hours (0 = no cap).
+	EmailSendInterval time.Duration
+	EmailDailyLimit   int
 }
 
 func Load() (*Config, error) {
@@ -86,6 +91,19 @@ func Load() (*Config, error) {
 		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
 			return nil, errors.New("APP_BASE_URL must be the site's public URL (e.g. https://pass.example.org) when SMTP_HOST is set")
 		}
+	}
+
+	if c.EmailSendInterval, err = time.ParseDuration(getenv("EMAIL_SEND_INTERVAL", "2s")); err != nil || c.EmailSendInterval < time.Second {
+		return nil, errors.New("EMAIL_SEND_INTERVAL must be a duration of at least 1s (e.g. 2s)")
+	}
+	// Gmail allows about 500 a day (2,000 on Workspace); staff credential
+	// emails come out of the same allowance, hence the margin.
+	if v := os.Getenv("EMAIL_DAILY_LIMIT"); v == "" {
+		c.EmailDailyLimit = 450
+	} else if n, err := strconv.Atoi(v); err != nil || n < 0 {
+		return nil, errors.New("EMAIL_DAILY_LIMIT must be a whole number (0 for no limit)")
+	} else {
+		c.EmailDailyLimit = n
 	}
 
 	ttl, err := time.ParseDuration(getenv("JWT_TTL", "14h"))

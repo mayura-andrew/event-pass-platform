@@ -16,6 +16,7 @@ type Handler struct {
 	Staff        *service.StaffService
 	Ingest       *service.IngestService // nil when HMAC_SECRET_KEY is unset
 	Fields       *service.FieldService
+	Emails       *service.EmailQueueService
 	Tokens       *auth.TokenManager
 	Accounts     AccountLookup // live role/status checks on every request
 

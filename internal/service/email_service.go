@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -65,6 +66,17 @@ type Message struct {
 	Subject string
 	Text    string
 	HTML    string
+	// Images the HTML shows with <img src="cid:ContentID">, sent inside the
+	// message instead of fetched from a server.
+	Inline []InlineImage
+}
+
+// InlineImage is one image embedded in a message.
+type InlineImage struct {
+	ContentID   string // without angle brackets; referenced as cid:ContentID
+	ContentType string // e.g. image/png
+	Filename    string
+	Data        []byte
 }
 
 type Mailer interface {
@@ -214,11 +226,16 @@ func (disabledMailer) Send(context.Context, Message) error {
 // DisabledMailer returns a Mailer that always reports email as unavailable.
 func DisabledMailer() Mailer { return disabledMailer{} }
 
-// buildMIME renders a multipart/alternative message with CRLF line endings.
-// Header values come from mail.Address and mime encoders, so a name or
-// subject can't inject extra headers.
+// buildMIME renders a multipart/alternative message with CRLF line endings,
+// wrapped in multipart/related when it carries inline images. Header values
+// come from mail.Address and mime encoders, so a name or subject can't inject
+// extra headers.
 func buildMIME(from mail.Address, m Message) ([]byte, error) {
 	boundary, err := randomHex(16)
+	if err != nil {
+		return nil, err
+	}
+	related, err := randomHex(16)
 	if err != nil {
 		return nil, err
 	}
@@ -239,6 +256,11 @@ func buildMIME(from mail.Address, m Message) ([]byte, error) {
 	hdr("Date", time.Now().Format(time.RFC1123Z))
 	hdr("Message-ID", fmt.Sprintf("<%s@%s>", msgID, domainPart))
 	hdr("MIME-Version", "1.0")
+	if len(m.Inline) > 0 {
+		hdr("Content-Type", fmt.Sprintf(`multipart/related; boundary="%s"; type="multipart/alternative"`, related))
+		b.WriteString("\r\n")
+		fmt.Fprintf(&b, "--%s\r\n", related)
+	}
 	hdr("Content-Type", fmt.Sprintf(`multipart/alternative; boundary="%s"`, boundary))
 	b.WriteString("\r\n")
 
@@ -258,7 +280,44 @@ func buildMIME(from mail.Address, m Message) ([]byte, error) {
 		b.WriteString("\r\n")
 	}
 	fmt.Fprintf(&b, "--%s--\r\n", boundary)
+
+	if len(m.Inline) > 0 {
+		for _, img := range m.Inline {
+			if !safeMIMEToken(img.ContentID) || !safeMIMEToken(img.ContentType) || !safeMIMEToken(img.Filename) {
+				return nil, fmt.Errorf("inline image %q: unsafe header value", img.ContentID)
+			}
+			fmt.Fprintf(&b, "\r\n--%s\r\n", related)
+			fmt.Fprintf(&b, "Content-Type: %s\r\n", img.ContentType)
+			b.WriteString("Content-Transfer-Encoding: base64\r\n")
+			fmt.Fprintf(&b, "Content-ID: <%s>\r\n", img.ContentID)
+			fmt.Fprintf(&b, "Content-Disposition: inline; filename=\"%s\"\r\n\r\n", img.Filename)
+			enc := base64.StdEncoding.EncodeToString(img.Data)
+			for len(enc) > 76 { // RFC 2045 line length
+				b.WriteString(enc[:76])
+				b.WriteString("\r\n")
+				enc = enc[76:]
+			}
+			b.WriteString(enc)
+			b.WriteString("\r\n")
+		}
+		fmt.Fprintf(&b, "--%s--\r\n", related)
+	}
 	return b.Bytes(), nil
+}
+
+// safeMIMEToken accepts only characters that can't break out of a header
+// line or a quoted parameter. Inline image metadata is ours, but cheap to
+// check.
+func safeMIMEToken(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < 0x21 || r > 0x7e || r == '"' || r == '<' || r == '>' || r == '\\' {
+			return false
+		}
+	}
+	return true
 }
 
 func randomHex(n int) (string, error) {

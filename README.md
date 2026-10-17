@@ -19,6 +19,8 @@ Organizer ──> /admin/dashboard.html
    ├─ metrics, delegate filters (age, claim status, venue), manual override
    ├─ live scan stream (server-sent events)
    └─ checkpoint on/off, scanner phone health
+Organizer ──> /admin/emails.html
+   └─ queue pass emails (QR inline + pass link) ──> worker sends 1 every 2 s via Gmail SMTP
 Superadmin ──> /admin/staff.html
    └─ provision staff ──> temporary password emailed ──> set own password at first sign-in
 ```
@@ -52,6 +54,7 @@ migrations/002_dashboard_schema.sql date of birth, override audit, scanner heart
 migrations/003_rbac_and_emailing.sql roles (volunteer -> scanner), checkpoint grants, temporary passwords
 migrations/004_auto_membership_id.sql membership ID sequence (NSAC-001000, ...)
 migrations/005_jsonb_dynamic_schema.sql custom fields: participants.custom_attributes (JSONB) + field definitions
+migrations/006_email_queue_schema.sql  pass email queue (email_jobs) and its pause switch
 scripts/seed                        CSV import + HMAC signing
 scripts/create-admin                create scanner / dashboard logins
 scripts/sample                      example participants.csv and venues.csv
@@ -63,7 +66,8 @@ public/assets                       qr-template.pdf (source), pass-template.jpg 
 public/sw.js                        service worker (offline app shell)
 public/admin/                       organizer dashboard (dashboard.html, app.js), staff page (staff.html,
                                     staff.js), add delegates (ingest.html, ingest.js), custom fields
-                                    (fields.html, fields.js), shared helpers (common.js), compiled CSS
+                                    (fields.html, fields.js), pass emails (emails.html, emails.js),
+                                    shared helpers (common.js), compiled CSS
 scripts/tailwind                    Tailwind config + source CSS for the dashboard
 public/vendor                       pinned Dexie 4.0.11, html5-qrcode 2.3.8, qrcodejs 1.0.0,
                                     node-qrcode 1.5.4 encoder core (pass card QR)
@@ -75,7 +79,7 @@ Deploying for real (DigitalOcean App Platform + Supabase + Gmail)? Follow [DEPLO
 
 Requires Go 1.22 or newer. Run `go mod tidy` once to fetch dependencies and create `go.sum`.
 
-1. **Database.** Run `migrations/001_schema.sql`, `002_dashboard_schema.sql`, `003_rbac_and_emailing.sql`, `004_auto_membership_id.sql` and `005_jsonb_dynamic_schema.sql`, in that order, in the Supabase SQL editor. All are safe to re-run. 003 renames `volunteer` accounts to `scanner` and grants them every existing checkpoint, so nobody loses access on deploy.
+1. **Database.** Run `migrations/001_schema.sql`, `002_dashboard_schema.sql`, `003_rbac_and_emailing.sql`, `004_auto_membership_id.sql`, `005_jsonb_dynamic_schema.sql` and `006_email_queue_schema.sql`, in that order, in the Supabase SQL editor. All are safe to re-run. 003 renames `volunteer` accounts to `scanner` and grants them every existing checkpoint, so nobody loses access on deploy.
 2. **Environment.** Copy `.env.example` to `.env`, fill it in, then `set -a; source .env; set +a`.
 3. **Venues and delegates.**
    ```sh
@@ -115,7 +119,7 @@ A database volume created before a migration existed won't run it
 automatically (init scripts only run on an empty volume). Apply new ones once:
 
 ```sh
-docker compose -f nsac-qr.compose.yaml exec -T db psql -U nsac -d nsac_qr < migrations/005_jsonb_dynamic_schema.sql
+docker compose -f nsac-qr.compose.yaml exec -T db psql -U nsac -d nsac_qr < migrations/006_email_queue_schema.sql
 ```
 
 Compose also starts [Mailpit](https://mailpit.axllent.org/), which catches every email the API sends
@@ -140,6 +144,31 @@ Resend, Mailgun, Postmark.
 | `SMTP_USERNAME` / `SMTP_PASSWORD` | | For Gmail, an app password |
 | `SMTP_FROM` | `Space Apps Colombo <no-reply@example.org>` | Must be an address the relay may send as |
 | `EVENT_NAME` | `NASA Space Apps Colombo` | Used in subject and body |
+| `EMAIL_SEND_INTERVAL` | `2s` | Pass emails: one per interval (2 s = 30 a minute, 300 in about 10 minutes). At least `1s` |
+| `EMAIL_DAILY_LIMIT` | `450` | Pass emails per rolling 24 hours; `0` for no cap. Gmail allows ~500 (Workspace ~2,000), shared with staff emails |
+
+### Delegate pass emails
+
+`/admin/emails.html` queues a confirmation email for every confirmed delegate who hasn't had one
+(**Bulk enqueue**), or for one delegate by membership ID (also a resend). Each email has the delegate's
+QR pass embedded as an image (the same `{"id","sig"}` payload as the pass page, so scanners accept it),
+membership ID, team, venue, and a link that opens their pass on `/pass.html`.
+
+The queue lives in `email_jobs`, so it survives restarts and deploys. A worker in the API sends one
+message per `EMAIL_SEND_INTERVAL`, claiming jobs with `FOR UPDATE SKIP LOCKED`:
+
+- **Transient failures** (network, 4xx) retry up to 3 times, a minute apart.
+- **Rejected addresses** (5xx, e.g. no such mailbox) fail at once and are listed with the error; fix the
+  address and press Retry.
+- **Problems with the sending account** (wrong app password, Gmail's daily cap) don't count against the
+  delegate: the job goes back in line and the queue **pauses itself** with the reason shown. So does
+  any run of 5 failures in a row. Resume from the page once it's fixed.
+- The worker stops sending at `EMAIL_DAILY_LIMIT` messages per 24 hours and carries on by itself as
+  the window moves.
+- A message interrupted by a restart mid-send is retried; that delegate might get it twice.
+
+Pause and resume are stored in the database, so a paused queue stays paused through a deploy. A
+delegate is never queued twice at the same time, so pressing Bulk enqueue again is harmless.
 
 The email is sent inside the account's database transaction. If it can't be sent, nothing is created
 and the superadmin sees why (HTTP 503). Temporary passwords are 12 characters, without look-alike
@@ -209,6 +238,10 @@ Header names are matched case-insensitively and spaces become underscores, so a 
 | POST | `/api/v1/devices/heartbeat` | any admin | Scanner reports its local queue counts |
 | GET | `/api/v1/admin/dashboard/stats` | admin, superadmin | Metric cards, throughput, per-scenario and fleet totals |
 | POST | `/api/v1/admin/participants/filter` | admin, superadmin | Delegate table: search, age group, claim status, venue, confirmation, paging, and `custom: [{"key","op","value"}]` (`op`: `eq`, `contains` for text, `missing`) |
+| POST | `/api/v1/admin/emails/send-single` | admin, superadmin | `{"participant_id"}` or `{"membership_id"}`: queue (or resend) one pass email; 409 if already queued |
+| POST | `/api/v1/admin/emails/send-bulk` | admin, superadmin | Queue every confirmed delegate without a sent or queued pass email |
+| GET | `/api/v1/admin/emails/status` | admin, superadmin | Queue counts, daily allowance, pause state, estimate, recent failures |
+| POST | `/api/v1/admin/emails/pause-toggle` | admin, superadmin | `{"paused": true}` or `{"paused": false}` |
 | POST | `/api/v1/admin/participants/create` | admin, superadmin | `{"full_name","email","team_name","date_of_birth","venue_id"}`; returns the new membership ID and signature. 409 if the email is registered |
 | POST | `/api/v1/admin/participants/upload-csv[?update_existing=true]` | admin, superadmin | CSV as multipart field `file` or `text/csv` body; returns `{total_rows, created, updated, unchanged, duplicates, errors, custom_fields, new_fields, ignored_columns}` |
 | GET | `/api/v1/admin/fields` | admin, superadmin | Custom fields with usage counts and, for filter fields, common values |

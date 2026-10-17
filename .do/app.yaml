@@ -94,6 +94,15 @@ services:
       - key: EVENT_NAME
         scope: RUN_TIME
         value: NASA Space Apps Colombo
+      # Pass email queue: one email every 2 s, at most 450 per 24 hours
+      # (Gmail's ~500/day, shared with staff emails). On Google Workspace
+      # (~2,000/day) raise the limit to about 1900.
+      - key: EMAIL_SEND_INTERVAL
+        scope: RUN_TIME
+        value: 2s
+      - key: EMAIL_DAILY_LIMIT
+        scope: RUN_TIME
+        value: "450"
       # App Platform's edge sets this to the real client IP; without it every
       # request looks like it comes from the load balancer and shares one
       # rate limit.

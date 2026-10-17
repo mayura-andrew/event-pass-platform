@@ -31,7 +31,7 @@ git push -u origin main
 2. **SQL Editor** → run each file's contents, in this order:
    `migrations/001_schema.sql`, `migrations/002_dashboard_schema.sql`,
    `migrations/003_rbac_and_emailing.sql`, `migrations/004_auto_membership_id.sql`,
-   `migrations/005_jsonb_dynamic_schema.sql`.
+   `migrations/005_jsonb_dynamic_schema.sql`, `migrations/006_email_queue_schema.sql`.
    Each is safe to run twice.
 3. **Project Settings → Database → Connection string → Session pooler**
    (port 5432). Copy it and put your password in it. If the password has
@@ -175,7 +175,23 @@ Platform then builds the Dockerfile and deploys.
    real address. The email should arrive within a minute; sign in on your
    phone at `/scanner.html` with it.
 
-## 7. Your own domain (optional)
+## 7. Email delegates their passes
+
+Once delegates are loaded and confirmed: **Dashboard → Pass emails → Bulk
+enqueue confirmation passes**. The server sends one every 2 seconds (about 10
+minutes for 300) and the page shows progress; you can pause at any time.
+
+- Send yourself one first: enter your own test delegate's membership ID under
+  **Send or resend one pass** and check it arrives (and isn't in spam).
+- A personal Gmail account sends about 500 emails a day, including staff
+  credential emails. The queue stops at 450 (`EMAIL_DAILY_LIMIT`) and
+  continues as the 24-hour window moves; with more delegates than that, use a
+  Google Workspace account (about 2,000 a day) and raise the limit in
+  `.do/app.yaml`.
+- If the page says sending stopped by itself, read the reason: a wrong app
+  password or Gmail's daily cap. Fix it and press **Resume sending**.
+
+## 8. Your own domain (optional)
 
 Add the domain to `.do/app.yaml` and push (a domain added only in the control
 panel is removed by the next deploy):
@@ -216,6 +232,8 @@ emailed sign-in links use it.
 | `JWT_TTL` | 14h | Must cover a full event day offline |
 | `DB_MAX_CONNS` | 10 | Database connections the API may open. In Supabase's session pooler each one holds a connection from the project's pool (Database Settings → Connection pooling → Pool Size): keep it below that, leaving room for the seed script and the SQL editor |
 | `CHECKIN_SCENARIO_CODE` | CHECK_IN | If your gate scenario has another code |
+| `EMAIL_SEND_INTERVAL` | 2s | Gap between pass emails. Longer if Gmail throttles (421 "Try again later" in the failure list) |
+| `EMAIL_DAILY_LIMIT` | 450 | Pass emails per rolling 24 hours. Raise to ~1900 on Google Workspace; 0 turns the cap off |
 
 Keep `instance_count` at 1: rate limits, the account cache and the live scan
 feed live in the container's memory.

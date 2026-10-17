@@ -52,10 +52,24 @@ func run() error {
 	staffRepo := postgres.NewStaffRepo(db)
 	ingestRepo := postgres.NewIngestRepo(db)
 	fieldRepo := postgres.NewFieldRepo(db)
+	emailRepo := postgres.NewEmailRepo(db)
 
 	mailer, err := newMailer(cfg)
 	if err != nil {
 		return err
+	}
+
+	// Pass email queue. The worker only runs when SMTP is configured; the
+	// status endpoint works either way.
+	emailCfg := service.EmailWorkerConfig{
+		Interval:   cfg.EmailSendInterval,
+		DailyLimit: cfg.EmailDailyLimit,
+		BaseURL:    cfg.AppBaseURL,
+		EventName:  cfg.EventName,
+	}
+	var emailWorker *service.EmailWorker
+	if cfg.SMTPHost != "" {
+		emailWorker = service.NewEmailWorker(emailRepo, mailer, emailCfg)
 	}
 
 	// Services
@@ -69,6 +83,7 @@ func run() error {
 		Scenarios:    scenarios,
 		Dashboard:    service.NewDashboardService(dashboardRepo, scenarios, fieldRepo, cfg.CheckInCode),
 		Fields:       service.NewFieldService(fieldRepo),
+		Emails:       service.NewEmailQueueService(emailRepo, emailWorker, emailCfg),
 		Feed:         feed,
 		Staff:        service.NewStaffService(staffRepo, mailer, cfg.AppBaseURL, cfg.EventName),
 		Ingest:       newIngest(ingestRepo, cfg.HMACSecretKey),
@@ -98,6 +113,18 @@ func run() error {
 	go feed.Run(feedCtx)
 	srv.RegisterOnShutdown(stopFeed)
 
+	// The email worker stops with ctx too, after recording any message it
+	// is in the middle of sending; shutdown waits for that below.
+	workerDone := make(chan struct{})
+	if emailWorker != nil {
+		go func() {
+			defer close(workerDone)
+			emailWorker.Run(ctx)
+		}()
+	} else {
+		close(workerDone)
+	}
+
 	errCh := make(chan error, 1)
 	go func() {
 		slog.Info("listening", "addr", srv.Addr)
@@ -116,7 +143,13 @@ func run() error {
 	slog.Info("shutting down")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	return srv.Shutdown(shutdownCtx)
+	err = srv.Shutdown(shutdownCtx)
+	select {
+	case <-workerDone:
+	case <-time.After(60 * time.Second):
+		slog.Warn("email worker still sending at shutdown; an interrupted job is retried on the next start")
+	}
+	return err
 }
 
 // newIngest returns nil when HMAC_SECRET_KEY is unset: the dashboard then

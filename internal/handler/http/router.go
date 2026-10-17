@@ -66,6 +66,12 @@ func NewRouter(h *Handler, publicDir, allowedOrigin string) http.Handler {
 	mux.Handle("POST /api/v1/admin/participants/create", manager(h.createParticipant))
 	mux.Handle("POST /api/v1/admin/participants/upload-csv", manager(h.uploadParticipantsCSV))
 
+	// Pass email queue
+	mux.Handle("POST /api/v1/admin/emails/send-single", manager(h.sendSingleEmail))
+	mux.Handle("POST /api/v1/admin/emails/send-bulk", manager(h.sendBulkEmail))
+	mux.Handle("GET /api/v1/admin/emails/status", manager(h.emailStatus))
+	mux.Handle("POST /api/v1/admin/emails/pause-toggle", manager(h.toggleEmailPause))
+
 	// Custom delegate fields: deleting one erases its values, so superadmin only
 	mux.Handle("GET /api/v1/admin/fields", manager(h.listFields))
 	mux.Handle("POST /api/v1/admin/fields", manager(h.createField))
