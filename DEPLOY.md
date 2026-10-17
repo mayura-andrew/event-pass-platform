@@ -53,13 +53,42 @@ export HMAC_SECRET_KEY=$(openssl rand -hex 32)
 
 go run ./scripts/seed -venues venues.csv -participants participants.csv -dry-run   # check first
 go run ./scripts/seed -venues venues.csv -participants participants.csv
-
-ADMIN_PASSWORD='<a long password>' go run ./scripts/create-admin \
-  -email you@example.org -name "Your Name" -role superadmin
 ```
 
 Passes from your local test database won't work in production: they were
 signed with a different key.
+
+### The first superadmin
+
+Every other account is created later from the dashboard's Staff page, which
+emails credentials. Only this first one is made by hand. Two ways:
+
+**A. From your laptop (recommended).** Nothing is written down anywhere:
+
+```sh
+go run ./scripts/create-admin -email you@example.org -name "Your Name" -role superadmin
+```
+
+It prints the database it is about to change (check it says the Supabase
+pooler host, not `127.0.0.1`), asks you to confirm, then asks for the password
+twice at a hidden prompt (12+ characters for a superadmin). Add `-temporary`
+when you create it for someone else: they must choose their own password at
+first sign-in. Check the result with:
+
+```sh
+go run ./scripts/create-admin -list
+```
+
+**B. From the Supabase SQL editor (no Go needed).** Open
+`scripts/sql/bootstrap_superadmin.sql`, replace the three values marked
+`CHANGE ME`, paste it into **SQL Editor** and run it. It returns one row when
+the account is saved; no row means a value was left unedited or the password
+is shorter than 12 characters. Because the editor keeps a query history, the
+password is always temporary: sign in at `/admin/` and choose your own
+straight away, and the one in the history stops working.
+
+Your local test accounts (`superadmin@test.local` and the others) stay in
+your local database; production starts with only this account.
 
 ## 4. Create a Gmail app password
 

@@ -80,10 +80,11 @@ Requires Go 1.22 or newer. Run `go mod tidy` once to fetch dependencies and crea
    Re-running is safe: rows are upserted. Lines with problems are reported and skipped.
 4. **Logins.**
    ```sh
-   ADMIN_PASSWORD='...' go run ./scripts/create-admin -email lead@example.org -name "Event lead" -role admin
-   ADMIN_PASSWORD='...' go run ./scripts/create-admin -email lead@example.org -name "Event lead" -role superadmin
+   go run ./scripts/create-admin -email lead@example.org -name "Event lead" -role superadmin
    ```
-   Create the first superadmin this way; after that, add staff from `/admin/staff.html`, which emails each
+   Create the first superadmin this way (it confirms the target database and asks for the password at a
+   hidden prompt; `-list` shows existing accounts). In production without Go, use
+   `scripts/sql/bootstrap_superadmin.sql` in the Supabase SQL editor instead. After that, add staff from `/admin/staff.html`, which emails each
    person a temporary password. (`create-admin` still works for any role, but a `scanner` made there has no
    checkpoints until you assign some on the Staff page.)
 5. **Run.** `go run ./cmd/api`, then open `/scanner.html`, `/pass.html` and `/admin/` (organizer dashboard; needs an `admin` or `superadmin` login).
