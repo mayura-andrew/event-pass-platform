@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#13233D">
+  <title>Staff Accounts · Space Apps</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/admin/dashboard.css">
+  <script type="module" src="/admin/staff.js"></script>
+</head>
+<body class="min-h-screen">
+  <header class="sticky top-0 z-20 border-b border-line bg-panel/95 backdrop-blur">
+    <div class="mx-auto flex max-w-[1500px] flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
+      <h1 class="text-lg font-bold tracking-tight">Staff accounts</h1>
+      <div class="ml-auto flex items-center gap-2">
+        <span class="hidden text-sm text-ink-soft sm:inline">Signed in as <b id="signed-in-as" class="text-ink"></b></span>
+        <a href="/admin/dashboard.html" class="btn-ghost">Dashboard</a>
+        <button id="logout" class="btn-ghost" type="button">Sign out</button>
+      </div>
+    </div>
+  </header>
+
+  <main id="app" class="mx-auto max-w-[1500px] space-y-5 px-4 py-5" hidden>
+    <p id="readonly-note" class="card border-hold/50 px-4 py-3 text-sm" hidden>
+      <b>View only.</b> Only superadmins can add staff, change checkpoints or reset passwords.
+    </p>
+
+    <!-- Summary -->
+    <section aria-label="Staff totals" class="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <article class="card p-4">
+        <h2 class="label">Active accounts</h2>
+        <p class="text-3xl font-bold tabular-nums" id="sum-active">–</p>
+        <p class="mt-1 text-sm text-ink-soft" id="sum-active-sub">&nbsp;</p>
+      </article>
+      <article class="card p-4">
+        <h2 class="label">Scanners</h2>
+        <p class="text-3xl font-bold tabular-nums" id="sum-scanners">–</p>
+        <p class="mt-1 text-sm text-ink-soft" id="sum-scanners-sub">&nbsp;</p>
+      </article>
+      <article class="card p-4">
+        <h2 class="label">Waiting for first sign-in</h2>
+        <p class="text-3xl font-bold tabular-nums" id="sum-invited">–</p>
+        <p class="mt-1 text-sm text-ink-soft">Still on their emailed password</p>
+      </article>
+      <article class="card p-4" id="sum-nogrant-card">
+        <h2 class="label">Scanners without checkpoints</h2>
+        <p class="text-3xl font-bold tabular-nums" id="sum-nogrant">–</p>
+        <p class="mt-1 text-sm text-ink-soft">They can sign in but can't scan</p>
+      </article>
+    </section>
+
+    <section class="card min-w-0" aria-labelledby="staff-title">
+      <div class="flex flex-wrap items-end gap-3 border-b border-line px-4 py-3">
+        <h2 id="staff-title" class="mr-auto text-base font-bold">Team</h2>
+        <div>
+          <label class="label" for="s-search">Search</label>
+          <input id="s-search" class="field w-64 max-w-full" type="search" placeholder="Name or email" autocomplete="off">
+        </div>
+        <div>
+          <label class="label" for="s-role">Role</label>
+          <select id="s-role" class="field">
+            <option value="">All roles</option>
+            <option value="superadmin">Superadmins</option>
+            <option value="admin">Admins</option>
+            <option value="scanner">Scanners</option>
+          </select>
+        </div>
+        <div>
+          <label class="label" for="s-status">Status</label>
+          <select id="s-status" class="field">
+            <option value="">Any</option>
+            <option value="active">Active</option>
+            <option value="invited">Waiting for first sign-in</option>
+            <option value="disabled">Deactivated</option>
+          </select>
+        </div>
+        <button id="open-provision" class="btn-primary" type="button" hidden>+ Provision staff</button>
+      </div>
+
+      <div class="relative overflow-x-auto">
+        <table class="w-full min-w-[980px] text-sm">
+          <thead class="border-b border-line bg-paper/60">
+            <tr>
+              <th class="th" scope="col">Name</th>
+              <th class="th" scope="col">Email</th>
+              <th class="th" scope="col">Role</th>
+              <th class="th" scope="col">Checkpoints</th>
+              <th class="th" scope="col">Status</th>
+              <th class="th" scope="col">Last sign-in</th>
+              <th class="th text-right" scope="col"><span class="sr-only">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody id="staff-rows" class="divide-y divide-line"></tbody>
+        </table>
+        <p id="staff-empty" class="px-4 py-10 text-center text-ink-soft" hidden>No staff match these filters.</p>
+        <p id="staff-error" class="m-4 rounded-lg bg-stop/10 px-3 py-2 text-sm font-bold text-stop" role="alert" hidden></p>
+      </div>
+    </section>
+  </main>
+
+  <!-- =====================================================================
+       Provision / edit staff modal
+       ===================================================================== -->
+  <dialog id="staff-dialog" class="w-[min(600px,calc(100vw-32px))] rounded-xl border border-line bg-panel p-0 text-ink shadow-2xl" aria-labelledby="staff-dialog-title">
+    <!-- Form state -->
+    <form id="staff-form" class="space-y-4 p-5" novalidate>
+      <div class="flex items-start justify-between gap-4">
+        <div>
+          <h2 id="staff-dialog-title" class="text-lg font-bold">Provision staff</h2>
+          <p id="staff-dialog-lede" class="text-sm text-ink-soft">They get an email with a temporary password and set their own at first sign-in.</p>
+        </div>
+        <button type="button" class="btn-ghost min-h-[36px] px-3" data-close aria-label="Close">✕</button>
+      </div>
+
+      <div class="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label class="label" for="sf-name">Full name</label>
+          <input id="sf-name" class="field" maxlength="100" autocomplete="off" required>
+        </div>
+        <div>
+          <label class="label" for="sf-email">Email</label>
+          <input id="sf-email" class="field" type="email" maxlength="255" autocomplete="off" required>
+          <p id="sf-email-note" class="mt-1 text-xs text-ink-soft" hidden>The sign-in email can't be changed. Create a new account instead.</p>
+        </div>
+      </div>
+
+      <fieldset>
+        <legend class="label">Role</legend>
+        <div class="grid gap-2 sm:grid-cols-3" id="sf-roles">
+          <label class="card flex cursor-pointer gap-2 p-3 has-[:checked]:border-action has-[:checked]:bg-action/5">
+            <input type="radio" name="sf-role" value="scanner" class="mt-1" checked>
+            <span><b class="block text-sm">Scanner</b><span class="text-xs text-ink-soft">Scanner app, assigned checkpoints only</span></span>
+          </label>
+          <label class="card flex cursor-pointer gap-2 p-3 has-[:checked]:border-action has-[:checked]:bg-action/5">
+            <input type="radio" name="sf-role" value="admin" class="mt-1">
+            <span><b class="block text-sm">Admin</b><span class="text-xs text-ink-soft">Dashboard, overrides, every checkpoint</span></span>
+          </label>
+          <label class="card flex cursor-pointer gap-2 p-3 has-[:checked]:border-action has-[:checked]:bg-action/5">
+            <input type="radio" name="sf-role" value="superadmin" class="mt-1">
+            <span><b class="block text-sm">Superadmin</b><span class="text-xs text-ink-soft">Everything, including staff accounts</span></span>
+          </label>
+        </div>
+        <p id="sf-role-note" class="mt-1 text-xs text-hold" hidden></p>
+      </fieldset>
+
+      <fieldset id="sf-grants-set">
+        <div class="mb-1 flex items-baseline justify-between gap-2">
+          <legend class="label">Checkpoints this scanner may use</legend>
+          <span class="flex gap-3 text-xs">
+            <button type="button" id="sf-all" class="font-bold text-action hover:underline">Select all</button>
+            <button type="button" id="sf-none" class="font-bold text-action hover:underline">Clear</button>
+          </span>
+        </div>
+        <div id="sf-grants" class="grid max-h-56 gap-1 overflow-y-auto rounded-lg border border-line p-2 sm:grid-cols-2"></div>
+        <p id="sf-grants-note" class="mt-1 text-xs text-ink-soft"></p>
+      </fieldset>
+      <p id="sf-manager-note" class="rounded-lg border border-line bg-paper/60 px-3 py-2 text-sm text-ink-soft" hidden>
+        Admins and superadmins can scan at every checkpoint, so no assignment is needed.
+      </p>
+
+      <p id="sf-error" class="rounded-lg bg-stop/10 px-3 py-2 text-sm font-bold text-stop" role="alert" hidden></p>
+
+      <div class="flex justify-end gap-2">
+        <button type="button" class="btn-ghost" data-close>Cancel</button>
+        <button id="sf-submit" type="submit" class="btn-primary">Create account &amp; email credentials</button>
+      </div>
+    </form>
+
+    <!-- Success state -->
+    <div id="staff-success" class="space-y-4 p-6 text-center" hidden>
+      <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-go/15 text-3xl font-bold text-go" aria-hidden="true">✓</div>
+      <h2 id="success-title" class="text-lg font-bold" tabindex="-1">Staff Account Created &amp; Credentials Emailed Successfully!</h2>
+      <p class="text-sm text-ink-soft">
+        Sent to <b id="success-email" class="text-ink"></b>.
+        <span id="success-detail"></span>
+      </p>
+      <p class="text-sm text-ink-soft">They'll be asked to choose their own password the first time they sign in.</p>
+      <div class="flex justify-center gap-2">
+        <button id="success-another" type="button" class="btn-ghost">Provision another</button>
+        <button type="button" class="btn-primary" data-close>Done</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Confirmation for resend / deactivate -->
+  <dialog id="confirm-dialog" class="w-[min(460px,calc(100vw-32px))] rounded-xl border border-line bg-panel p-0 text-ink shadow-2xl" aria-labelledby="confirm-title">
+    <form method="dialog" class="space-y-4 p-5">
+      <h2 id="confirm-title" class="text-lg font-bold"></h2>
+      <p id="confirm-body" class="text-sm text-ink-soft"></p>
+      <div class="flex justify-end gap-2">
+        <button value="cancel" class="btn-ghost">Cancel</button>
+        <button value="ok" id="confirm-ok" class="btn-primary"></button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toasts" class="pointer-events-none fixed bottom-4 right-4 z-50 flex w-[min(380px,calc(100vw-32px))] flex-col gap-2" aria-live="polite"></div>
+</body>
+</html>

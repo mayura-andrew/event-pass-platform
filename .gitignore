@@ -1,0 +1,5 @@
+.env
+/api
+/bin/
+*.csv
+!scripts/sample/*.csv

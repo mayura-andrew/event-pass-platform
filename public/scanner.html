@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#13233D">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Space Apps Scanner</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <!-- Atkinson Hyperlegible was drawn for low-vision readers: unambiguous
+       glyphs (1/l/I, 0/O) help volunteers read names and IDs at a glance in
+       harsh light. Falls back to system UI fonts when offline and uncached. -->
+  <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ink: #13233D;
+      --ink-soft: #4A5A73;
+      --paper: #EEF1F5;
+      --panel: #FFFFFF;
+      --line: #C6CFDB;
+      --action: #1F4FD1;
+      --action-ink: #FFFFFF;
+      --go: #0D7337;
+      --hold: #9A4A00;
+      --stop: #B0241A;
+      --radius-s: 8px;
+      --radius-l: 18px;
+      --font: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      color-scheme: light;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ink: #E9EEF5;
+        --ink-soft: #A3B1C6;
+        --paper: #0E1828;
+        --panel: #172438;
+        --line: #2C3D57;
+        --action: #5B84FF;
+        --action-ink: #08121F;
+        color-scheme: dark;
+      }
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      font-family: var(--font);
+      font-size: 17px;
+      line-height: 1.45;
+      color: var(--ink);
+      background: var(--paper);
+      padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+               env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+      -webkit-tap-highlight-color: transparent;
+    }
+    [hidden] { display: none !important; }
+    button, input, select { font: inherit; color: inherit; }
+    :focus-visible { outline: 3px solid var(--action); outline-offset: 2px; }
+
+    .wrap { max-width: 520px; margin: 0 auto; padding: 16px; }
+
+    /* ---- Login ------------------------------------------------------------ */
+    #login-view .wrap { padding-top: 12vh; }
+    .brand { font-size: 1.6rem; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.01em; }
+    .lede { color: var(--ink-soft); margin: 0 0 28px; }
+    label { display: block; font-weight: 700; margin: 0 0 6px; }
+    .field { margin-bottom: 16px; }
+    input[type=email], input[type=password], input[type=text], select {
+      width: 100%;
+      min-height: 52px;
+      padding: 12px 14px;
+      border: 2px solid var(--line);
+      border-radius: var(--radius-s);
+      background: var(--panel);
+    }
+    input:focus, select:focus { border-color: var(--action); outline: none; }
+    .btn {
+      min-height: 52px;
+      padding: 0 20px;
+      border: 0;
+      border-radius: var(--radius-s);
+      background: var(--action);
+      color: var(--action-ink);
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .btn:disabled { opacity: .6; cursor: progress; }
+    .btn-block { width: 100%; }
+    .btn-quiet { background: transparent; color: var(--ink-soft); padding: 0 8px; min-height: 44px; text-decoration: underline; }
+    .error-text { color: var(--stop); font-weight: 700; margin: 12px 0 0; }
+
+    /* ---- App header ------------------------------------------------------- */
+    .topline { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+    .who { font-weight: 700; }
+    .who small { display: block; font-weight: 400; color: var(--ink-soft); font-size: .85rem; }
+
+    #scenario-select { font-size: 1.15rem; font-weight: 700; min-height: 58px; }
+    #scenario-rule { margin: 6px 2px 14px; color: var(--ink-soft); font-size: .95rem; }
+    body[data-ready=no] #scenario-select { border-color: var(--hold); }
+
+    /* ---- Camera ----------------------------------------------------------- */
+    .viewport {
+      position: relative;
+      aspect-ratio: 1;
+      background: #000;
+      border-radius: var(--radius-l);
+      overflow: hidden;
+    }
+    #reader { width: 100%; height: 100%; }
+    #reader video { width: 100% !important; height: 100% !important; object-fit: cover; }
+    .viewport-cover {
+      position: absolute; inset: 0;
+      display: grid; place-items: center; text-align: center;
+      padding: 24px;
+      background: rgba(10, 18, 31, .82);
+      color: #fff;
+      font-weight: 700;
+      font-size: 1.1rem;
+    }
+    body[data-ready=yes] #needs-scenario { display: none; }
+
+    /* ---- Manual lookup ---------------------------------------------------- */
+    #manual-form { display: flex; gap: 8px; margin-top: 14px; }
+    #manual-form input { flex: 1; text-transform: uppercase; }
+    #manual-form input::placeholder { text-transform: none; }
+    body[data-ready=no] #manual-form { opacity: .5; pointer-events: none; }
+
+    /* ---- Status strip ----------------------------------------------------- */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1px;
+      margin-top: 18px;
+      background: var(--line);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-s);
+      overflow: hidden;
+    }
+    .stat { background: var(--panel); padding: 10px 12px; }
+    .stat dt { font-size: .82rem; color: var(--ink-soft); }
+    .stat dd { margin: 0; font-weight: 700; font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+    .stat[data-alert=yes] dd { color: var(--hold); }
+    #stat-online[data-state=on]::before, #stat-online[data-state=off]::before {
+      content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+      margin-right: 6px; vertical-align: 1px;
+    }
+    #stat-online[data-state=on]::before { background: var(--go); }
+    #stat-online[data-state=off]::before { background: var(--hold); }
+    #sync-state { font-size: .82rem; color: var(--ink-soft); margin: 8px 2px 0; }
+    #sync-state[data-state=error] { color: var(--hold); }
+    #banner {
+      margin-top: 14px; padding: 12px 14px;
+      border-left: 4px solid var(--hold);
+      background: var(--panel);
+      border-radius: 0 var(--radius-s) var(--radius-s) 0;
+    }
+
+    /* ---- Result modal: the one loud thing --------------------------------- */
+    #scan-result-modal {
+      position: fixed; inset: 0; z-index: 10;
+      display: flex; flex-direction: column;
+      color: #fff;
+      padding: calc(env(safe-area-inset-top, 0px) + 28px) 24px calc(env(safe-area-inset-bottom, 0px) + 24px);
+      overflow-y: auto;
+    }
+    #scan-result-modal[data-status=success] { background: var(--go); }
+    #scan-result-modal[data-status=warning] { background: var(--hold); }
+    #scan-result-modal[data-status=error]   { background: var(--stop); }
+    #scan-result-modal:not([hidden]) .modal-content { animation: land .18s ease-out; }
+    @keyframes land { from { transform: scale(.96); opacity: .4; } to { transform: none; opacity: 1; } }
+
+    .modal-content { flex: 1; display: flex; flex-direction: column; max-width: 560px; width: 100%; margin: 0 auto; }
+    .status-row { display: flex; align-items: center; gap: 16px; }
+    #modal-glyph {
+      flex: none;
+      width: 72px; height: 72px;
+      display: grid; place-items: center;
+      border: 4px solid #fff; border-radius: 50%;
+      font-size: 2.6rem; font-weight: 700; line-height: 1;
+    }
+    #modal-status-title { margin: 0; font-size: clamp(1.6rem, 7vw, 2.2rem); line-height: 1.1; }
+    #modal-message { font-size: 1.15rem; margin: 18px 0 0; max-width: 34em; }
+
+    #modal-details { margin-top: 28px; }
+    #participant-name {
+      margin: 0 0 18px;
+      font-size: clamp(2.2rem, 11vw, 3.6rem);
+      line-height: 1.02;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      overflow-wrap: anywhere;
+    }
+    .facts { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin: 0; font-size: 1.1rem; }
+    .facts dt { opacity: .8; }
+    .facts dd { margin: 0; font-weight: 700; overflow-wrap: anywhere; }
+    #participant-id { font-size: 1.3rem; letter-spacing: .02em; }
+
+    .modal-footer { margin-top: auto; padding-top: 28px; }
+    .checkpoint { margin: 0 0 12px; opacity: .9; }
+    #btn-continue {
+      width: 100%; min-height: 64px;
+      border: 3px solid #fff; border-radius: var(--radius-s);
+      background: rgba(255,255,255,.14); color: #fff;
+      font-size: 1.25rem; font-weight: 700; cursor: pointer;
+    }
+    .countdown { height: 5px; margin-top: 12px; background: rgba(255,255,255,.25); border-radius: 3px; overflow: hidden; }
+    .countdown span { display: block; height: 100%; width: 100%; background: #fff; transform-origin: left; }
+    #scan-result-modal:not(.auto-dismiss) .countdown { visibility: hidden; }
+    #scan-result-modal.auto-dismiss .countdown span { animation: drain 2.2s linear forwards; }
+    @keyframes drain { to { transform: scaleX(0); } }
+
+    @media (prefers-reduced-motion: reduce) {
+      #scan-result-modal:not([hidden]) .modal-content { animation: none; }
+      #scan-result-modal.auto-dismiss .countdown span { animation-duration: 0s; }
+    }
+  </style>
+</head>
+<body data-ready="no">
+
+  <!-- ===================== Sign in ===================== -->
+  <main id="login-view" hidden>
+    <div class="wrap">
+      <h1 class="brand">Space Apps Scanner</h1>
+      <p class="lede">Sign in once while connected. After that, scanning works without signal.</p>
+      <form id="login-form" autocomplete="on">
+        <div class="field">
+          <label for="login-email">Email</label>
+          <input id="login-email" type="email" autocomplete="username" required>
+        </div>
+        <div class="field">
+          <label for="login-password">Password</label>
+          <input id="login-password" type="password" autocomplete="current-password" required>
+        </div>
+        <button id="login-submit" class="btn btn-block" type="submit">Sign in</button>
+        <p id="login-error" class="error-text" role="alert" hidden></p>
+      </form>
+
+      <!-- First sign-in with an emailed temporary password -->
+      <form id="pwchange-form" autocomplete="on" novalidate hidden>
+        <p class="lede"><b>Choose your password.</b> You signed in with a temporary password. Set your own to start scanning; the temporary one then stops working.</p>
+        <div class="field">
+          <label for="pw-new">New password</label>
+          <input id="pw-new" type="password" autocomplete="new-password" minlength="10" required>
+        </div>
+        <div class="field">
+          <label for="pw-confirm">Repeat new password</label>
+          <input id="pw-confirm" type="password" autocomplete="new-password" required>
+        </div>
+        <button id="pw-submit" class="btn btn-block" type="submit">Set password and start</button>
+        <button id="pw-cancel" class="btn btn-quiet btn-block" type="button">Cancel</button>
+        <p id="pw-error" class="error-text" role="alert" hidden></p>
+      </form>
+    </div>
+  </main>
+
+  <!-- ===================== Scanner ===================== -->
+  <main id="app-view" hidden>
+    <div class="wrap">
+      <div class="topline">
+        <div class="who"><span id="signed-in-as"></span><small>Scanning as</small></div>
+        <button id="logout" class="btn btn-quiet" type="button">Sign out</button>
+      </div>
+
+      <label for="scenario-select">Checkpoint</label>
+      <select id="scenario-select"></select>
+      <p id="scenario-rule"></p>
+
+      <div class="viewport">
+        <div id="reader"></div>
+        <div id="needs-scenario" class="viewport-cover">Pick a checkpoint above to start scanning</div>
+        <div id="camera-error" class="viewport-cover" hidden><span id="camera-error-text"></span></div>
+      </div>
+
+      <form id="manual-form" autocomplete="off">
+        <input id="manual-id" type="text" inputmode="text" placeholder="No QR? Enter membership ID" aria-label="Membership ID">
+        <button class="btn" type="submit">Look up</button>
+      </form>
+
+      <dl class="stats">
+        <div class="stat"><dt>Connection</dt><dd id="stat-online">…</dd></div>
+        <div class="stat"><dt>Delegates on phone</dt><dd id="stat-directory">0</dd></div>
+        <div class="stat"><dt>Waiting to upload</dt><dd id="stat-pending">0</dd></div>
+        <div class="stat"><dt>Last upload</dt><dd id="stat-last-sync">Never</dd></div>
+        <div class="stat" hidden><dt>Claimed elsewhere first</dt><dd id="stat-conflicts">0</dd></div>
+      </dl>
+      <p id="sync-state" data-state="idle" aria-live="polite"></p>
+      <p id="banner" role="status" hidden></p>
+    </div>
+  </main>
+
+  <!-- ===================== Result ===================== -->
+  <div id="scan-result-modal" role="alertdialog" aria-modal="true" aria-labelledby="modal-status-title" data-status="success" hidden>
+    <div class="modal-content">
+      <div class="status-row">
+        <div id="modal-glyph" aria-hidden="true">✓</div>
+        <h2 id="modal-status-title">Approved</h2>
+      </div>
+      <p id="modal-message"></p>
+
+      <div id="modal-details">
+        <h1 id="participant-name"></h1>
+        <dl class="facts">
+          <dt>Membership</dt><dd id="participant-id"></dd>
+          <dt>Team</dt><dd id="participant-team"></dd>
+          <dt>Email</dt><dd id="participant-email"></dd>
+          <dt>Venue</dt><dd id="participant-venue"></dd>
+        </dl>
+      </div>
+
+      <div class="modal-footer">
+        <p class="checkpoint">Checkpoint: <strong id="scenario-name"></strong></p>
+        <button id="btn-continue" type="button">Next scan</button>
+        <div class="countdown" aria-hidden="true"><span></span></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/vendor/html5-qrcode-2.3.8.min.js"></script>
+  <script type="module" src="/js/scanner.js"></script>
+</body>
+</html>

@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#13233D">
+  <title>Space Apps Control Panel</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
+  <!-- Compiled Tailwind; rebuild with the command in scripts/tailwind/tailwind.config.js -->
+  <link rel="stylesheet" href="/admin/dashboard.css">
+  <script type="module" src="/admin/app.js"></script>
+</head>
+<body class="min-h-screen">
+
+  <!-- =====================================================================
+       Sign-in
+       ===================================================================== -->
+  <main id="login-view" class="mx-auto max-w-sm px-4 pt-[14vh]" hidden>
+    <h1 class="text-2xl font-bold tracking-tight">Space Apps Control Panel</h1>
+    <p class="mb-7 mt-1 text-ink-soft">Organizer sign-in. Volunteer accounts use the scanner instead.</p>
+    <form id="login-form" class="card space-y-4 p-5" novalidate>
+      <div>
+        <label class="label" for="login-email">Email</label>
+        <input id="login-email" class="field" type="email" autocomplete="username" required>
+      </div>
+      <div>
+        <label class="label" for="login-password">Password</label>
+        <input id="login-password" class="field" type="password" autocomplete="current-password" required>
+      </div>
+      <p id="login-error" class="rounded-lg bg-stop/10 px-3 py-2 text-sm font-bold text-stop" role="alert" hidden></p>
+      <button id="login-submit" class="btn-primary w-full" type="submit">Sign in</button>
+    </form>
+
+    <!-- First sign-in with an emailed temporary password -->
+    <form id="pwchange-form" class="card space-y-4 p-5" novalidate hidden>
+      <div>
+        <h2 class="text-lg font-bold">Choose your password</h2>
+        <p class="text-sm text-ink-soft">You signed in with a temporary password. Set your own to continue; the temporary one then stops working.</p>
+      </div>
+      <div>
+        <label class="label" for="pw-new">New password</label>
+        <input id="pw-new" class="field" type="password" autocomplete="new-password" minlength="10" required>
+        <p class="mt-1 text-xs text-ink-soft">At least 10 characters. A short sentence is easy to remember.</p>
+      </div>
+      <div>
+        <label class="label" for="pw-confirm">Repeat new password</label>
+        <input id="pw-confirm" class="field" type="password" autocomplete="new-password" required>
+      </div>
+      <p id="pw-error" class="rounded-lg bg-stop/10 px-3 py-2 text-sm font-bold text-stop" role="alert" hidden></p>
+      <div class="flex gap-2">
+        <button id="pw-submit" class="btn-primary flex-1" type="submit">Set password and continue</button>
+        <button id="pw-cancel" class="btn-ghost" type="button">Cancel</button>
+      </div>
+    </form>
+  </main>
+
+  <!-- =====================================================================
+       Dashboard
+       ===================================================================== -->
+  <div id="app-view" hidden>
+    <header class="sticky top-0 z-20 border-b border-line bg-panel/95 backdrop-blur">
+      <div class="mx-auto flex max-w-[1500px] flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
+        <h1 class="text-lg font-bold tracking-tight">Space Apps Control Panel</h1>
+        <span id="feed-status" class="pill bg-line/50 text-ink-soft" data-state="connecting">
+          <span aria-hidden="true" class="h-2 w-2 rounded-full bg-current"></span>
+          <span id="feed-status-text">Connecting…</span>
+        </span>
+        <div class="ml-auto flex items-center gap-2">
+          <span class="hidden text-sm text-ink-soft sm:inline">Signed in as <b id="signed-in-as" class="text-ink"></b></span>
+          <a href="/admin/staff.html" class="btn-ghost">Staff</a>
+          <button id="open-scenarios" class="btn-ghost" type="button">Checkpoints</button>
+          <button id="logout" class="btn-ghost" type="button">Sign out</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="mx-auto max-w-[1500px] space-y-5 px-4 py-5">
+
+      <!-- ---- Metric cards ------------------------------------------------ -->
+      <section aria-label="Event totals" class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+        <article class="card p-4">
+          <h2 class="label">Confirmed delegates</h2>
+          <p class="text-3xl font-bold tabular-nums" id="stat-confirmed">–</p>
+          <p class="mt-1 text-sm text-ink-soft" id="stat-confirmed-sub">&nbsp;</p>
+        </article>
+        <article class="card p-4">
+          <h2 class="label">Checked in</h2>
+          <p class="text-3xl font-bold tabular-nums" id="stat-checked-in">–</p>
+          <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-line/60" aria-hidden="true">
+            <div id="stat-checked-in-bar" class="h-full rounded-full bg-go transition-all" style="width:0%"></div>
+          </div>
+          <p class="mt-1 text-sm text-ink-soft" id="stat-checked-in-sub">&nbsp;</p>
+        </article>
+        <article class="card border-hold/40 p-4">
+          <h2 class="label">Minor delegates (under 18)</h2>
+          <p class="text-3xl font-bold tabular-nums text-hold" id="stat-minors">–</p>
+          <p class="mt-1 text-sm text-ink-soft" id="stat-minors-sub">&nbsp;</p>
+        </article>
+        <article class="card p-4">
+          <h2 class="label">Active checkpoints</h2>
+          <p class="text-3xl font-bold tabular-nums" id="stat-scenarios">–</p>
+          <p class="mt-1 text-sm text-ink-soft" id="stat-scenarios-sub">&nbsp;</p>
+        </article>
+        <article class="card col-span-2 p-4 md:col-span-1" id="stat-sync-card" data-state="ok">
+          <h2 class="label">Sync queue</h2>
+          <p class="flex items-baseline gap-2">
+            <span class="text-3xl font-bold tabular-nums" id="stat-sync">–</span>
+            <span class="text-sm text-ink-soft">waiting on phones</span>
+          </p>
+          <p class="mt-1 text-sm" id="stat-sync-sub">&nbsp;</p>
+        </article>
+      </section>
+
+      <div class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+
+        <!-- ---- Delegate directory -------------------------------------- -->
+        <section class="card min-w-0" aria-labelledby="directory-title">
+          <div class="flex flex-wrap items-baseline justify-between gap-2 border-b border-line px-4 py-3">
+            <h2 id="directory-title" class="text-base font-bold">Delegates</h2>
+            <p id="result-count" class="text-sm text-ink-soft" aria-live="polite"></p>
+          </div>
+
+          <!-- Filter bar -->
+          <form id="filters" class="grid grid-cols-1 gap-3 border-b border-line px-4 py-3 sm:grid-cols-2 lg:grid-cols-4" role="search">
+            <div class="sm:col-span-2">
+              <label class="label" for="f-search">Search</label>
+              <input id="f-search" class="field" type="search" placeholder="Name, email, membership ID or team" autocomplete="off" maxlength="100">
+            </div>
+            <div>
+              <label class="label" for="f-age">Age</label>
+              <select id="f-age" class="field">
+                <option value="">All ages</option>
+                <option value="UNDER_18">Under 18 - Minors</option>
+                <option value="ABOVE_18">18+ - Adults</option>
+                <option value="UNKNOWN">Date of birth missing</option>
+              </select>
+            </div>
+            <div>
+              <label class="label" for="f-scenario">Scenario</label>
+              <select id="f-scenario" class="field"><option value="">None</option></select>
+            </div>
+            <div>
+              <label class="label" for="f-claim">Claim status</label>
+              <select id="f-claim" class="field" disabled>
+                <option value="">Any</option>
+                <option value="CLAIMED">Claimed / scanned</option>
+                <option value="UNCLAIMED">Unclaimed / not scanned</option>
+              </select>
+            </div>
+            <div>
+              <label class="label" for="f-venue">Venue</label>
+              <select id="f-venue" class="field"><option value="">All venues</option></select>
+            </div>
+            <div>
+              <label class="label" for="f-confirm">Confirmation</label>
+              <select id="f-confirm" class="field">
+                <option value="">All</option>
+                <option value="CONFIRMED" selected>Confirmed</option>
+                <option value="UNCONFIRMED">Unconfirmed</option>
+              </select>
+            </div>
+            <div class="flex items-end sm:col-span-2 lg:col-span-1">
+              <button id="f-reset" class="btn-ghost" type="button">Reset filters</button>
+            </div>
+          </form>
+
+          <div class="relative overflow-x-auto">
+            <table class="w-full min-w-[920px] text-sm">
+              <thead class="border-b border-line bg-paper/60">
+                <tr>
+                  <th class="th" scope="col">Delegate</th>
+                  <th class="th" scope="col">ID</th>
+                  <th class="th" scope="col">Age</th>
+                  <th class="th" scope="col">Team</th>
+                  <th class="th" scope="col">Assigned venue</th>
+                  <th class="th" scope="col" id="scenario-col">Scenario status</th>
+                  <th class="th text-right" scope="col"><span class="sr-only">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody id="delegate-rows" class="divide-y divide-line"></tbody>
+            </table>
+            <p id="table-empty" class="px-4 py-10 text-center text-ink-soft" hidden>No delegates match these filters.</p>
+            <p id="table-error" class="m-4 rounded-lg bg-stop/10 px-3 py-2 text-sm font-bold text-stop" role="alert" hidden></p>
+          </div>
+
+          <nav class="flex items-center justify-between gap-2 border-t border-line px-4 py-3" aria-label="Pagination">
+            <button id="page-prev" class="btn-ghost" type="button">← Previous</button>
+            <span id="page-info" class="text-sm text-ink-soft tabular-nums"></span>
+            <button id="page-next" class="btn-ghost" type="button">Next →</button>
+          </nav>
+        </section>
+
+        <!-- ---- Right rail: throughput + live stream --------------------- -->
+        <div class="flex min-w-0 flex-col gap-5">
+          <section class="card relative p-4" aria-labelledby="throughput-title">
+            <h2 id="throughput-title" class="label">Scan throughput</h2>
+            <p class="flex items-baseline gap-2">
+              <span id="rate-now" class="text-4xl font-bold tabular-nums">–</span>
+              <span class="text-sm text-ink-soft">scans received in the last minute</span>
+            </p>
+            <p id="rate-avg" class="mb-3 text-sm text-ink-soft">&nbsp;</p>
+            <!-- Bars are drawn by app.js; the table below is the accessible version. -->
+            <div id="rate-chart" class="relative flex h-24 items-end gap-[2px] border-b border-line" role="img" aria-labelledby="rate-chart-desc"></div>
+            <div class="mt-1 flex justify-between text-xs text-ink-soft"><span>15 min ago</span><span>now</span></div>
+            <p id="rate-chart-desc" class="sr-only"></p>
+            <div id="rate-tooltip" class="pointer-events-none absolute z-30 rounded-md border border-line bg-panel px-2 py-1 text-xs font-bold shadow-lg" hidden></div>
+            <p class="mt-2 text-xs text-ink-soft">Counted when scans reach the server, so a phone reconnecting after time offline shows up as a spike.</p>
+          </section>
+
+          <section class="card flex min-h-[420px] flex-1 flex-col" aria-labelledby="stream-title">
+            <div class="flex items-center justify-between border-b border-line px-4 py-3">
+              <h2 id="stream-title" class="text-base font-bold">Live scan activity</h2>
+              <label class="flex items-center gap-2 text-sm text-ink-soft">
+                <input id="stream-pause" type="checkbox" class="h-4 w-4 accent-[rgb(var(--action))]"> Pause
+              </label>
+            </div>
+            <ol id="stream" class="max-h-[640px] flex-1 divide-y divide-line overflow-y-auto" aria-live="off"></ol>
+            <p id="stream-empty" class="px-4 py-8 text-center text-sm text-ink-soft">No scans yet.</p>
+          </section>
+        </div>
+      </div>
+
+      <!-- ---- Scanner devices ---------------------------------------------- -->
+      <section class="card" aria-labelledby="devices-title">
+        <div class="flex flex-wrap items-baseline justify-between gap-2 border-b border-line px-4 py-3">
+          <h2 id="devices-title" class="text-base font-bold">Scanner phones</h2>
+          <p class="text-sm text-ink-soft">Each phone reports its queue every minute while it has signal. A phone that goes quiet keeps its last report.</p>
+        </div>
+        <div class="relative overflow-x-auto">
+          <table class="w-full min-w-[860px] text-sm">
+            <thead class="border-b border-line bg-paper/60">
+              <tr>
+                <th class="th" scope="col">State</th>
+                <th class="th" scope="col">Volunteer</th>
+                <th class="th" scope="col">Checkpoint</th>
+                <th class="th text-right" scope="col">Waiting to upload</th>
+                <th class="th text-right" scope="col">Lost races</th>
+                <th class="th text-right" scope="col">Delegates on phone</th>
+                <th class="th" scope="col">Last upload</th>
+                <th class="th" scope="col">Last report</th>
+              </tr>
+            </thead>
+            <tbody id="device-rows" class="divide-y divide-line"></tbody>
+          </table>
+          <p id="devices-empty" class="px-4 py-8 text-center text-sm text-ink-soft" hidden>No scanner has reported in the last 12 hours.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- =====================================================================
+       Manual override modal
+       ===================================================================== -->
+  <dialog id="override-dialog" class="w-[min(560px,calc(100vw-32px))] rounded-xl border border-line bg-panel p-0 text-ink shadow-2xl" aria-labelledby="override-title">
+    <form id="override-form" method="dialog" class="space-y-4 p-5" novalidate>
+      <div class="flex items-start justify-between gap-4">
+        <div>
+          <h2 id="override-title" class="text-lg font-bold">Manual override</h2>
+          <p class="text-sm text-ink-soft">Record a scan without a QR code. It is logged with your name and the reason below.</p>
+        </div>
+        <button type="button" class="btn-ghost min-h-[36px] px-3" data-close aria-label="Close">✕</button>
+      </div>
+
+      <div class="rounded-lg border border-line bg-paper/60 p-3">
+        <p class="flex flex-wrap items-center gap-2">
+          <b id="ov-name" class="text-base"></b>
+          <span id="ov-minor"></span>
+        </p>
+        <p class="text-sm text-ink-soft"><span id="ov-id"></span> · <span id="ov-team"></span></p>
+      </div>
+
+      <div>
+        <label class="label" for="ov-scenario">Target scenario</label>
+        <select id="ov-scenario" class="field" required></select>
+        <p id="ov-scenario-note" class="mt-1 text-xs text-ink-soft"></p>
+      </div>
+
+      <div>
+        <span class="label">Recorded by</span>
+        <p class="rounded-lg border-2 border-dashed border-line px-3 py-2 text-sm">
+          <b id="ov-admin"></b> <span class="text-ink-soft">(your signed-in account; this cannot be changed)</span>
+        </p>
+      </div>
+
+      <div>
+        <label class="label" for="ov-rationale">Reason for bypassing the QR</label>
+        <textarea id="ov-rationale" class="field min-h-[96px]" maxlength="500" required
+                  placeholder="e.g. Phone battery depleted; photo ID verified"></textarea>
+        <div class="mt-1 flex flex-wrap gap-2" id="ov-presets" aria-label="Common reasons">
+          <button type="button" class="pill border border-line hover:border-action">Phone battery depleted; photo ID verified</button>
+          <button type="button" class="pill border border-line hover:border-action">QR pass not loading; photo ID verified</button>
+          <button type="button" class="pill border border-line hover:border-action">No smartphone; identity confirmed against registration</button>
+        </div>
+        <p class="mt-1 text-xs text-ink-soft"><span id="ov-count" class="tabular-nums">0</span>/500 · at least 10 characters</p>
+      </div>
+
+      <p id="ov-error" class="rounded-lg bg-stop/10 px-3 py-2 text-sm font-bold text-stop" role="alert" hidden></p>
+
+      <div class="flex justify-end gap-2">
+        <button type="button" class="btn-ghost" data-close>Cancel</button>
+        <button id="ov-submit" type="submit" class="btn-primary" value="submit">Record scan</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- =====================================================================
+       Scenario control drawer
+       ===================================================================== -->
+  <dialog id="scenario-drawer" class="m-0 ml-auto h-full max-h-none w-[min(520px,100vw)] border-l border-line bg-paper p-0 text-ink shadow-2xl" aria-labelledby="drawer-title">
+    <div class="flex h-full flex-col">
+      <div class="flex items-center justify-between border-b border-line bg-panel px-4 py-3">
+        <div>
+          <h2 id="drawer-title" class="text-lg font-bold">Checkpoints</h2>
+          <p class="text-sm text-ink-soft">Phones pick up changes on their next refresh (within a minute when online).</p>
+        </div>
+        <button type="button" class="btn-ghost min-h-[36px] px-3" data-close aria-label="Close">✕</button>
+      </div>
+
+      <div class="flex-1 space-y-3 overflow-y-auto p-4">
+        <p id="drawer-error" class="rounded-lg bg-stop/10 px-3 py-2 text-sm font-bold text-stop" role="alert" hidden></p>
+        <ul id="scenario-list" class="space-y-3"></ul>
+
+        <details class="card p-4" id="new-scenario">
+          <summary class="cursor-pointer font-bold">Add a checkpoint</summary>
+          <form id="scenario-create" class="mt-3 space-y-3" novalidate>
+            <div>
+              <label class="label" for="ns-name">Name</label>
+              <input id="ns-name" class="field" maxlength="100" required placeholder="Day 2 lunch">
+            </div>
+            <div>
+              <label class="label" for="ns-code">Code</label>
+              <input id="ns-code" class="field uppercase" maxlength="50" required pattern="[A-Za-z0-9_]{2,50}" placeholder="D2_LUNCH">
+              <p class="mt-1 text-xs text-ink-soft">2-50 characters: letters, digits, underscore.</p>
+            </div>
+            <div>
+              <label class="label" for="ns-desc">Description</label>
+              <input id="ns-desc" class="field" maxlength="300">
+            </div>
+            <label class="flex items-center gap-2 text-sm"><input id="ns-dup" type="checkbox" class="h-4 w-4"> Allow repeat scans (e.g. re-entry)</label>
+            <label class="flex items-center gap-2 text-sm"><input id="ns-active" type="checkbox" class="h-4 w-4" checked> Active immediately</label>
+            <button class="btn-primary" type="submit">Create checkpoint</button>
+          </form>
+        </details>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Toasts -->
+  <div id="toasts" class="pointer-events-none fixed bottom-4 right-4 z-50 flex w-[min(380px,calc(100vw-32px))] flex-col gap-2" aria-live="polite"></div>
+</body>
+</html>

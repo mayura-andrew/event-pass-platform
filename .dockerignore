@@ -1,0 +1,6 @@
+.git
+.env
+bin
+*.csv
+Dockerfile
+nsac-qr.compose.yaml

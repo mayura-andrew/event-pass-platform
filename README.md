@@ -1,0 +1,233 @@
+# NASA Space Apps: offline-first QR delegate management
+
+Delegates get a signed QR pass. Volunteers scan it on a phone that keeps working with no signal. Scans are uploaded when the connection returns, and the first scan to reach the server wins.
+
+```
+Google Form CSV ──> scripts/seed ──> Supabase (participants + HMAC signature)
+                                          │
+Participant ──> /pass.html ──> QR {"id","sig"} + venue map
+                                          │
+Volunteer phone ──> /scanner.html
+   ├─ online:  downloads delegate list, scenarios and existing claims into IndexedDB
+   ├─ scan:    lookup in IndexedDB, verify signature, check duplicates, queue
+   ├─ sync:    POST /api/v1/scans/sync ──> one transaction, one savepoint per scan
+   └─ report:  POST /api/v1/devices/heartbeat (queue counts, every minute online)
+                                          │
+Organizer ──> /admin/dashboard.html
+   ├─ metrics, delegate filters (age, claim status, venue), manual override
+   ├─ live scan stream (server-sent events)
+   └─ checkpoint on/off, scanner phone health
+Superadmin ──> /admin/staff.html
+   └─ provision staff ──> temporary password emailed ──> set own password at first sign-in
+```
+
+## Roles
+
+| Role | Scanner app | Checkpoints | Dashboard | Staff page |
+| --- | --- | --- | --- | --- |
+| `superadmin` | yes | all | yes | view + create, edit, reset, deactivate |
+| `admin` | yes | all | yes | view only |
+| `scanner` | yes | only those granted in `staff_scenario_grants` | no | no |
+
+Grants are enforced by the API, not only hidden on the phone: `GET /scenarios/active` returns only granted
+checkpoints, and `POST /scans/sync` marks scans for any other checkpoint `INVALID`. Every request rechecks the
+account (active, current role, temporary password) with a 30-second cache, so deactivating someone,
+changing their role or resending their credentials reaches signed-in devices within 30 seconds rather
+than when their JWT expires.
+
+## Layout
+
+```
+cmd/api/main.go                     entry point, wiring, graceful shutdown
+internal/config                     environment configuration
+internal/domain                     shared types and sync status codes
+internal/auth                       JWT issue/verify (HS256, algorithm pinned)
+internal/repository/postgres        SQL: participants, scenarios, admins, scans
+internal/service                    validation and business rules
+internal/handler/http               routes, middleware, rate limiting, static files
+migrations/001_schema.sql           tables, indexes, RLS, starter scenarios
+migrations/002_dashboard_schema.sql date of birth, override audit, scanner heartbeats
+migrations/003_rbac_and_emailing.sql roles (volunteer -> scanner), checkpoint grants, temporary passwords
+scripts/seed                        CSV import + HMAC signing
+scripts/create-admin                create scanner / dashboard logins
+scripts/sample                      example participants.csv and venues.csv
+public/scanner.html, js/scanner.js  volunteer scanner PWA
+public/js/db.js                     Dexie schema, session, hydration
+public/pass.html, js/pass.js        participant pass portal
+public/js/pass-card.js              downloadable 70 x 110 mm pass (PNG + print-ready PDF) on the Colombo template
+public/assets                       qr-template.pdf (source), pass-template.jpg (600 dpi render), colombo-mark.png
+public/sw.js                        service worker (offline app shell)
+public/admin/                       organizer dashboard (dashboard.html, app.js), staff page (staff.html,
+                                    staff.js), shared helpers (common.js), compiled CSS
+scripts/tailwind                    Tailwind config + source CSS for the dashboard
+public/vendor                       pinned Dexie 4.0.11, html5-qrcode 2.3.8, qrcodejs 1.0.0,
+                                    node-qrcode 1.5.4 encoder core (pass card QR)
+```
+
+## Setup
+
+Deploying for real (DigitalOcean App Platform + Supabase + Gmail)? Follow [DEPLOY.md](DEPLOY.md).
+
+Requires Go 1.22 or newer. Run `go mod tidy` once to fetch dependencies and create `go.sum`.
+
+1. **Database.** Run `migrations/001_schema.sql`, `002_dashboard_schema.sql` and `003_rbac_and_emailing.sql`, in that order, in the Supabase SQL editor. All are safe to re-run. 003 renames `volunteer` accounts to `scanner` and grants them every existing checkpoint, so nobody loses access on deploy.
+2. **Environment.** Copy `.env.example` to `.env`, fill it in, then `set -a; source .env; set +a`.
+3. **Venues and delegates.**
+   ```sh
+   go run ./scripts/seed -venues scripts/sample/venues.csv -participants scripts/sample/participants.csv -dry-run
+   go run ./scripts/seed -venues venues.csv -participants participants.csv
+   ```
+   Re-running is safe: rows are upserted. Lines with problems are reported and skipped.
+4. **Logins.**
+   ```sh
+   ADMIN_PASSWORD='...' go run ./scripts/create-admin -email lead@example.org -name "Event lead" -role admin
+   ADMIN_PASSWORD='...' go run ./scripts/create-admin -email lead@example.org -name "Event lead" -role superadmin
+   ```
+   Create the first superadmin this way; after that, add staff from `/admin/staff.html`, which emails each
+   person a temporary password. (`create-admin` still works for any role, but a `scanner` made there has no
+   checkpoints until you assign some on the Staff page.)
+5. **Run.** `go run ./cmd/api`, then open `/scanner.html`, `/pass.html` and `/admin/` (organizer dashboard; needs an `admin` or `superadmin` login).
+
+The camera only works over HTTPS (localhost is exempt), so put the API behind TLS for real devices.
+
+### Run locally with Docker
+
+Docker Compose starts a local PostgreSQL database, applies the schema on first
+startup, and runs the API on port 8080. The database is also available locally
+on port 5433 for the seed and admin scripts. Set `JWT_SECRET` in `.env` first:
+
+```sh
+docker compose -f nsac-qr.compose.yaml up --build
+```
+
+A database volume created before a migration existed won't run it
+automatically (init scripts only run on an empty volume). Apply new ones once:
+
+```sh
+docker compose -f nsac-qr.compose.yaml exec -T db psql -U nsac -d nsac_qr < migrations/003_rbac_and_emailing.sql
+```
+
+Compose also starts [Mailpit](https://mailpit.axllent.org/), which catches every email the API sends
+(staff credentials). Read them at `http://localhost:8025`. The Compose file pins the API to Mailpit on
+purpose, so `SMTP_*` variables in your shell can't make local tests send real email.
+
+Open `http://localhost:8080/pass.html`. Stop the containers with
+`docker compose -f nsac-qr.compose.yaml down`; add `-v` to also remove the
+local database volume.
+
+## Email (staff credentials)
+
+Set these for production (see `.env.example`). Any SMTP relay works: Google Workspace, Amazon SES,
+Resend, Mailgun, Postmark.
+
+| Variable | Example | Notes |
+| --- | --- | --- |
+| `APP_BASE_URL` | `https://pass.example.org` | Sign-in link in emails; required when `SMTP_HOST` is set |
+| `SMTP_HOST` | `smtp.gmail.com` | Empty disables staff provisioning (the Staff page shows why) |
+| `SMTP_PORT` | `587` | |
+| `SMTP_SECURITY` | `starttls` | `starttls` (587), `tls` (465), or `none` (local test servers only; refused with a username) |
+| `SMTP_USERNAME` / `SMTP_PASSWORD` | | For Gmail, an app password |
+| `SMTP_FROM` | `Space Apps Colombo <no-reply@example.org>` | Must be an address the relay may send as |
+| `EVENT_NAME` | `NASA Space Apps Colombo` | Used in subject and body |
+
+The email is sent inside the account's database transaction. If it can't be sent, nothing is created
+and the superadmin sees why (HTTP 503). Temporary passwords are 12 characters, without look-alike
+characters (0/O, 1/l/I). They only work for setting a new password (any other request gets
+`403 PASSWORD_CHANGE_REQUIRED`).
+
+## CSV formats
+
+`participants.csv`: `membership_id,email,full_name,team_name,venue_name,hall_section,date_of_birth`
+(`venue_name` + `hall_section` must match a row in `venues`.)
+
+`date_of_birth` is optional, `YYYY-MM-DD` by default. For another format pass a Go layout, e.g.
+`-dob-layout 1/2/2006` for a US-locale Google Sheets export. Check the export's locale first:
+`3/4/2008` is March in one and April in the other. Blank or unreadable dates are reported and stored as
+unknown (the delegate is still imported), and a blank cell never erases a date already stored. Ages are
+calculated from the database's `CURRENT_DATE` (UTC on Supabase).
+
+`venues.csv`: `name,hall_section,latitude,longitude,description`
+
+Header names are matched case-insensitively and spaces become underscores, so a Google Sheets export with "Full Name" works.
+
+## API
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| POST | `/api/v1/auth/login` | public, 10/min/IP | Issue admin JWT |
+| GET | `/api/v1/participants/pass?id=&email=` | public, 30/min/IP | Pass data for one delegate |
+| GET | `/api/v1/config/public` | public | Maps key and Map ID for the portal |
+| GET | `/api/v1/participants/manifest` | any admin | Full confirmed directory (ETag, gzip) |
+| GET | `/api/v1/scenarios/active` | any account | Active checkpoints (only granted ones for scanners) |
+| POST | `/api/v1/scans/sync` | any admin | Upload up to 500 scans |
+| GET | `/api/v1/scans/claims?since=` | any admin | Claims made by other devices |
+| GET | `/api/v1/scenarios` | admin, superadmin | All scenarios |
+| POST | `/api/v1/scenarios` | admin, superadmin | Create scenario |
+| PATCH | `/api/v1/scenarios/{id}` | admin, superadmin | Update scenario (partial) |
+| POST | `/api/v1/devices/heartbeat` | any admin | Scanner reports its local queue counts |
+| GET | `/api/v1/admin/dashboard/stats` | admin, superadmin | Metric cards, throughput, per-scenario and fleet totals |
+| POST | `/api/v1/admin/participants/filter` | admin, superadmin | Delegate table: search, age group, claim status, venue, confirmation, paging |
+| POST | `/api/v1/admin/scenarios/toggle` | admin, superadmin | `{"scenario_id","is_active"}` |
+| POST | `/api/v1/admin/scans/manual-override` | admin, superadmin | Record a scan without a QR; rationale required, 409 if already claimed |
+| GET | `/api/v1/admin/devices/health` | admin, superadmin | Scanner phones with last reported queue |
+| GET | `/api/v1/admin/venues` | admin, superadmin | Venue list for the filter |
+| GET | `/api/v1/admin/scans/recent?limit=` | admin, superadmin | Newest scans (feed backlog) |
+| GET | `/api/v1/admin/scans/stream` | admin, superadmin | Server-sent events, one `scan` event per new scan |
+| POST | `/api/v1/auth/change-password` | signed in (also with a temporary password) | `{"current_password","new_password"}`, returns a new session |
+| GET | `/api/v1/admin/staff/list` | admin, superadmin | Accounts with role, status and granted checkpoints |
+| POST | `/api/v1/admin/staff/create` | superadmin | `{"full_name","email","role","scenario_ids"}`; emails a temporary password |
+| PATCH | `/api/v1/admin/staff/{id}` | superadmin | Any of `full_name`, `role`, `is_active`, `scenario_ids` (replaces grants) |
+| POST | `/api/v1/admin/staff/{id}/resend-credentials` | superadmin | New temporary password by email; the old password stops working |
+
+### Filter body
+
+```json
+{"search": "orion", "age_group": "UNDER_18", "scenario_id": "<uuid>", "claim_status": "UNCLAIMED",
+ "venue_id": "<uuid or UNASSIGNED>", "confirmation": "CONFIRMED", "page": 1, "page_size": 50}
+```
+
+Every field is optional. `age_group` is `UNDER_18`, `ABOVE_18` or `UNKNOWN` (no date of birth);
+`claim_status` (`CLAIMED`/`UNCLAIMED`) requires `scenario_id`. `page_size` is capped at 200.
+
+### Manual override
+
+The admin is taken from the JWT, not the request. The scan goes through the same "first scan wins" index
+as phone syncs: if the delegate already holds the claim the API returns 409 with `claimed_by` and
+`claimed_at`, and a phone that later uploads the same claim gets `DUPLICATE_REJECTED`. Override scans
+are stored with `entry_method = 'MANUAL_OVERRIDE'` and the reason in `override_reason`; the database
+rejects an override with a reason under 10 characters.
+
+### Sync result statuses
+
+| Status | Meaning | Scanner action |
+| --- | --- | --- |
+| `SUCCESS` | Recorded | Mark synced |
+| `ALREADY_SYNCED` | Same idempotency key already stored (retry after a lost response) | Mark synced |
+| `DUPLICATE_REJECTED` | Another scan claimed it first; response names who and when | Mark rejected, remember the claim |
+| `INVALID` | Bad IDs, unknown scenario, or key not bound to this admin | Stop retrying |
+| `FAILED` | Transient database error | Retry later |
+
+Idempotency keys are `{admin_id}_{participant_id}_{scenario_id}` for single-claim scenarios. Repeatable scenarios append `_{uuid}` so each scan is its own row. The server takes the admin from the JWT and rejects keys that don't match it.
+
+## Event-day operations
+
+- **Before doors open:** sign every phone in on venue Wi-Fi, pick the checkpoint, and confirm "Delegates on phone" shows the full count. Add the scanner to the home screen.
+- **Changing scenarios:** turning a scenario off hides it from scanners on their next refresh. Scans already taken while it was active still upload.
+- **Shared phones:** scans are uploaded by the volunteer who made them. If someone else signs in, the earlier volunteer's scans wait on the phone (the scanner says so) until that person signs in again.
+- **After a deploy that changes `public/`:** bump `CACHE_VERSION` in `public/sw.js`, or phones keep the old scanner until the background refresh lands.
+- **Changing the pass design:** the card background is `public/assets/pass-template.jpg`, rendered from `qr-template.pdf` with `pdftoppm -r 600 -jpeg -jpegopt quality=90 -singlefile public/assets/qr-template.pdf public/assets/pass-template`. If the boxes move, update the millimetre positions at the top of `public/js/pass-card.js`, then bump `CACHE_VERSION` in `public/sw.js`.
+- **Secrets:** keep `HMAC_SECRET_KEY` fixed for the whole event; rotating it invalidates every pass already sent.
+- **Dashboard "Not reporting" phones:** a phone that hasn't reported for 2 minutes is shown with the last queue it reported. If it still holds scans, find the volunteer and get the phone onto Wi-Fi with the scanner open.
+- **Dashboard styles:** `public/admin/dashboard.css` is compiled and committed, so the Go build needs no Node. After changing classes in `public/admin/`, rebuild it with the command at the top of `scripts/tailwind/tailwind.config.js`.
+
+## Known limits
+
+- "First scan wins" means first to **reach the server**, not first by device clock. A phone that was offline longer loses ties.
+- Every scanner holds the full manifest including signatures. A lost, unlocked phone exposes the delegate list; the token expires after `JWT_TTL`.
+- Rate limiting is in memory per API instance. For multiple replicas, rate-limit at the edge instead.
+- Rate limits key on the socket address unless `CLIENT_IP_HEADER` names the header your load balancer sets to the real client IP (`DO-Connecting-IP` on App Platform). Never point it at a header clients can set themselves.
+- The live stream is fed by one poller per API instance that reads new scans every 2 seconds. This works through every Supabase connection mode, including the transaction pooler. If a phone uploads more than 500 scans within one poll, the stream shows the newest 500. The scans are all stored; the dashboard table and counts include them.
+- The stream holds one HTTP connection per open dashboard. A proxy in front of the API must allow long-lived responses and must not buffer `text/event-stream` (the API sends `X-Accel-Buffering: no` and a keep-alive every 20 s).
+- Removing a checkpoint from a scanner while their phone is offline makes their queued scans for that checkpoint `INVALID` when the phone reconnects (shown in that phone's invalid count on the dashboard). Remove grants after the phone has synced.
+- A superadmin can't deactivate, demote or reset themselves from the Staff page, so there is always at least one superadmin.
+- Phone queue counts are self-reported by each scanner, so the dashboard can only show what a phone last reported while it had signal.
