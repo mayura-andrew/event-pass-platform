@@ -16,6 +16,7 @@ const PREVIEW_ROWS = 200;
 const REPORT_ROWS = 1000; // per table; the downloaded results have every row
 
 const state = {
+  email: null,      // { enabled, paused } from the pass email queue; null if unknown
   venues: [],
   fields: [],       // custom field definitions
   file: null,       // File chosen for upload
@@ -298,8 +299,11 @@ async function submitSingle(e) {
   btn.textContent = 'Adding…';
   try {
     const p = await api('/api/v1/admin/participants/create', { method: 'POST', body });
+    const wantEmail = $('p-send-email').checked;
     showSingleResult(p);
+    if (wantEmail && !$('p-send-email').disabled) queuePassEmail(p);
     $('single-form').reset();
+    $('p-send-email').checked = wantEmail; // reset() would re-tick a box the organizer unticked
     $('p-name').focus();
   } catch (err) {
     if (err.status === 401) return;
@@ -312,6 +316,12 @@ async function submitSingle(e) {
 }
 
 function showSingleResult(p) {
+  state.lastAdded = p;
+  emailStatus('', '');
+  $('sr-send').hidden = state.email?.enabled === false;
+  $('sr-send').disabled = false;
+  $('sr-send').textContent = '✉ Email pass';
+  $('sr-send').className = 'btn-primary';
   $('sr-id').textContent = p.membership_id;
   $('sr-name').textContent = p.full_name;
   $('sr-email').textContent = p.email;
@@ -324,9 +334,79 @@ function showSingleResult(p) {
     el('td', { class: 'td' }, p.full_name),
     el('td', { class: 'td' }, p.email),
     el('td', { class: 'td text-ink-soft' }, p.team_name || '—'),
+    el('td', { class: 'td whitespace-nowrap text-ink-soft', dataset: { emailFor: p.id } }, '—'),
   ));
   $('session-wrap').hidden = false;
   toast(`${p.full_name} added as ${p.membership_id}.`);
+}
+
+// ---- Pass email ------------------------------------------------------------------
+
+/** Reads whether email can be sent, to set up the checkbox honestly. */
+async function loadEmailState() {
+  try {
+    const s = await api('/api/v1/admin/emails/status');
+    state.email = { enabled: s.enabled, paused: s.paused };
+  } catch (err) {
+    if (err.status === 401) return;
+    state.email = null; // unknown: leave the option on; a send reports its own error
+  }
+  const box = $('p-send-email');
+  const note = $('p-send-note');
+  if (state.email && !state.email.enabled) {
+    box.checked = false;
+    box.disabled = true;
+    note.textContent = 'Email isn’t set up on this server (SMTP_HOST), so passes can’t be emailed. Share the pass link instead.';
+  } else if (state.email?.paused) {
+    note.replaceChildren('Sending is paused right now: the email waits in the queue until someone resumes it on ',
+      el('a', { href: '/admin/emails.html', class: 'font-bold text-action hover:underline' }, 'Pass emails'), '.');
+  }
+}
+
+function emailStatus(text, tone) {
+  const s = $('sr-email-status');
+  s.textContent = text;
+  s.className = `mt-1 text-sm ${tone === 'error' ? 'font-bold text-stop' : tone === 'warn' ? 'text-hold' : 'text-go'}`;
+  s.hidden = !text;
+}
+
+function setSessionEmailCell(p, text) {
+  const cell = $('session-rows').querySelector(`[data-email-for="${CSS.escape(p.id)}"]`);
+  if (cell) cell.textContent = text;
+}
+
+/** Queues the pass email (also a resend) through the pass email queue. */
+async function queuePassEmail(p) {
+  const btn = $('sr-send');
+  const current = state.lastAdded?.id === p.id;
+  if (current) {
+    btn.disabled = true;
+    btn.textContent = 'Queuing…';
+  }
+  try {
+    await api('/api/v1/admin/emails/send-single', { method: 'POST', body: { participant_id: p.id } });
+    const paused = state.email?.paused;
+    if (current) {
+      emailStatus(paused
+        ? `✉ Pass email queued for ${p.email}, but sending is paused. Resume it on Pass emails.`
+        : `✉ Pass email on its way to ${p.email} (sent within a few seconds).`, paused ? 'warn' : 'ok');
+      btn.textContent = '✉ Resend pass';
+      btn.className = 'btn-ghost'; // sent: a resend shouldn't be the obvious next click
+    }
+    setSessionEmailCell(p, paused ? 'Queued (paused)' : 'Queued');
+  } catch (err) {
+    if (err.status === 401) return;
+    const msg = err.status === 409
+      ? 'A pass email to this delegate is already waiting to be sent.'
+      : `Couldn’t queue the pass email: ${cleanMessage(err.message)}`;
+    if (current) {
+      emailStatus(msg, err.status === 409 ? 'warn' : 'error');
+      btn.textContent = '✉ Email pass';
+    }
+    setSessionEmailCell(p, err.status === 409 ? 'Queued' : 'Not sent');
+  } finally {
+    if (current) btn.disabled = false;
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -703,6 +783,7 @@ function renderReport() {
   $('rp-fields').replaceChildren(...notes.map((n) => el('span', { class: 'block' }, n)),
     r.new_fields?.length ? el('a', { href: '/admin/fields.html', class: 'font-bold text-action hover:underline' }, 'Open Fields →') : null);
   $('rp-fields').hidden = notes.length === 0;
+  $('rp-email-hint').hidden = r.created.length === 0;
   if (r.new_fields?.length) loadFields(); // the single-entry form gets the new inputs
 
   const tone = r.errors.length ? 'warn' : 'ok';
@@ -811,6 +892,8 @@ function boot() {
   buildTemplate(); // usable before venues load; rebuilt with a real venue ID after
   loadVenues();
   loadFields();
+  loadEmailState();
+  $('sr-send').addEventListener('click', () => { if (state.lastAdded) queuePassEmail(state.lastAdded); });
 }
 
 boot();

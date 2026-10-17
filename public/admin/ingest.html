@@ -20,6 +20,7 @@
       <div class="ml-auto flex items-center gap-2">
         <span class="hidden text-sm text-ink-soft sm:inline">Signed in as <b id="signed-in-as" class="text-ink"></b></span>
         <a href="/admin/fields.html" class="btn-ghost">Fields</a>
+        <a href="/admin/emails.html" class="btn-ghost">Pass emails</a>
         <a href="/admin/dashboard.html" class="btn-ghost">Dashboard</a>
         <button id="logout" class="btn-ghost" type="button">Sign out</button>
       </div>
@@ -87,6 +88,14 @@
 
           <p id="single-error" class="rounded-lg bg-stop/10 px-3 py-2 text-sm font-bold text-stop" role="alert" hidden></p>
 
+          <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-line px-3 py-2.5 text-sm has-[:checked]:border-action has-[:checked]:bg-action/5 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-70">
+            <input id="p-send-email" type="checkbox" class="mt-0.5 h-5 w-5 shrink-0 accent-[rgb(var(--action))]" checked>
+            <span>
+              <b>Email the pass to this delegate</b>
+              <span id="p-send-note" class="block text-ink-soft">Their QR pass, membership ID, team and venue, sent to the email above within a few seconds.</span>
+            </span>
+          </label>
+
           <div class="flex flex-wrap items-center justify-end gap-2">
             <span class="mr-auto text-xs text-ink-soft"><span class="text-stop">*</span> required</span>
             <button id="single-reset" type="reset" class="btn-ghost">Clear</button>
@@ -102,8 +111,10 @@
               <p class="text-sm text-ink-soft">Delegate added. Their pass is ready.</p>
               <p class="text-2xl font-bold tabular-nums" id="sr-id"></p>
               <p class="truncate"><b id="sr-name"></b> · <span id="sr-email" class="text-ink-soft"></span></p>
+              <p id="sr-email-status" class="mt-1 text-sm" role="status" hidden></p>
             </div>
             <div class="flex flex-wrap gap-2">
+              <button id="sr-send" class="btn-primary" type="button">✉ Email pass</button>
               <a id="sr-pass" class="btn-ghost" target="_blank" rel="noopener">Open pass</a>
               <button id="sr-copy" class="btn-ghost" type="button">Copy pass link</button>
             </div>
@@ -121,6 +132,7 @@
                   <th class="th" scope="col">Name</th>
                   <th class="th" scope="col">Email</th>
                   <th class="th" scope="col">Team</th>
+                  <th class="th" scope="col">Pass email</th>
                 </tr>
               </thead>
               <tbody id="session-rows" class="divide-y divide-line"></tbody>
@@ -251,6 +263,11 @@
           </div>
 
           <p id="rp-fields" class="rounded-lg border border-action/40 bg-action/5 px-3 py-2 text-sm" hidden></p>
+          <p id="rp-email-hint" class="text-sm" hidden>
+            ✉ New delegates don't get their pass automatically.
+            <a href="/admin/emails.html" class="font-bold text-action hover:underline">Email their passes on Pass emails →</a>
+            (Bulk enqueue sends to everyone who hasn't had one.)
+          </p>
 
           <div class="flex flex-wrap gap-2">
             <button id="rp-download" type="button" class="btn-ghost">↓ Download results (CSV)</button>
