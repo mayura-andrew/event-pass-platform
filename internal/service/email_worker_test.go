@@ -255,7 +255,7 @@ func TestPassQR(t *testing.T) {
 }
 
 func TestBuildMIMEInline(t *testing.T) {
-	msg, err := RenderPassEmail(testJob(), "https://pass.example.org", "Space Apps Colombo")
+	msg, err := RenderPassEmail(testJob(), "https://pass.example.org", "Space Apps Colombo", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,4 +302,38 @@ func TestBuildMIMEInline(t *testing.T) {
 
 func base64Reader(b []byte) io.Reader {
 	return base64.NewDecoder(base64.StdEncoding, bytes.NewReader(b))
+}
+
+func TestEmailLogo(t *testing.T) {
+	logo := EmailLogo([]byte("\x89PNG fake logo"))
+
+	msg, err := RenderPassEmail(testJob(), "https://pass.example.org", "Space Apps Colombo", logo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msg.Inline) != 2 || msg.Inline[1].ContentID != logoContentID {
+		t.Fatalf("inline parts %+v; want the QR then the logo", msg.Inline)
+	}
+	if !strings.Contains(msg.HTML, `src="cid:`+logoContentID+`"`) || strings.Contains(msg.HTML, ">SPACE APPS COLOMBO<") {
+		t.Error("pass email: logo not referenced, or text header still shown")
+	}
+	if _, err := buildMIME(mail.Address{Address: "no-reply@example.org"}, msg); err != nil {
+		t.Fatalf("two inline images: %v", err)
+	}
+
+	// Without a logo: text header, only the QR attached.
+	msg, _ = RenderPassEmail(testJob(), "https://pass.example.org", "Space Apps Colombo", nil)
+	if len(msg.Inline) != 1 || strings.Contains(msg.HTML, "cid:"+logoContentID) || !strings.Contains(msg.HTML, ">SPACE APPS COLOMBO<") {
+		t.Error("pass email without a logo should fall back to the text header")
+	}
+
+	// Staff credentials email.
+	_, _, html, err := RenderCredentialsEmail(CredentialsEmail{FullName: "Ada", Email: "a@b.org", TempPassword: "x", LoginURL: "https://x", EventName: "E", LogoCID: logo.LogoCID()})
+	if err != nil || !strings.Contains(html, `src="cid:`+logoContentID+`"`) {
+		t.Errorf("credentials email lacks the logo: %v", err)
+	}
+	_, _, html, _ = RenderCredentialsEmail(CredentialsEmail{FullName: "Ada", Email: "a@b.org", TempPassword: "x", LoginURL: "https://x", EventName: "E"})
+	if !strings.Contains(html, ">SPACE APPS COLOMBO<") {
+		t.Error("credentials email without a logo should fall back to the text header")
+	}
 }

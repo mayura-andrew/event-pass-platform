@@ -340,16 +340,51 @@ type CredentialsEmail struct {
 	Checkpoints  []string // scanner accounts only
 	IsReset      bool     // "resend credentials" rather than a new account
 	EventName    string
+	LogoCID      string // EmailLogo.LogoCID(); empty for the text header
 }
 
-var credentialsHTML = template.Must(template.New("credentials").Parse(`<!DOCTYPE html>
+// ---- Event logo ----------------------------------------------------------------
+
+// EmailLogo is the official event logo (white artwork, for the dark email
+// header), embedded in each message like the pass QR so no image is fetched
+// from a server. Empty means "not loaded": templates fall back to the event
+// name in text.
+type EmailLogo []byte
+
+const logoContentID = "logo@nsac"
+
+// LogoCID is what templates put in <img src="cid:...">, or "" without a logo.
+func (l EmailLogo) LogoCID() string {
+	if len(l) == 0 {
+		return ""
+	}
+	return logoContentID
+}
+
+// Inline returns the attachment that LogoCID refers to.
+func (l EmailLogo) Inline() []InlineImage {
+	if len(l) == 0 {
+		return nil
+	}
+	return []InlineImage{{
+		ContentID: logoContentID, ContentType: "image/png",
+		Filename: "nasa-space-apps-colombo.png", Data: l,
+	}}
+}
+
+// brandTemplate is the header shared by every email: the logo, or the event
+// name set in text when no logo is loaded. Its argument is the LogoCID.
+// public/assets/colombo-logo-email.png is 520x204; shown at 260 px wide.
+const brandTemplate = `{{define "brand"}}{{if .}}<img src="cid:{{.}}" width="260" height="102" alt="NASA Space Apps Colombo" style="display:block;width:260px;max-width:100%;height:auto;border:0;margin:0 0 12px;">{{else}}<div style="font-size:12px;letter-spacing:2px;color:#E8392B;font-weight:bold;">NASA</div>
+    <div style="font-size:22px;font-weight:bold;letter-spacing:.5px;">SPACE APPS COLOMBO</div>{{end}}{{end}}`
+
+var credentialsHTML = template.Must(template.Must(template.New("credentials").Parse(brandTemplate)).Parse(`<!DOCTYPE html>
 <html lang="en"><body style="margin:0;padding:0;background:#EEF1F5;font-family:Arial,Helvetica,sans-serif;color:#13233D;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#EEF1F5;padding:24px 12px;">
 <tr><td align="center">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#FFFFFF;border-radius:14px;overflow:hidden;">
   <tr><td style="background:#0D173E;padding:22px 26px;color:#FFFFFF;">
-    <div style="font-size:12px;letter-spacing:2px;color:#E8392B;font-weight:bold;">NASA</div>
-    <div style="font-size:22px;font-weight:bold;letter-spacing:.5px;">SPACE APPS COLOMBO</div>
+    {{template "brand" .LogoCID}}
     <div style="font-size:14px;opacity:.85;margin-top:4px;">{{if .IsReset}}Your sign-in details were reset{{else}}Your staff account is ready{{end}}</div>
   </td></tr>
   <tr><td style="padding:24px 26px 8px;font-size:15px;line-height:1.55;">

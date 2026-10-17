@@ -104,7 +104,7 @@ func TestNormalizeGrants(t *testing.T) {
 type nopStaffStore struct{ StaffStore }
 
 func TestUpdateRejectsSelfLockout(t *testing.T) {
-	s := NewStaffService(nopStaffStore{}, DisabledMailer(), "https://x.org", "Test")
+	s := NewStaffService(nopStaffStore{}, DisabledMailer(), "https://x.org", "Test", nil)
 	me := "6321491f-9e31-45b6-80b9-970508829a6d"
 	off, admin := false, domain.RoleAdmin
 	for name, req := range map[string]domain.StaffUpdateRequest{

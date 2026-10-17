@@ -10,6 +10,7 @@ import (
 	"net/mail"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -59,6 +60,8 @@ func run() error {
 		return err
 	}
 
+	logo := loadEmailLogo(cfg.PublicDir)
+
 	// Pass email queue. The worker only runs when SMTP is configured; the
 	// status endpoint works either way.
 	emailCfg := service.EmailWorkerConfig{
@@ -66,6 +69,7 @@ func run() error {
 		DailyLimit: cfg.EmailDailyLimit,
 		BaseURL:    cfg.AppBaseURL,
 		EventName:  cfg.EventName,
+		Logo:       logo,
 	}
 	var emailWorker *service.EmailWorker
 	if cfg.SMTPHost != "" {
@@ -85,7 +89,7 @@ func run() error {
 		Fields:       service.NewFieldService(fieldRepo),
 		Emails:       service.NewEmailQueueService(emailRepo, emailWorker, emailCfg),
 		Feed:         feed,
-		Staff:        service.NewStaffService(staffRepo, mailer, cfg.AppBaseURL, cfg.EventName),
+		Staff:        service.NewStaffService(staffRepo, mailer, cfg.AppBaseURL, cfg.EventName, logo),
 		Ingest:       newIngest(ingestRepo, cfg.HMACSecretKey),
 		Accounts:     adminRepo,
 
@@ -160,6 +164,21 @@ func newIngest(repo *postgres.IngestRepo, key []byte) *service.IngestService {
 		return nil
 	}
 	return service.NewIngestService(repo, key)
+}
+
+// emailLogoFile is the white event logo sized for email headers, made from
+// public/assets/Colombo LW.png (README: "Changing the logo").
+const emailLogoFile = "assets/colombo-logo-email.png"
+
+// loadEmailLogo reads the email header logo once. Without it emails still go
+// out, with the event name in text, so a missing file is only a warning.
+func loadEmailLogo(publicDir string) service.EmailLogo {
+	b, err := os.ReadFile(filepath.Join(publicDir, emailLogoFile))
+	if err != nil {
+		slog.Warn("email logo not found: emails use a text header", "file", emailLogoFile, "err", err)
+		return nil
+	}
+	return b
 }
 
 // newMailer builds the SMTP mailer, or a disabled one when SMTP_HOST is unset

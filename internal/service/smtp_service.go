@@ -58,16 +58,16 @@ type passEmailData struct {
 	PassURL      string
 	EventName    string
 	QRContentID  string
+	LogoCID      string
 }
 
-var passHTML = template.Must(template.New("pass").Parse(`<!DOCTYPE html>
+var passHTML = template.Must(template.Must(template.New("pass").Parse(brandTemplate)).Parse(`<!DOCTYPE html>
 <html lang="en"><body style="margin:0;padding:0;background:#EEF1F5;font-family:Arial,Helvetica,sans-serif;color:#13233D;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#EEF1F5;padding:24px 12px;">
 <tr><td align="center">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#FFFFFF;border-radius:14px;overflow:hidden;">
   <tr><td style="background:#0D173E;padding:22px 26px;color:#FFFFFF;">
-    <div style="font-size:12px;letter-spacing:2px;color:#E8392B;font-weight:bold;">NASA</div>
-    <div style="font-size:22px;font-weight:bold;letter-spacing:.5px;">SPACE APPS COLOMBO</div>
+    {{template "brand" .LogoCID}}
     <div style="font-size:14px;opacity:.85;margin-top:4px;">Your delegate pass is ready</div>
   </td></tr>
   <tr><td style="padding:24px 26px 6px;font-size:15px;line-height:1.55;">
@@ -102,8 +102,8 @@ var passHTML = template.Must(template.New("pass").Parse(`<!DOCTYPE html>
 </body></html>`))
 
 // RenderPassEmail builds the pass confirmation email for a claimed job,
-// with the QR embedded as an inline image.
-func RenderPassEmail(j *domain.EmailJob, baseURL, eventName string) (Message, error) {
+// with the QR (and the event logo, when loaded) embedded as inline images.
+func RenderPassEmail(j *domain.EmailJob, baseURL, eventName string, logo EmailLogo) (Message, error) {
 	to, err := mail.ParseAddress(j.RecipientEmail)
 	if err != nil {
 		return Message{}, fmt.Errorf("recipient %q: %w", j.RecipientEmail, err)
@@ -128,6 +128,7 @@ func RenderPassEmail(j *domain.EmailJob, baseURL, eventName string) (Message, er
 		PassURL:     PassURL(baseURL, j.MembershipID, j.Email),
 		EventName:   eventName,
 		QRContentID: passQRContentID,
+		LogoCID:     logo.LogoCID(),
 	}
 	if j.VenueName != "" {
 		d.Venue = j.VenueName
@@ -160,12 +161,12 @@ func RenderPassEmail(j *domain.EmailJob, baseURL, eventName string) (Message, er
 		Subject: fmt.Sprintf("Your %s delegate pass (%s)", eventName, d.MembershipID),
 		Text:    t.String(),
 		HTML:    h.String(),
-		Inline: []InlineImage{{
+		Inline: append([]InlineImage{{
 			ContentID:   passQRContentID,
 			ContentType: "image/png",
 			Filename:    "pass-" + safeFilename(d.MembershipID) + ".png",
 			Data:        png,
-		}},
+		}}, logo.Inline()...),
 	}, nil
 }
 

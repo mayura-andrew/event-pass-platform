@@ -298,6 +298,12 @@ Idempotency keys are `{admin_id}_{participant_id}_{scenario_id}` for single-clai
 - **Shared phones:** scans are uploaded by the volunteer who made them. If someone else signs in, the earlier volunteer's scans wait on the phone (the scanner says so) until that person signs in again.
 - **After a deploy that changes `public/`:** bump `CACHE_VERSION` in `public/sw.js`, or phones keep the old scanner until the background refresh lands.
 - **Changing the pass design:** the card background is `public/assets/pass-template.jpg`, rendered from `qr-template.pdf` with `pdftoppm -r 600 -jpeg -jpegopt quality=90 -singlefile public/assets/qr-template.pdf public/assets/pass-template`. If the boxes move, update the millimetre positions at the top of `public/js/pass-card.js`, then bump `CACHE_VERSION` in `public/sw.js`.
+- **Changing the logo:** the official artwork is `public/assets/Colombo L.png` (black, for light
+  backgrounds) and `Colombo LW.png` (white, for dark). The pass page and emails use smaller copies made
+  from them: `colombo-logo.png` and `colombo-logo-white.png` (960 px wide) and `colombo-logo-email.png`
+  (520 px, white, embedded in every email). After replacing the artwork, regenerate the copies (crop to
+  the artwork, resize, reduce to a 48-colour palette; Pillow does it in a few lines), bump
+  `CACHE_VERSION` in `public/sw.js`, and restart the API so emails pick up the new file.
 - **Secrets:** keep `HMAC_SECRET_KEY` fixed for the whole event, and the same for the API and the seed script; rotating it invalidates every pass already sent.
 - **Dashboard "Not reporting" phones:** a phone that hasn't reported for 2 minutes is shown with the last queue it reported. If it still holds scans, find the volunteer and get the phone onto Wi-Fi with the scanner open.
 - **Dashboard styles:** `public/admin/dashboard.css` is compiled and committed, so the Go build needs no Node. After changing classes in `public/admin/`, rebuild it with the command at the top of `scripts/tailwind/tailwind.config.js`.

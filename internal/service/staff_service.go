@@ -33,14 +33,16 @@ type StaffService struct {
 	mailer    Mailer
 	baseURL   string // e.g. https://pass.spaceappscolombo.org, no trailing slash
 	eventName string
+	logo      EmailLogo
 }
 
-func NewStaffService(store StaffStore, mailer Mailer, baseURL, eventName string) *StaffService {
+func NewStaffService(store StaffStore, mailer Mailer, baseURL, eventName string, logo EmailLogo) *StaffService {
 	return &StaffService{
 		store:     store,
 		mailer:    mailer,
 		baseURL:   strings.TrimRight(baseURL, "/"),
 		eventName: eventName,
+		logo:      logo,
 	}
 }
 
@@ -196,6 +198,7 @@ func (s *StaffService) sendCredentials(ctx context.Context, m *domain.StaffMembe
 		Checkpoints:  checkpoints,
 		IsReset:      reset,
 		EventName:    s.eventName,
+		LogoCID:      s.logo.LogoCID(),
 	})
 	if err != nil {
 		return err
@@ -205,6 +208,7 @@ func (s *StaffService) sendCredentials(ctx context.Context, m *domain.StaffMembe
 		Subject: subject,
 		Text:    text,
 		HTML:    html,
+		Inline:  s.logo.Inline(),
 	})
 	if err != nil {
 		// The SMTP error can contain server details; log it, return a clean one.

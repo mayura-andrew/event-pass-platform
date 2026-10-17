@@ -2,7 +2,7 @@
 //
 // Bump CACHE_VERSION on every deploy that changes a file below, otherwise
 // devices keep the previous shell until it is revalidated in the background.
-const CACHE_VERSION = 'nsac-shell-v6';
+const CACHE_VERSION = 'nsac-shell-v7';
 const FONT_CACHE = 'nsac-fonts-v1';
 
 const SHELL = [
@@ -14,6 +14,8 @@ const SHELL = [
   '/js/pass-card.js',
   '/assets/pass-template.jpg',
   '/assets/colombo-mark.png',
+  '/assets/colombo-logo.png',       // pass page logo, light theme
+  '/assets/colombo-logo-white.png', // pass page logo, dark theme and pass band
   '/vendor/dexie-4.0.11.mjs',
   '/vendor/html5-qrcode-2.3.8.min.js',
   '/vendor/qrcode-1.0.0.min.js',

@@ -43,6 +43,7 @@ type EmailWorkerConfig struct {
 
 	BaseURL   string // for pass links
 	EventName string
+	Logo      EmailLogo // header logo; empty for the text header
 }
 
 // DefaultEmailWorkerConfig fills in the zero values.
@@ -179,7 +180,7 @@ func (w *EmailWorker) Tick(ctx context.Context) bool {
 		}
 		return false
 	}
-	msg, err := RenderPassEmail(job, w.cfg.BaseURL, w.cfg.EventName)
+	msg, err := RenderPassEmail(job, w.cfg.BaseURL, w.cfg.EventName, w.cfg.Logo)
 	if err != nil {
 		w.recordFailure(done, job, err.Error(), true)
 		return false
