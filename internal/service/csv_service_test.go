@@ -22,6 +22,7 @@ type fakeIngestStore struct {
 	inserted   []domain.NewParticipant
 	insertCall int
 	fields     []domain.FieldDefinition
+	updateRows []domain.NewParticipant
 	newFields  []domain.NewField
 }
 
@@ -41,6 +42,30 @@ func (f *fakeIngestStore) ExistingEmails(_ context.Context, emails []string) (ma
 
 func (f *fakeIngestStore) VenueIDs(context.Context) (map[string]bool, error) {
 	return map[string]bool{testVenue: true}, nil
+}
+
+// BulkUpdateByEmail reports every non-blank value as a change; the real merge
+// rules are tested on mergeUpload and against PostgreSQL.
+func (f *fakeIngestStore) BulkUpdateByEmail(_ context.Context, rows []domain.NewParticipant, newFields []domain.NewField) ([]domain.UpdatedParticipant, []domain.NewParticipant, []domain.NewParticipant, error) {
+	f.newFields = append(f.newFields, newFields...)
+	f.updateRows = append(f.updateRows, rows...)
+	var updated []domain.UpdatedParticipant
+	var unchanged []domain.NewParticipant
+	for _, p := range rows {
+		var changed []string
+		if p.FullName != "" {
+			changed = append(changed, "full_name")
+		}
+		for k := range p.CustomAttributes {
+			changed = append(changed, k)
+		}
+		if len(changed) == 0 {
+			unchanged = append(unchanged, p)
+			continue
+		}
+		updated = append(updated, domain.UpdatedParticipant{Line: p.Line, Email: p.Email, MembershipID: f.registered[p.Email], Changed: changed})
+	}
+	return updated, unchanged, nil, nil
 }
 
 func (f *fakeIngestStore) FieldDefinitions(context.Context) ([]domain.FieldDefinition, error) {
@@ -109,7 +134,7 @@ func TestImportCSV(t *testing.T) {
 		"\"Multi\nLine\",multi@example.org,\"Team, with comma\",,\r\n" +
 		"Short Row,short@example.org\r\n"
 
-	res, err := svc.ImportCSV(context.Background(), "actor", strings.NewReader(csv))
+	res, err := svc.ImportCSV(context.Background(), "actor", strings.NewReader(csv), domain.ImportOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +212,7 @@ func TestImportCSVRaceDuplicate(t *testing.T) {
 	store := newFakeIngestStore()
 	store.raceEmails["late@example.org"] = true
 	res, err := newTestIngest(store).ImportCSV(context.Background(), "actor",
-		strings.NewReader("full_name,email\nA,a@example.org\nLate,late@example.org\n"))
+		strings.NewReader("full_name,email\nA,a@example.org\nLate,late@example.org\n"), domain.ImportOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +234,7 @@ func TestImportCSVRejectsWholeFile(t *testing.T) {
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
 			store := newFakeIngestStore()
-			_, err := newTestIngest(store).ImportCSV(context.Background(), "actor", strings.NewReader(body))
+			_, err := newTestIngest(store).ImportCSV(context.Background(), "actor", strings.NewReader(body), domain.ImportOptions{})
 			if !errors.Is(err, domain.ErrValidation) {
 				t.Fatalf("err = %v, want a validation error", err)
 			}

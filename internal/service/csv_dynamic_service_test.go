@@ -99,7 +99,7 @@ func TestImportCSVCustomColumns(t *testing.T) {
 		"Kwame,k@example.org,Halal,two,,,,,\n" + // laptops isn't a number
 		",,,,,,,,\n"
 
-	res, err := svc.ImportCSV(context.Background(), "actor", strings.NewReader(csv))
+	res, err := svc.ImportCSV(context.Background(), "actor", strings.NewReader(csv), domain.ImportOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +152,7 @@ func TestImportCSVHeaderClashes(t *testing.T) {
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
-			_, err := newTestIngest(newFakeIngestStore()).ImportCSV(context.Background(), "a", strings.NewReader(body))
+			_, err := newTestIngest(newFakeIngestStore()).ImportCSV(context.Background(), "a", strings.NewReader(body), domain.ImportOptions{})
 			if !errors.Is(err, domain.ErrValidation) {
 				t.Fatalf("err = %v, want validation error", err)
 			}
@@ -165,7 +165,7 @@ func TestImportCSVHeaderClashes(t *testing.T) {
 			store.fields = append(store.fields, domain.FieldDefinition{Key: "f" + strings.Repeat("x", i+1), DataType: "text"})
 		}
 		_, err := newTestIngest(store).ImportCSV(context.Background(), "a",
-			strings.NewReader("full_name,email,new_one,new_two\nA,a@example.org,1,2\n"))
+			strings.NewReader("full_name,email,new_one,new_two\nA,a@example.org,1,2\n"), domain.ImportOptions{})
 		if !errors.Is(err, domain.ErrValidation) || !strings.Contains(err.Error(), "at most") {
 			t.Fatalf("err = %v", err)
 		}
@@ -258,4 +258,70 @@ func TestFieldServiceCreateValidation(t *testing.T) {
 			t.Errorf("Create(%+v) err = %v, want validation error", req, err)
 		}
 	}
+}
+
+func TestImportCSVUpdateExisting(t *testing.T) {
+	newStore := func() *fakeIngestStore {
+		s := newFakeIngestStore()
+		s.registered["ada@example.org"] = "NSAC-001000"
+		s.registered["lin@example.org"] = "NSAC-001001"
+		return s
+	}
+	ctx := context.Background()
+	body := "email,full_name,T-Shirt Size\n" +
+		"ada@example.org,,M\n" + // registered, name blank: update the shirt only
+		"lin@example.org,,\n" + // registered, nothing to change
+		"new@example.org,,L\n" + // new delegate without a name: error
+		"kwame@example.org,Kwame,XL\n" + // new delegate: created
+		"ADA@example.org,,S\n" // repeats line 2
+
+	t.Run("update mode", func(t *testing.T) {
+		store := newStore()
+		res, err := newTestIngest(store).ImportCSV(ctx, "a", strings.NewReader(body), domain.ImportOptions{UpdateExisting: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res.Updated) != 1 || res.Updated[0].Line != 2 || res.Updated[0].MembershipID != "NSAC-001000" {
+			t.Errorf("updated = %+v", res.Updated)
+		}
+		if len(res.Unchanged) != 1 || res.Unchanged[0].Line != 3 {
+			t.Errorf("unchanged = %+v", res.Unchanged)
+		}
+		if len(res.Errors) != 1 || res.Errors[0].Line != 4 || !strings.Contains(res.Errors[0].Message, "full name is required for a new delegate") {
+			t.Errorf("errors = %+v", res.Errors)
+		}
+		if len(res.Created) != 1 || res.Created[0].Email != "kwame@example.org" {
+			t.Errorf("created = %+v", res.Created)
+		}
+		if len(res.Duplicates) != 1 || res.Duplicates[0].Line != 6 {
+			t.Errorf("duplicates = %+v", res.Duplicates)
+		}
+		if n := len(res.Created) + len(res.Updated) + len(res.Unchanged) + len(res.Duplicates) + len(res.Errors); n != res.TotalRows {
+			t.Errorf("%d rows accounted for, want %d", n, res.TotalRows)
+		}
+		// tshirt_size has values in both an update and a new row: registered once.
+		if strings.Join(res.NewFields, ",") != "tshirt_size" {
+			t.Errorf("new fields = %v", res.NewFields)
+		}
+	})
+
+	t.Run("default mode refuses a file without names", func(t *testing.T) {
+		_, err := newTestIngest(newStore()).ImportCSV(ctx, "a",
+			strings.NewReader("email,tshirt_size\nada@example.org,M\n"), domain.ImportOptions{})
+		if !errors.Is(err, domain.ErrValidation) || !strings.Contains(err.Error(), "full_name") {
+			t.Fatalf("err = %v", err)
+		}
+	})
+
+	t.Run("default mode still skips registered emails", func(t *testing.T) {
+		store := newStore()
+		res, err := newTestIngest(store).ImportCSV(ctx, "a",
+			strings.NewReader("full_name,email,tshirt_size\nAda,ada@example.org,M\n"), domain.ImportOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res.Duplicates) != 1 || len(store.updateRows) != 0 {
+			t.Fatalf("duplicates %+v, update rows %d", res.Duplicates, len(store.updateRows))
+		}
+	})
 }

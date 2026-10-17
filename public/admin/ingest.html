@@ -170,6 +170,18 @@
           </div>
         </details>
 
+        <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-line px-3 py-2.5 text-sm has-[:checked]:border-action has-[:checked]:bg-action/5">
+          <input id="update-existing" type="checkbox" class="mt-0.5 h-5 w-5 shrink-0 accent-[rgb(var(--action))]">
+          <span>
+            <b>Also update delegates who are already registered</b>
+            <span class="block text-ink-soft">
+              Matched by email. Filled cells replace what's stored, blank cells keep it, so a file of just
+              <code class="rounded bg-paper px-1">email,tshirt_size</code> fills in T-shirt sizes for everyone.
+              Membership IDs and passes never change. Without this, registered emails are skipped.
+            </span>
+          </span>
+        </label>
+
         <!-- Step 1: choose a file -->
         <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-describedby="dropzone-hint">
           <input id="csv-input" type="file" accept=".csv,text/csv" class="sr-only" tabindex="-1">
@@ -215,11 +227,16 @@
 
         <!-- Step 4: report -->
         <div id="report" class="space-y-4" hidden tabindex="-1">
-          <div class="grid gap-3 sm:grid-cols-3">
+          <div id="rp-tiles" class="grid gap-3 sm:grid-cols-3">
             <article class="card border-go/50 p-4">
               <h3 class="label">Added</h3>
               <p class="text-3xl font-bold tabular-nums text-go" id="rp-created">0</p>
               <p class="mt-1 text-sm text-ink-soft">New delegates with passes</p>
+            </article>
+            <article id="rp-updated-tile" class="card border-action/50 p-4" hidden>
+              <h3 class="label">Updated</h3>
+              <p class="text-3xl font-bold tabular-nums text-action" id="rp-updated">0</p>
+              <p class="mt-1 text-sm text-ink-soft" id="rp-unchanged">Registered delegates changed</p>
             </article>
             <article class="card border-hold/50 p-4">
               <h3 class="label">Duplicates skipped</h3>
@@ -248,6 +265,19 @@
                   <th class="th" scope="col">Line</th><th class="th" scope="col">Email</th><th class="th" scope="col">Problem</th>
                 </tr></thead>
                 <tbody id="rp-error-rows" class="divide-y divide-line"></tbody>
+              </table>
+            </div>
+          </details>
+
+          <details id="rp-updated-box" class="rounded-lg border border-action/50">
+            <summary class="cursor-pointer px-3 py-2 text-sm font-bold">Delegates updated</summary>
+            <div class="max-h-[360px] overflow-auto border-t border-line">
+              <table class="w-full min-w-[640px] text-sm">
+                <thead class="sticky top-0 bg-panel"><tr>
+                  <th class="th" scope="col">Line</th><th class="th" scope="col">Membership ID</th>
+                  <th class="th" scope="col">Email</th><th class="th" scope="col">Changed</th>
+                </tr></thead>
+                <tbody id="rp-updated-rows" class="divide-y divide-line"></tbody>
               </table>
             </div>
           </details>

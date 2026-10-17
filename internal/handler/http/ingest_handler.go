@@ -40,6 +40,7 @@ func (h *Handler) createParticipant(w http.ResponseWriter, r *http.Request) {
 		writeDomainError(w, r, err)
 		return
 	}
+	h.manifests.invalidate()
 	writeJSON(w, http.StatusCreated, p)
 }
 
@@ -47,8 +48,10 @@ func (h *Handler) createParticipant(w http.ResponseWriter, r *http.Request) {
 //
 // Body: multipart/form-data with the file in the "file" field, or the CSV
 // itself as text/csv. The file is parsed as it streams in, never written to
-// disk. Returns 200 with the import report even when some rows failed; 4xx
-// means the file as a whole was rejected and nothing was added.
+// disk. ?update_existing=true updates delegates already registered (matched
+// by email) instead of skipping them. Returns 200 with the import report even
+// when some rows failed; 4xx means the file as a whole was rejected and
+// nothing was added.
 func (h *Handler) uploadParticipantsCSV(w http.ResponseWriter, r *http.Request) {
 	if h.Ingest == nil {
 		ingestOff(w)
@@ -63,7 +66,8 @@ func (h *Handler) uploadParticipantsCSV(w http.ResponseWriter, r *http.Request) 
 		writeError(w, status, msg)
 		return
 	}
-	res, err := h.Ingest.ImportCSV(r.Context(), claimsFrom(r.Context()).Subject, src)
+	opts := domain.ImportOptions{UpdateExisting: r.URL.Query().Get("update_existing") == "true"}
+	res, err := h.Ingest.ImportCSV(r.Context(), claimsFrom(r.Context()).Subject, src, opts)
 	var tooBig *http.MaxBytesError
 	if errors.As(err, &tooBig) {
 		writeError(w, http.StatusRequestEntityTooLarge,
@@ -73,6 +77,9 @@ func (h *Handler) uploadParticipantsCSV(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		writeDomainError(w, r, err)
 		return
+	}
+	if len(res.Created) > 0 || len(res.Updated) > 0 {
+		h.manifests.invalidate() // scanners see the changes on their next refresh
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, res)

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -20,6 +21,10 @@ type IngestStore interface {
 	ExistingEmails(ctx context.Context, emails []string) (map[string]string, error)
 	VenueIDs(ctx context.Context) (map[string]bool, error)
 	FieldDefinitions(ctx context.Context) ([]domain.FieldDefinition, error)
+	// BulkUpdateByEmail applies update-mode rows to registered delegates
+	// (registering newFields first) and sorts the rows into updated,
+	// unchanged, and missing (email not registered).
+	BulkUpdateByEmail(ctx context.Context, rows []domain.NewParticipant, newFields []domain.NewField) ([]domain.UpdatedParticipant, []domain.NewParticipant, []domain.NewParticipant, error)
 	// BulkInsertWithAutoID also registers newFields (custom fields first seen
 	// in this upload) in the same transaction.
 	BulkInsertWithAutoID(ctx context.Context, rows []domain.NewParticipant, newFields []domain.NewField, sign func(membershipID, email string) string) ([]domain.CreatedParticipant, []domain.NewParticipant, error)
@@ -67,7 +72,7 @@ func (s *IngestService) Create(ctx context.Context, actorID string, req domain.P
 	if err != nil {
 		return nil, err
 	}
-	p, err := s.validate(req, venues)
+	p, err := s.validate(req, venues, false)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", domain.ErrValidation, err)
 	}
@@ -113,9 +118,15 @@ func (s *IngestService) Create(ctx context.Context, actorID string, req domain.P
 // transaction (as text fields, hidden from scanners and filters until an
 // organizer turns them on).
 //
+// With opts.UpdateExisting, rows for registered emails update those delegates
+// instead (non-blank cells overwrite, blank cells keep the stored value; email
+// and membership ID never change). New delegates are added as usual.
+// Additions and updates commit separately; both are idempotent, so after a
+// failure uploading the same file again finishes the job.
+//
 // A file that can't be read as a whole (no header, broken quoting, too many
 // rows) is a validation error and nothing is inserted.
-func (s *IngestService) ImportCSV(ctx context.Context, actorID string, r io.Reader) (*domain.ImportResult, error) {
+func (s *IngestService) ImportCSV(ctx context.Context, actorID string, r io.Reader, opts domain.ImportOptions) (*domain.ImportResult, error) {
 	venues, err := s.store.VenueIDs(ctx)
 	if err != nil {
 		return nil, err
@@ -136,13 +147,15 @@ func (s *IngestService) ImportCSV(ctx context.Context, actorID string, r io.Read
 	if err != nil {
 		return nil, csvError(err)
 	}
-	plan, err := planColumns(header, defs)
+	plan, err := planColumns(header, defs, opts.UpdateExisting)
 	if err != nil {
 		return nil, err
 	}
 
 	res := &domain.ImportResult{
 		Created:        []domain.CreatedParticipant{},
+		Updated:        []domain.UpdatedParticipant{},
+		Unchanged:      []domain.ImportIssue{},
 		Duplicates:     []domain.ImportIssue{},
 		Errors:         []domain.ImportIssue{},
 		CustomFields:   []string{},
@@ -187,7 +200,9 @@ func (s *IngestService) ImportCSV(ctx context.Context, actorID string, r io.Read
 				domain.ErrValidation, domain.MaxImportRows)
 		}
 
-		p, err := s.validate(req, venues)
+		// In update mode a row may leave the name blank; that's checked
+		// again below for emails that turn out to be new.
+		p, err := s.validate(req, venues, opts.UpdateExisting)
 		if err == nil {
 			err = customErr
 		}
@@ -218,24 +233,33 @@ func (s *IngestService) ImportCSV(ctx context.Context, actorID string, r io.Read
 		if err != nil {
 			return nil, err
 		}
-		fresh := valid[:0]
+		var fresh, toUpdate []domain.NewParticipant
 		for _, p := range valid {
-			if id, ok := existing[p.Email]; ok {
+			id, registered := existing[p.Email]
+			switch {
+			case registered && opts.UpdateExisting:
+				toUpdate = append(toUpdate, p)
+			case registered:
 				res.Duplicates = append(res.Duplicates, domain.ImportIssue{
 					Line: p.Line, Email: p.Email, Message: "already registered as " + id,
 				})
-				continue
+			case p.FullName == "":
+				res.Errors = append(res.Errors, domain.ImportIssue{
+					Line: p.Line, Email: p.Email, Message: "full name is required for a new delegate",
+				})
+			default:
+				fresh = append(fresh, p)
 			}
-			fresh = append(fresh, p)
 		}
 
-		newFields := plan.fieldsToRegister(fresh)
+		newFields := plan.fieldsToRegister(append(append([]domain.NewParticipant{}, fresh...), toUpdate...))
+		for _, f := range newFields {
+			res.NewFields = append(res.NewFields, f.Key)
+		}
+
 		created, skipped, err := s.store.BulkInsertWithAutoID(ctx, fresh, newFields, s.sign)
 		if err != nil {
 			return nil, err
-		}
-		for _, f := range newFields {
-			res.NewFields = append(res.NewFields, f.Key)
 		}
 		res.Created = append(res.Created, created...)
 		for _, p := range skipped {
@@ -243,12 +267,37 @@ func (s *IngestService) ImportCSV(ctx context.Context, actorID string, r io.Read
 				Line: p.Line, Email: p.Email, Message: "registered by another organizer during this import",
 			})
 		}
+
+		if len(toUpdate) > 0 {
+			updated, unchanged, missing, err := s.store.BulkUpdateByEmail(ctx, toUpdate, newFields)
+			if err != nil {
+				return nil, err
+			}
+			res.Updated = append(res.Updated, updated...)
+			for _, p := range unchanged {
+				res.Unchanged = append(res.Unchanged, domain.ImportIssue{
+					Line: p.Line, Email: p.Email, Message: "already up to date",
+				})
+			}
+			for _, p := range missing {
+				res.Errors = append(res.Errors, domain.ImportIssue{
+					Line: p.Line, Email: p.Email, Message: "this delegate disappeared during the import; upload the file again",
+				})
+			}
+		}
+		sortIssues(res.Errors)
 	}
 
-	slog.Info("participants imported", "actor", actorID, "rows", res.TotalRows,
-		"created", len(res.Created), "duplicates", len(res.Duplicates), "errors", len(res.Errors),
-		"new_fields", res.NewFields)
+	slog.Info("participants imported", "actor", actorID, "rows", res.TotalRows, "update_existing", opts.UpdateExisting,
+		"created", len(res.Created), "updated", len(res.Updated), "unchanged", len(res.Unchanged),
+		"duplicates", len(res.Duplicates), "errors", len(res.Errors), "new_fields", res.NewFields)
 	return res, nil
+}
+
+// sortIssues keeps the error log in file order: rows found invalid while
+// reading and rows refused later (no name for a new delegate) interleave.
+func sortIssues(list []domain.ImportIssue) {
+	sort.SliceStable(list, func(i, j int) bool { return list[i].Line < list[j].Line })
 }
 
 func csvError(err error) error {
@@ -267,11 +316,14 @@ func blankRow(r domain.ParticipantCreateRequest) bool {
 
 // validate normalizes one delegate. Errors are plain sentences for the row
 // error log; callers wrap them in ErrValidation where needed.
-func (s *IngestService) validate(req domain.ParticipantCreateRequest, venues map[string]bool) (domain.NewParticipant, error) {
+// nameOptional allows a blank name (update mode, where blank keeps the
+// stored name); the caller then requires one for new delegates.
+func (s *IngestService) validate(req domain.ParticipantCreateRequest, venues map[string]bool, nameOptional bool) (domain.NewParticipant, error) {
 	var p domain.NewParticipant
 
 	p.FullName = strings.Join(strings.Fields(req.FullName), " ")
 	switch {
+	case p.FullName == "" && nameOptional:
 	case p.FullName == "":
 		return p, errors.New("full name is required")
 	case utf8.RuneCountInString(p.FullName) > domain.MaxParticipantNameLen:

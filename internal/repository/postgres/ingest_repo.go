@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -270,4 +271,165 @@ func wrapInsertErr(err error) error {
 		return fmt.Errorf("%w: a delegate has too much data in extra columns (16 KB at most); shorten or remove some columns", domain.ErrValidation)
 	}
 	return fmt.Errorf("insert participants: %w", err)
+}
+
+// ---- Update mode -----------------------------------------------------------------
+
+// storedParticipant is the part of a delegate an upload can change.
+type storedParticipant struct {
+	ID, MembershipID, Email string
+	FullName, TeamName      string
+	VenueID, DateOfBirth    string // "" when unset
+	Custom                  map[string]any
+}
+
+// mergeUpload applies one upload row to a stored delegate: non-blank values
+// overwrite, blank ones keep what is stored, custom fields are merged key by
+// key. It returns the merged delegate and the names of what changed (core
+// column names, then custom field keys in sorted order); none means the row
+// adds nothing.
+func mergeUpload(old storedParticipant, p domain.NewParticipant) (storedParticipant, []string) {
+	m := old
+	var changed []string
+	set := func(name string, dst *string, v string) {
+		if v != "" && v != *dst {
+			*dst = v
+			changed = append(changed, name)
+		}
+	}
+	set("full_name", &m.FullName, p.FullName)
+	set("team_name", &m.TeamName, p.TeamName)
+	set("date_of_birth", &m.DateOfBirth, p.DateOfBirth)
+	set("venue_id", &m.VenueID, p.VenueID)
+
+	keys := make([]string, 0, len(p.CustomAttributes))
+	for k := range p.CustomAttributes {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	copied := false // m.Custom still shares old's map until the first write
+	for _, k := range keys {
+		v := p.CustomAttributes[k]
+		if cur, ok := old.Custom[k]; ok && reflect.DeepEqual(cur, v) {
+			continue
+		}
+		if !copied {
+			cp := make(map[string]any, len(old.Custom)+len(keys))
+			for ok, ov := range old.Custom {
+				cp[ok] = ov
+			}
+			m.Custom, copied = cp, true
+		}
+		m.Custom[k] = v
+		changed = append(changed, k)
+	}
+	return m, changed
+}
+
+// BulkUpdateByEmail applies update-mode rows to the delegates registered with
+// their emails, in one transaction; newFields are registered in it first.
+// Email and membership ID are never changed, so QR signatures stay valid.
+//
+// Returns the delegates that changed, the rows that changed nothing, and the
+// rows whose email isn't registered (any longer). Each list keeps row order.
+func (r *IngestRepo) BulkUpdateByEmail(ctx context.Context, rows []domain.NewParticipant, newFields []domain.NewField) (updated []domain.UpdatedParticipant, unchanged, missing []domain.NewParticipant, err error) {
+	if len(rows) == 0 {
+		return nil, nil, nil, nil
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("begin update tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	if err := registerFields(ctx, tx, newFields); err != nil {
+		return nil, nil, nil, err
+	}
+
+	emails := make([]string, len(rows))
+	for i, p := range rows {
+		emails[i] = p.Email
+	}
+	// Locked in email order, like the insert path, so two overlapping
+	// uploads queue instead of deadlocking.
+	res, err := tx.QueryContext(ctx, `
+		SELECT id, membership_id, email, full_name, COALESCE(team_name, ''),
+		       COALESCE(assigned_venue_id::text, ''), COALESCE(to_char(date_of_birth, 'YYYY-MM-DD'), ''),
+		       custom_attributes
+		FROM participants
+		WHERE email = ANY($1::text[])
+		ORDER BY email
+		FOR UPDATE`, emails)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("lock delegates: %w", err)
+	}
+	stored := make(map[string]storedParticipant, len(rows))
+	for res.Next() {
+		var s storedParticipant
+		var custom []byte
+		if err := res.Scan(&s.ID, &s.MembershipID, &s.Email, &s.FullName, &s.TeamName,
+			&s.VenueID, &s.DateOfBirth, &custom); err != nil {
+			res.Close()
+			return nil, nil, nil, err
+		}
+		if err := json.Unmarshal(custom, &s.Custom); err != nil {
+			res.Close()
+			return nil, nil, nil, fmt.Errorf("decode custom attributes of %s: %w", s.Email, err)
+		}
+		stored[s.Email] = s
+	}
+	res.Close()
+	if err := res.Err(); err != nil {
+		return nil, nil, nil, fmt.Errorf("lock delegates: %w", err)
+	}
+
+	var ids, names, teams, venues, dobs, customs []string
+	for _, p := range rows {
+		old, ok := stored[p.Email]
+		if !ok {
+			missing = append(missing, p)
+			continue
+		}
+		merged, changed := mergeUpload(old, p)
+		if len(changed) == 0 {
+			unchanged = append(unchanged, p)
+			continue
+		}
+		doc := []byte("{}")
+		if len(merged.Custom) > 0 {
+			if doc, err = json.Marshal(merged.Custom); err != nil {
+				return nil, nil, nil, fmt.Errorf("encode custom attributes: %w", err)
+			}
+		}
+		ids = append(ids, merged.ID)
+		names = append(names, merged.FullName)
+		teams = append(teams, merged.TeamName)
+		venues = append(venues, merged.VenueID)
+		dobs = append(dobs, merged.DateOfBirth)
+		customs = append(customs, string(doc))
+		updated = append(updated, domain.UpdatedParticipant{
+			Line: p.Line, ID: merged.ID, MembershipID: merged.MembershipID,
+			FullName: merged.FullName, Email: merged.Email, Changed: changed,
+		})
+	}
+
+	if len(ids) > 0 {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE participants p SET
+				full_name         = x.n,
+				team_name         = NULLIF(x.t, ''),
+				assigned_venue_id = NULLIF(x.v, '')::uuid,
+				date_of_birth     = NULLIF(x.d, '')::date,
+				custom_attributes = x.c::jsonb
+			FROM unnest($1::uuid[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[])
+			     AS x(id, n, t, v, d, c)
+			WHERE p.id = x.id`,
+			ids, names, teams, venues, dobs, customs); err != nil {
+			return nil, nil, nil, wrapInsertErr(err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, nil, nil, fmt.Errorf("commit update: %w", err)
+	}
+	return updated, unchanged, missing, nil
 }

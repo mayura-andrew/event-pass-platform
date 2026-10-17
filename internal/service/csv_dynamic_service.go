@@ -172,8 +172,10 @@ type columnPlan struct {
 }
 
 // planColumns classifies the header row against the existing field
-// definitions. It rejects a header that can't be imported safely.
-func planColumns(header []string, defs map[string]domain.FieldDefinition) (*columnPlan, error) {
+// definitions. It rejects a header that can't be imported safely. In update
+// mode only email is required: a file of email plus one new column fills that
+// column in for registered delegates.
+func planColumns(header []string, defs map[string]domain.FieldDefinition, updateMode bool) (*columnPlan, error) {
 	plan := &columnPlan{core: make(map[string]int)}
 	seen := make(map[string]string) // key -> header that produced it
 	newCount := 0
@@ -230,8 +232,12 @@ func planColumns(header []string, defs map[string]domain.FieldDefinition) (*colu
 		}
 	}
 
+	required := []string{"full_name", "email"}
+	if updateMode {
+		required = []string{"email"}
+	}
 	var missing []string
-	for _, name := range []string{"full_name", "email"} {
+	for _, name := range required {
 		if _, ok := plan.core[name]; !ok {
 			missing = append(missing, name)
 		}

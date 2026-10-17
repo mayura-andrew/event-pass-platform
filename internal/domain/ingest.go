@@ -50,12 +50,34 @@ type ImportIssue struct {
 	Message string `json:"message"`
 }
 
+// ImportOptions changes how an upload treats delegates already registered.
+type ImportOptions struct {
+	// UpdateExisting: a row whose email is already registered updates that
+	// delegate instead of being skipped as a duplicate. Non-blank cells
+	// overwrite; blank cells keep the stored value. Email and membership ID
+	// never change, so passes already sent keep working.
+	UpdateExisting bool
+}
+
+// UpdatedParticipant is a registered delegate an update-mode upload changed.
+type UpdatedParticipant struct {
+	Line         int      `json:"line"`
+	ID           string   `json:"id"`
+	MembershipID string   `json:"membership_id"`
+	FullName     string   `json:"full_name"`
+	Email        string   `json:"email"`
+	Changed      []string `json:"changed"` // full_name, team_name, date_of_birth, venue_id or a field key
+}
+
 // ImportResult is the response of POST /api/v1/admin/participants/upload-csv.
-// Every data row ends up in exactly one of Created, Duplicates or Errors.
+// Every data row ends up in exactly one of Created, Updated, Unchanged,
+// Duplicates or Errors.
 type ImportResult struct {
 	TotalRows  int                  `json:"total_rows"`
 	Created    []CreatedParticipant `json:"created"`
-	Duplicates []ImportIssue        `json:"duplicates"` // email already registered, or repeated in the file
+	Updated    []UpdatedParticipant `json:"updated"`    // update mode only
+	Unchanged  []ImportIssue        `json:"unchanged"`  // update mode: already registered, nothing new in the row
+	Duplicates []ImportIssue        `json:"duplicates"` // email already registered (not update mode), or repeated in the file
 	Errors     []ImportIssue        `json:"errors"`     // invalid rows, fix and upload again
 
 	// Extra columns stored in custom_attributes, by field key. NewFields are

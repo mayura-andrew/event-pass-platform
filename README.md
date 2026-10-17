@@ -182,6 +182,14 @@ A field's type (text, number, yes/no, date) can be changed until a delegate has 
 checked against it on every upload. Deleting a field (superadmin) erases its values too. Columns named
 like a delegate column of the seed format (`venue_name`, `hall_section`) are ignored and reported.
 
+**Updating registered delegates.** By default an email that's already registered is skipped. Tick
+**Also update delegates who are already registered** (API: `?update_existing=true`) to update them
+instead, matched by email: filled cells replace the stored value, blank cells keep it, and custom fields
+are merged key by key. `full_name` becomes optional (still required for emails that turn out to be new),
+so a file with just `email,tshirt_size` fills in T-shirt sizes for everyone. Email and membership ID never
+change, so passes already sent keep working. The report lists each updated delegate with what changed,
+and rows that changed nothing as "already up to date".
+
 Header names are matched case-insensitively and spaces become underscores, so a Google Sheets export with "Full Name" works.
 
 ## API
@@ -202,7 +210,7 @@ Header names are matched case-insensitively and spaces become underscores, so a 
 | GET | `/api/v1/admin/dashboard/stats` | admin, superadmin | Metric cards, throughput, per-scenario and fleet totals |
 | POST | `/api/v1/admin/participants/filter` | admin, superadmin | Delegate table: search, age group, claim status, venue, confirmation, paging, and `custom: [{"key","op","value"}]` (`op`: `eq`, `contains` for text, `missing`) |
 | POST | `/api/v1/admin/participants/create` | admin, superadmin | `{"full_name","email","team_name","date_of_birth","venue_id"}`; returns the new membership ID and signature. 409 if the email is registered |
-| POST | `/api/v1/admin/participants/upload-csv` | admin, superadmin | CSV as multipart field `file` or `text/csv` body; returns `{total_rows, created, duplicates, errors, custom_fields, new_fields, ignored_columns}` |
+| POST | `/api/v1/admin/participants/upload-csv[?update_existing=true]` | admin, superadmin | CSV as multipart field `file` or `text/csv` body; returns `{total_rows, created, updated, unchanged, duplicates, errors, custom_fields, new_fields, ignored_columns}` |
 | GET | `/api/v1/admin/fields` | admin, superadmin | Custom fields with usage counts and, for filter fields, common values |
 | POST | `/api/v1/admin/fields` | admin, superadmin | `{"field_key","field_label","data_type","show_in_scanner_popup","show_in_dashboard_filter"}` |
 | PATCH | `/api/v1/admin/fields/{key}` | admin, superadmin | Any of label, `data_type` (only while unused), the two toggles, `sort_order` |
@@ -271,7 +279,7 @@ Idempotency keys are `{admin_id}_{participant_id}_{scenario_id}` for single-clai
 - The stream holds one HTTP connection per open dashboard. A proxy in front of the API must allow long-lived responses and must not buffer `text/event-stream` (the API sends `X-Accel-Buffering: no` and a keep-alive every 20 s).
 - Removing a checkpoint from a scanner while their phone is offline makes their queued scans for that checkpoint `INVALID` when the phone reconnects (shown in that phone's invalid count on the dashboard). Remove grants after the phone has synced.
 - Custom field filters match with JSONB containment (`custom_attributes @> '{"key": value}'`), which the GIN index can serve; `->>`-style comparisons can't use it. At event sizes (a few thousand delegates) PostgreSQL scans the table anyway, in about 2 ms; the index starts to pay off in the hundreds of thousands of rows.
-- Uploading a CSV doesn't update delegates who are already registered (they're reported as duplicates), so a column added later can't be filled in for them by re-uploading.
+- An update-mode upload can change or add values but not clear one (a blank cell keeps the stored value). To remove a custom field's values, delete the field.
 - Membership IDs can have gaps: numbers reserved for a batch that then hit an already-registered email are not reused. Generated IDs stop at `NSAC-999999`.
 - A superadmin can't deactivate, demote or reset themselves from the Staff page, so there is always at least one superadmin.
 - Phone queue counts are self-reported by each scanner, so the dashboard can only show what a phone last reported while it had signal.

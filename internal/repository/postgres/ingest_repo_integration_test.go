@@ -189,3 +189,60 @@ func TestIngestRetriesMembershipClash(t *testing.T) {
 		t.Fatalf("created %+v", created)
 	}
 }
+
+func TestIngestBulkUpdateByEmail(t *testing.T) {
+	repo := NewIngestRepo(openTestDB(t))
+	ctx := context.Background()
+	tag := randTag()
+	cleanupIngest(t, repo, tag)
+	shirt := "it_" + tag + "_shirt"
+	t.Cleanup(func() {
+		repo.db.ExecContext(context.Background(), `DELETE FROM participant_field_definitions WHERE field_key = $1`, shirt)
+	})
+
+	rows := ingestRows(tag, 0, 3)
+	rows[0].TeamName = "Orion"
+	rows[0].CustomAttributes = map[string]any{"food": "Vegetarian"}
+	created, _, err := repo.BulkInsertWithAutoID(ctx, rows, nil, testSign)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	update := []domain.NewParticipant{
+		{Line: 2, Email: rows[0].Email, TeamName: "Helio", CustomAttributes: map[string]any{shirt: "M"}}, // name blank: kept
+		{Line: 3, Email: rows[1].Email, FullName: rows[1].FullName},                                      // same name: unchanged
+		{Line: 4, Email: "it-" + tag + "-ghost@test.local", FullName: "Ghost"},                           // not registered
+	}
+	newFields := []domain.NewField{{Key: shirt, Label: "Shirt", DataType: "text", Source: "csv", SortOrder: 100}}
+	updated, unchanged, missing, err := repo.BulkUpdateByEmail(ctx, update, newFields)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(updated) != 1 || len(unchanged) != 1 || len(missing) != 1 {
+		t.Fatalf("updated %+v, unchanged %d, missing %d", updated, len(unchanged), len(missing))
+	}
+	if u := updated[0]; u.MembershipID != created[0].MembershipID || fmt.Sprint(u.Changed) != "[team_name "+shirt+"]" {
+		t.Errorf("updated = %+v", u)
+	}
+
+	var name, team, sig, memberID, custom string
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT full_name, team_name, qr_signature, membership_id, custom_attributes::text
+		FROM participants WHERE id = $1`, created[0].ID).Scan(&name, &team, &sig, &memberID, &custom); err != nil {
+		t.Fatal(err)
+	}
+	if name != rows[0].FullName || team != "Helio" {
+		t.Errorf("name %q team %q; the blank name must keep the stored one", name, team)
+	}
+	if memberID != created[0].MembershipID || sig != created[0].QRSignature {
+		t.Error("membership ID or QR signature changed; passes already sent would stop working")
+	}
+	if custom != `{"food": "Vegetarian", "`+shirt+`": "M"}` {
+		t.Errorf("custom attributes = %s; want the old key kept and the new one added", custom)
+	}
+	var registered bool
+	repo.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM participant_field_definitions WHERE field_key = $1)`, shirt).Scan(&registered)
+	if !registered {
+		t.Error("new field not registered by the update")
+	}
+}

@@ -412,6 +412,7 @@ function showStep(step) {
 async function handleFile(file) {
   csvError('');
   if (!file) return;
+  state.lastFile = file; // re-checked if the update option changes, even after an error
   if (!/\.csv$/i.test(file.name) && file.type !== 'text/csv') {
     csvError(`“${file.name}” isn’t a CSV file. In Excel or Google Sheets, use File → Download / Save as → CSV.`);
     return;
@@ -438,9 +439,11 @@ async function handleFile(file) {
     csvError(plan.error);
     return;
   }
-  const missing = ['full_name', 'email'].filter((c) => !(c in plan.core));
+  const required = updateMode() ? ['email'] : ['full_name', 'email'];
+  const missing = required.filter((c) => !(c in plan.core));
   if (missing.length) {
-    csvError(`The first row must be the header, including ${missing.join(' and ')}. Expected: ${COLUMNS.join(',')}`);
+    csvError(`The first row must be the header, including ${missing.join(' and ')}. Expected: ${COLUMNS.join(',')}` +
+      (updateMode() ? '' : '. (To fill in columns for registered delegates without names, tick “Also update”.)'));
     return;
   }
   const rows = records.slice(1).filter((r) => r.cells.some((c) => c.trim() !== ''));
@@ -459,10 +462,16 @@ async function handleFile(file) {
   showStep('preview');
 }
 
-/** Problems the browser can spot. The server checks again, plus existing emails. */
+const updateMode = () => $('update-existing').checked;
+
+/**
+ * Problems the browser can spot. The server checks again, plus existing
+ * emails. In update mode a blank name is fine for a registered delegate (it
+ * keeps the stored one); only the server knows which emails are new.
+ */
 function rowProblem(get, seen) {
   const email = get('email').trim().toLowerCase();
-  if (!get('full_name').trim()) return 'Full name missing';
+  if (!get('full_name').trim() && !updateMode()) return 'Full name missing';
   if (!email) return 'Email missing';
   if (!EMAIL_RE.test(email)) return 'Email looks invalid';
   if (seen.has(email)) return `Repeats line ${seen.get(email)}`;
@@ -500,7 +509,9 @@ function renderPreview() {
   $('pv-summary').textContent =
     `${fmtInt(rows.length)} delegate${rows.length === 1 ? '' : 's'} found · ` +
     (flagged ? `${fmtInt(flagged)} with problems (skipped and listed in the report)` : 'no problems spotted') +
-    ' · Already-registered emails are checked when you import.';
+    (updateMode()
+      ? ' · Registered emails will be updated; new ones need a full name.'
+      : ' · Already-registered emails are checked when you import.');
 
   const warnings = [];
   const fresh = plan.custom.filter((c) => c.isNew);
@@ -544,6 +555,7 @@ function renderPreview() {
 
 function resetUpload() {
   state.file = null;
+  state.lastFile = null;
   state.parsed = null;
   state.result = null;
   $('csv-input').value = '';
@@ -581,7 +593,7 @@ function uploadCSV(file) {
       return;
     }
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/v1/admin/participants/upload-csv');
+    xhr.open('POST', `/api/v1/admin/participants/upload-csv${updateMode() ? '?update_existing=true' : ''}`);
     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
     xhr.responseType = 'json';
     xhr.upload.onprogress = (e) => {
@@ -609,6 +621,8 @@ function uploadCSV(file) {
 async function startImport() {
   if (!state.file || state.uploading) return;
   state.uploading = true;
+  state.sentUpdateMode = updateMode();
+  $('update-existing').disabled = true;
   csvError('');
   showStep('progress');
   setProgress('Uploading…', 0);
@@ -624,6 +638,7 @@ async function startImport() {
     showStep('preview');
   } finally {
     state.uploading = false;
+    $('update-existing').disabled = false;
   }
 }
 
@@ -659,6 +674,26 @@ function renderReport() {
   $('rp-created-box').hidden = r.created.length === 0;
   $('rp-created-box').open = r.errors.length === 0;
 
+  const updated = r.updated || [];
+  const unchanged = r.unchanged || [];
+  const usedUpdate = updated.length > 0 || unchanged.length > 0 || state.sentUpdateMode;
+  $('rp-updated-tile').hidden = !usedUpdate;
+  $('rp-tiles').className = `grid gap-3 ${usedUpdate ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-3'}`;
+  $('rp-updated').textContent = fmtInt(updated.length);
+  $('rp-unchanged').textContent = unchanged.length
+    ? `${fmtInt(unchanged.length)} already up to date`
+    : 'Registered delegates changed';
+  const label = (k) => ({ full_name: 'name', team_name: 'team', date_of_birth: 'date of birth', venue_id: 'venue' }[k]
+    || state.fields.find((f) => f.field_key === k)?.field_label || k);
+  $('rp-updated-rows').replaceChildren(...updated.slice(0, REPORT_ROWS).map((u) => el('tr', {},
+    el('td', { class: 'td tabular-nums text-ink-soft' }, String(u.line)),
+    el('td', { class: 'td whitespace-nowrap font-bold tabular-nums' }, u.membership_id),
+    el('td', { class: 'td' }, u.email),
+    el('td', { class: 'td' }, u.changed.map(label).join(', ')),
+  )));
+  $('rp-updated-box').querySelector('summary').textContent = `Delegates updated: ${fmtInt(updated.length)}${more(updated.length)}`;
+  $('rp-updated-box').hidden = updated.length === 0;
+
   const notes = [];
   if (r.new_fields?.length) {
     notes.push(`New custom field${r.new_fields.length === 1 ? '' : 's'}: ${r.new_fields.join(', ')}. ` +
@@ -671,7 +706,9 @@ function renderReport() {
   if (r.new_fields?.length) loadFields(); // the single-entry form gets the new inputs
 
   const tone = r.errors.length ? 'warn' : 'ok';
-  toast(`Import finished: ${fmtInt(r.created.length)} added, ${fmtInt(r.duplicates.length)} duplicates, ${fmtInt(r.errors.length)} errors.`, tone);
+  toast(`Import finished: ${fmtInt(r.created.length)} added, ` +
+    (usedUpdate ? `${fmtInt(updated.length)} updated, ` : '') +
+    `${fmtInt(r.duplicates.length)} duplicates, ${fmtInt(r.errors.length)} errors.`, tone);
 }
 
 /** Every row of the file with its outcome, in file order. */
@@ -680,6 +717,8 @@ function downloadResults() {
   if (!r) return;
   const rows = [
     ...r.created.map((c) => ({ line: c.line, status: 'added', id: c.membership_id, name: c.full_name, email: c.email, msg: '', link: passURL(c.membership_id, c.email) })),
+    ...(r.updated || []).map((u) => ({ line: u.line, status: 'updated', id: u.membership_id, name: u.full_name, email: u.email, msg: `changed: ${u.changed.join(' ')}`, link: passURL(u.membership_id, u.email) })),
+    ...(r.unchanged || []).map((d) => ({ line: d.line, status: 'unchanged', id: '', name: '', email: d.email, msg: d.message, link: '' })),
     ...r.duplicates.map((d) => ({ line: d.line, status: 'duplicate', id: '', name: '', email: d.email, msg: d.message, link: '' })),
     ...r.errors.map((e) => ({ line: e.line, status: 'error', id: '', name: '', email: e.email, msg: e.message, link: '' })),
   ].sort((a, b) => a.line - b.line);
@@ -759,6 +798,12 @@ function boot() {
 
   wireDropzone();
   $('pv-cancel').addEventListener('click', resetUpload);
+  // The mode changes which columns are required and what counts as a problem.
+  $('update-existing').addEventListener('change', () => {
+    if (!state.lastFile || state.uploading || !$('report').hidden) return;
+    showStep('choose'); // handleFile shows the preview again if the file qualifies
+    handleFile(state.lastFile);
+  });
   $('pv-import').addEventListener('click', startImport);
   $('rp-again').addEventListener('click', resetUpload);
   $('rp-download').addEventListener('click', downloadResults);
