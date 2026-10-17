@@ -22,7 +22,8 @@ type Handler struct {
 	LoginRatePerMin int
 	PassRatePerMin  int
 
-	accounts *accountCache // set by NewRouter
+	accounts  *accountCache // set by NewRouter
+	manifests manifestCache
 
 	// Values exposed to browsers through GET /api/v1/config/public.
 	MapsAPIKey string

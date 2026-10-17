@@ -206,6 +206,40 @@ func (h *Handler) clientIP(r *http.Request) string {
 	return host
 }
 
+// ---- Request deadlines -------------------------------------------------------
+
+// Per-request deadlines bound how long a request may hold a database
+// connection. Without them a stuck query or a client that never finishes
+// keeps its pool connection until the TCP connection dies, and a handful of
+// those exhaust a small Supabase pool. The context is cancelled at the
+// deadline, which makes pgx cancel the running query on the server.
+const (
+	apiDeadline   = 15 * time.Second
+	syncDeadline  = 30 * time.Second // up to 500 scans
+	emailDeadline = 45 * time.Second // SMTP send inside the request
+)
+
+func deadlines(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p := r.URL.Path
+		var d time.Duration
+		switch {
+		case !strings.HasPrefix(p, "/api/"), p == "/api/v1/admin/scans/stream":
+			next.ServeHTTP(w, r) // static files; the live stream is long-lived by design
+			return
+		case p == "/api/v1/scans/sync":
+			d = syncDeadline
+		case p == "/api/v1/admin/staff/create", strings.HasSuffix(p, "/resend-credentials"):
+			d = emailDeadline
+		default:
+			d = apiDeadline
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), d)
+		defer cancel()
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
 // ---- Cross-cutting -------------------------------------------------------------
 
 type statusRecorder struct {

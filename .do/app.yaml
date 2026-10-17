@@ -18,7 +18,7 @@ region: blr
 services:
   - name: api
     github:
-      repo: YOUR_GITHUB_USER/nsac-qr   # change to your repository
+      repo: ai4all-learn/nsac-qr   # change to your repository
       branch: main
       deploy_on_push: true
     dockerfile_path: Dockerfile
@@ -90,6 +90,12 @@ services:
       - key: JWT_TTL
         scope: RUN_TIME
         value: 14h
+      # Database connections this container may open. Keep it below the
+      # Supabase project's pool size (Database Settings > Connection pooling
+      # > Pool Size), leaving room for the seed script and the SQL editor.
+      - key: DB_MAX_CONNS
+        scope: RUN_TIME
+        value: "10"
       - key: CHECKIN_SCENARIO_CODE
         scope: RUN_TIME
         value: CHECK_IN

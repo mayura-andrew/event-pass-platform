@@ -76,7 +76,10 @@ function endSession(message) {
  */
 export async function api(path, { method = 'GET', body, headers = {} } = {}) {
   const session = getSession();
-  if (!session) throw new AuthExpiredError('Not signed in');
+  if (!session) {
+    endSession('Your session ended. Sign in again; unsynced scans are kept on this device.');
+    throw new AuthExpiredError('Not signed in');
+  }
 
   const res = await fetch(path, {
     method,
@@ -90,9 +93,17 @@ export async function api(path, { method = 'GET', body, headers = {} } = {}) {
   });
   if (res.status === 401) {
     const body = await res.clone().json().catch(() => ({}));
-    endSession(body.error === 'account has been deactivated'
-      ? 'This account has been deactivated. Unsynced scans are kept on this phone; contact the event lead.'
-      : 'Your session ended. Sign in again; unsynced scans are kept on this device.');
+    if (body.error === 'account has been deactivated') {
+      // A deactivated account usually means a lost phone or a volunteer who
+      // left: remove the delegate directory (names, emails, pass signatures)
+      // now instead of keeping it on the device indefinitely. Unsent scans
+      // stay, so nothing is lost if the account is reactivated; the next
+      // sign-in downloads the directory again.
+      await wipeDirectory();
+      endSession('This account has been deactivated, and the delegate list was removed from this phone. Unsent scans are kept; contact the event lead.');
+    } else {
+      endSession('Your session ended. Sign in again; unsynced scans are kept on this device.');
+    }
     throw new AuthExpiredError('Session expired');
   }
   if (res.status === 403) {
@@ -103,6 +114,15 @@ export async function api(path, { method = 'GET', body, headers = {} } = {}) {
     }
   }
   return res;
+}
+
+/** Removes delegate data from the device, keeping the scan queue. */
+export async function wipeDirectory() {
+  await db.transaction('rw', db.participants, db.claims, db.meta, async () => {
+    await db.participants.clear();
+    await db.claims.clear();
+    await db.meta.bulkDelete(['manifest_etag', 'claims_watermark', 'manifest_hydrated_at']);
+  });
 }
 
 export async function getMeta(key, fallback = null) {
@@ -131,7 +151,9 @@ export async function hydrateLocalManifest() {
   if (!navigator.onLine) return { updated: false, count: await db.participants.count() };
 
   try {
-    const etag = await getMeta('manifest_etag');
+    // Only ask "has it changed?" when the phone actually holds a list; with an
+    // empty table a 304 would leave it empty for good.
+    const etag = (await db.participants.count()) > 0 ? await getMeta('manifest_etag') : null;
     const res = await api('/api/v1/participants/manifest', {
       headers: etag ? { 'If-None-Match': etag } : {},
     });

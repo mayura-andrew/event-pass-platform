@@ -75,7 +75,7 @@ func NewRouter(h *Handler, publicDir, allowedOrigin string) http.Handler {
 	// Static PWA and portal
 	mux.Handle("/", staticFiles(publicDir))
 
-	return recoverer(logging(securityHeaders(cors(allowedOrigin, mux))))
+	return recoverer(logging(securityHeaders(cors(allowedOrigin, deadlines(mux)))))
 }
 
 // staticFiles serves /public. The service worker and app shell must never be

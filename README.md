@@ -223,7 +223,7 @@ Idempotency keys are `{admin_id}_{participant_id}_{scenario_id}` for single-clai
 ## Known limits
 
 - "First scan wins" means first to **reach the server**, not first by device clock. A phone that was offline longer loses ties.
-- Every scanner holds the full manifest including signatures. A lost, unlocked phone exposes the delegate list; the token expires after `JWT_TTL`.
+- Every scanner holds the full manifest including signatures. If a phone is lost, deactivate its account on the Staff page: within 30 seconds the phone is refused, and the next time it reaches the server it deletes the delegate list (unsent scans are kept). A phone that never comes back online keeps the list, so phones should have a screen lock.
 - Rate limiting is in memory per API instance. For multiple replicas, rate-limit at the edge instead.
 - Rate limits key on the socket address unless `CLIENT_IP_HEADER` names the header your load balancer sets to the real client IP (`DO-Connecting-IP` on App Platform). Never point it at a header clients can set themselves.
 - The live stream is fed by one poller per API instance that reads new scans every 2 seconds. This works through every Supabase connection mode, including the transaction pooler. If a phone uploads more than 500 scans within one poll, the stream shows the newest 500. The scans are all stored; the dashboard table and counts include them.

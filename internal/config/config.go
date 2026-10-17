@@ -22,6 +22,8 @@ type Config struct {
 	AllowedOrigin    string        // optional CORS origin when the frontend is hosted elsewhere
 	CheckInCode      string        // scenario code the dashboard counts as "checked in"
 
+	DBMaxConns int // database connections this process may open
+
 	ClientIPHeader  string // header the load balancer sets to the client IP
 	LoginRatePerMin int    // sign-in attempts per client IP per minute
 	PassRatePerMin  int    // public pass lookups per client IP per minute
@@ -62,6 +64,9 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	if c.PassRatePerMin, err = getInt("PASS_RATE_PER_MIN", 120); err != nil {
+		return nil, err
+	}
+	if c.DBMaxConns, err = getInt("DB_MAX_CONNS", 10); err != nil {
 		return nil, err
 	}
 

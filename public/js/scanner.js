@@ -8,6 +8,16 @@ import {
 
 const SYNC_CHUNK = 200;            // server accepts up to 500 per request
 const SYNC_INTERVAL_MS = 20_000;   // retry even if the 'online' event never fires
+// After a failed upload, wait 5 s, 10 s, 20 s ... up to 5 min before the next
+// automatic try, each wait randomized between half and all of it ("equal
+// jitter"). When the server struggles, phones back off instead of retrying in
+// step every 20 s, and after every scan.
+const BACKOFF_BASE_MS = 5_000;
+const BACKOFF_MAX_MS = 5 * 60_000;
+// When venue Wi-Fi comes back, every phone sees 'online' within the same
+// second. Each waits a random 0-8 s first, so the server isn't hit by all of
+// them in one burst.
+const RECONNECT_SPREAD_MS = 8_000;
 const SAME_CODE_COOLDOWN_MS = 4000; // html5-qrcode reports the same code many times per second
 const SUCCESS_AUTO_DISMISS_MS = 2200;
 const HEARTBEAT_INTERVAL_MS = 60_000; // dashboard marks a phone stale after 2 min
@@ -18,6 +28,7 @@ let qr = null;               // Html5Qrcode instance
 let modalOpen = false;
 let lastDecoded = { text: '', at: 0 };
 let flushing = false;
+const backoff = { failures: 0, until: 0 }; // next automatic upload not before `until`
 let autoDismissTimer = null;
 
 const $ = (id) => document.getElementById(id);
@@ -171,18 +182,32 @@ async function recordScan(participant, { manual }) {
 // Background sync engine
 // -----------------------------------------------------------------------------
 
+function backoffAfterFailure() {
+  backoff.failures += 1;
+  const ceiling = Math.min(BACKOFF_BASE_MS * 2 ** (backoff.failures - 1), BACKOFF_MAX_MS);
+  backoff.until = Date.now() + ceiling / 2 + Math.random() * (ceiling / 2);
+}
+
+function resetBackoff() {
+  backoff.failures = 0;
+  backoff.until = 0;
+}
+
 /**
  * Uploads this admin's pending scans in chunks and applies per-scan results.
  * Safe to call at any time: concurrent calls are collapsed, and a failure
- * leaves every scan pending for the next attempt.
+ * leaves every scan pending for the next attempt. Automatic calls respect the
+ * backoff; `force` (sign-out, a person tapping retry) ignores it.
  */
-export async function flushPendingScans() {
+export async function flushPendingScans({ force = false } = {}) {
   if (flushing || !navigator.onLine) return;
+  if (!force && Date.now() < backoff.until) return;
   const session = getSession();
   if (!session) return;
 
   flushing = true;
   setSyncIndicator('syncing');
+  let stalled = false;
   try {
     // Loop until the queue is empty or a request fails.
     for (;;) {
@@ -209,17 +234,27 @@ export async function flushPendingScans() {
       const { results } = await res.json();
       await applySyncResults(batch, results);
 
-      // If nothing moved out of 'pending' (all FAILED), stop and retry later
-      // instead of hammering the server in a tight loop.
-      if (results.every((r) => r.status === 'FAILED')) break;
+      // Nothing moved out of 'pending' (all FAILED, e.g. database busy): stop
+      // and back off instead of hammering the server in a tight loop.
+      if (results.every((r) => r.status === 'FAILED')) {
+        stalled = true;
+        break;
+      }
     }
-    await setMeta('last_sync_at', new Date().toISOString());
-    setSyncIndicator('idle');
-  } catch (err) {
-    if (err instanceof AuthExpiredError) {
-      showLogin('Your session ended. Sign in again; unsynced scans are kept on this device.');
+    if (stalled) {
+      backoffAfterFailure();
+      setSyncIndicator('error');
     } else {
+      resetBackoff();
+      await setMeta('last_sync_at', new Date().toISOString());
+      setSyncIndicator('idle');
+    }
+  } catch (err) {
+    // AuthExpiredError: api() has already shown sign-in with the reason
+    // (expired, deactivated, password reset); don't overwrite it here.
+    if (!(err instanceof AuthExpiredError)) {
       console.warn('Background sync paused:', err);
+      backoffAfterFailure();
     }
     setSyncIndicator('error');
   } finally {
@@ -256,8 +291,14 @@ async function sendHeartbeat({ force = false } = {}) {
   lastHeartbeatAt = Date.now();
 
   try {
-    const pending = await db.pending_scans.where('sync_status').equals('pending').toArray();
-    const mine = pending.filter((s) => s.scanned_by_admin_id === session.admin_id).length;
+    // Counted with cursors: after a day offline the queue can hold thousands
+    // of rows, and loading them all every minute would be wasted memory.
+    const pendingAll = db.pending_scans.where('sync_status').equals('pending');
+    const [pendingTotal, mine] = await Promise.all([
+      pendingAll.count(),
+      db.pending_scans.where('sync_status').equals('pending')
+        .filter((s) => s.scanned_by_admin_id === session.admin_id).count(),
+    ]);
     const [rejected, invalid, manifest, lastSync] = await Promise.all([
       db.pending_scans.where('sync_status').equals('rejected').count(),
       db.pending_scans.where('sync_status').equals('invalid').count(),
@@ -270,7 +311,7 @@ async function sendHeartbeat({ force = false } = {}) {
         device_id: deviceId(),
         scenario_id: activeScenario?.id || '',
         pending_count: mine,
-        pending_others: pending.length - mine,
+        pending_others: pendingTotal - mine,
         rejected_count: rejected,
         invalid_count: invalid,
         manifest_count: manifest,
@@ -286,38 +327,36 @@ async function sendHeartbeat({ force = false } = {}) {
 
 async function applySyncResults(batch, results) {
   const byKey = new Map(batch.map((s) => [s.idempotency_key, s]));
+  const now = new Date().toISOString();
+  const updates = []; // [{key, changes}] for one bulkUpdate
+  const claims = [];  // claims won by other devices, for one bulkPut
 
-  await db.transaction('rw', db.pending_scans, db.claims, async () => {
-    for (const r of results) {
-      const scan = byKey.get(r.idempotency_key);
-      if (!scan) continue;
-
-      switch (r.status) {
-        case 'SUCCESS':
-        case 'ALREADY_SYNCED':
-          await db.pending_scans.update(scan.id, { sync_status: 'synced', synced_at: new Date().toISOString() });
-          break;
-        case 'DUPLICATE_REJECTED':
-          // Another device got there first. Keep the row (so this device still
-          // treats the claim as taken) and record who won.
-          await db.pending_scans.update(scan.id, {
-            sync_status: 'rejected',
-            server_message: r.message,
-            claimed_by: r.claimed_by || null,
-          });
-          await db.claims.put({
-            participant_id: scan.participant_id,
-            scenario_id: scan.scenario_id,
-            synced_at: r.claimed_at || new Date().toISOString(),
-          });
-          break;
-        case 'INVALID':
-          await db.pending_scans.update(scan.id, { sync_status: 'invalid', server_message: r.message });
-          break;
-        default: // FAILED: stay pending, retry later
-          await db.pending_scans.update(scan.id, { attempts: (scan.attempts || 0) + 1, server_message: r.message });
-      }
+  for (const r of results) {
+    const scan = byKey.get(r.idempotency_key);
+    if (!scan) continue;
+    switch (r.status) {
+      case 'SUCCESS':
+      case 'ALREADY_SYNCED':
+        updates.push({ key: scan.id, changes: { sync_status: 'synced', synced_at: now } });
+        break;
+      case 'DUPLICATE_REJECTED':
+        // Another device got there first. Keep the row (so this device still
+        // treats the claim as taken) and record who won.
+        updates.push({ key: scan.id, changes: { sync_status: 'rejected', server_message: r.message, claimed_by: r.claimed_by || null } });
+        claims.push({ participant_id: scan.participant_id, scenario_id: scan.scenario_id, synced_at: r.claimed_at || now });
+        break;
+      case 'INVALID':
+        updates.push({ key: scan.id, changes: { sync_status: 'invalid', server_message: r.message } });
+        break;
+      default: // FAILED: stay pending, retry later
+        updates.push({ key: scan.id, changes: { attempts: (scan.attempts || 0) + 1, server_message: r.message } });
     }
+  }
+
+  // One IndexedDB transaction, two bulk calls, however large the batch.
+  await db.transaction('rw', db.pending_scans, db.claims, async () => {
+    if (updates.length) await db.pending_scans.bulkUpdate(updates);
+    if (claims.length) await db.claims.bulkPut(claims);
   });
 }
 
@@ -330,7 +369,7 @@ async function refreshFromServer() {
       setBanner('The delegate list is empty. Ask an organizer to confirm participants.');
     }
   } catch (err) {
-    if (err instanceof AuthExpiredError) showLogin('Your session ended. Sign in again.');
+    if (!(err instanceof AuthExpiredError)) console.warn('Refresh failed:', err); // sign-in already shown
   }
   await flushPendingScans();
   refreshStatusBar();
@@ -647,7 +686,7 @@ async function onPasswordChange(event) {
 async function onLogout() {
   const session = getSession();
   if (session) {
-    await flushPendingScans();
+    await flushPendingScans({ force: true });
     const mine = await db.pending_scans.where('sync_status').equals('pending')
       .filter((s) => s.scanned_by_admin_id === session.admin_id).count();
     if (mine > 0 && !confirm(
@@ -708,7 +747,11 @@ function boot() {
     if (modalOpen && (e.key === 'Enter' || e.key === 'Escape')) dismissModalAndResume();
   });
 
-  window.addEventListener('online', () => { refreshStatusBar(); refreshFromServer(); });
+  window.addEventListener('online', () => {
+    refreshStatusBar();
+    resetBackoff(); // the network is back: earlier failures say nothing now
+    setTimeout(() => { if (getSession()) refreshFromServer(); }, Math.random() * RECONNECT_SPREAD_MS);
+  });
   window.addEventListener('offline', refreshStatusBar);
   window.addEventListener('auth-expired', (e) => showLogin(e.detail?.message || 'Your session ended. Sign in again; unsynced scans are kept on this device.'));
   document.addEventListener('visibilitychange', () => {

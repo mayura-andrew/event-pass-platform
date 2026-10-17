@@ -150,6 +150,7 @@ sign-in links use it.
 | `LOGIN_RATE_PER_MIN` | 30 | Sign-ins per client IP per minute. Venue Wi-Fi puts every phone behind one IP; raise it if many volunteers sign in at the same moment |
 | `PASS_RATE_PER_MIN` | 120 | Public pass lookups per IP per minute; raise if a crowd on venue Wi-Fi opens passes at once |
 | `JWT_TTL` | 14h | Must cover a full event day offline |
+| `DB_MAX_CONNS` | 10 | Database connections the API may open. In Supabase's session pooler each one holds a connection from the project's pool (Database Settings → Connection pooling → Pool Size): keep it below that, leaving room for the seed script and the SQL editor |
 | `CHECKIN_SCENARIO_CODE` | CHECK_IN | If your gate scenario has another code |
 
 Keep `instance_count` at 1: rate limits, the account cache and the live scan
