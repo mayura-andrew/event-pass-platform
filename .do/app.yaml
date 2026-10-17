@@ -1,15 +1,14 @@
 # DigitalOcean App Platform spec for the NSAC QR API + web apps.
 #
-# Create the app once with:
-#   doctl apps create --spec .do/app.yaml
-# or in the control panel (Create App > GitHub > this repo), which detects the
-# Dockerfile; then paste the environment variables below.
+# This file is the source of truth: .github/workflows/deploy.yml applies it
+# on every push to main (digitalocean/app_action/deploy@v2), creating the app
+# the first time and updating it after that. Settings changed in the control
+# panel are overwritten by the next deploy, so change them here instead.
 #
-# Values marked type: SECRET are left empty on purpose: set them in the
-# control panel (App > Settings > api > Environment Variables > Encrypt).
-# Don't commit real secrets to this file. After the first deploy, change
-# settings in the control panel rather than re-applying this file, so the
-# secrets you entered there aren't touched.
+# Values written as '${NAME}' are filled in by the workflow from the GitHub
+# repository secret of the same name (Settings > Secrets and variables >
+# Actions). Never put a real secret in this file. ${APP_URL} is the exception:
+# App Platform fills it in, and the action leaves it alone.
 name: nsac-qr
 # Bangalore. Pick the Supabase project in Mumbai (ap-south-1) to keep the
 # database round trip short.
@@ -20,7 +19,9 @@ services:
     github:
       repo: ai4all-learn/nsac-qr   # change to your repository
       branch: main
-      deploy_on_push: true
+      # The GitHub Actions workflow deploys after the tests pass; letting App
+      # Platform also build on push would deploy every commit twice.
+      deploy_on_push: false
     dockerfile_path: Dockerfile
     source_dir: /
     http_port: 8080
@@ -35,17 +36,26 @@ services:
     routes:
       - path: /
     envs:
-      # --- Required secrets (set in the control panel) ---------------------
+      # --- Required secrets (GitHub repository secrets) ---------------------
       # Supabase > Project Settings > Database > Connection string > Session
       # pooler (port 5432). Use the pooler, not the direct db.<ref>.supabase.co
       # host: that one is IPv6-only and App Platform connects over IPv4.
       - key: DATABASE_URL
         scope: RUN_TIME
         type: SECRET
+        value: '${DATABASE_URL}'
       # openssl rand -hex 32
       - key: JWT_SECRET
         scope: RUN_TIME
         type: SECRET
+        value: '${JWT_SECRET}'
+      # Signs delegate QR passes added from /admin/ingest.html. The SAME value
+      # the seed script uses, kept for the whole event: changing it breaks
+      # every pass already sent.
+      - key: HMAC_SECRET_KEY
+        scope: RUN_TIME
+        type: SECRET
+        value: '${HMAC_SECRET_KEY}'
 
       # --- Gmail SMTP --------------------------------------------------------
       - key: SMTP_HOST
@@ -61,16 +71,19 @@ services:
       - key: SMTP_USERNAME
         scope: RUN_TIME
         type: SECRET
+        value: '${SMTP_USERNAME}'
       # 16-character Google app password (spaces removed), NOT the account
       # password: Google Account > Security > 2-Step Verification > App passwords.
       - key: SMTP_PASSWORD
         scope: RUN_TIME
         type: SECRET
+        value: '${SMTP_PASSWORD}'
       # Gmail sends as the signed-in account; use that same address here
       # (or a "Send mail as" alias already verified in Gmail).
       - key: SMTP_FROM
         scope: RUN_TIME
         type: SECRET
+        value: '${SMTP_FROM}'
 
       # --- App ---------------------------------------------------------------
       # App Platform fills ${APP_URL} with the app's https:// address. Replace
@@ -103,10 +116,12 @@ services:
         scope: RUN_TIME
         value: /app/public
       # Optional: venue map on the pass page. Restrict the key to this app's
-      # URL (HTTP referrers) in Google Cloud.
+      # URL (HTTP referrers) in Google Cloud. Without the GitHub secret the
+      # value is empty and the map is off.
       - key: GOOGLE_MAPS_API_KEY
         scope: RUN_TIME
         type: SECRET
+        value: '${GOOGLE_MAPS_API_KEY}'
       - key: GOOGLE_MAPS_MAP_ID
         scope: RUN_TIME
         value: ""

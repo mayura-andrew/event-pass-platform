@@ -21,6 +21,9 @@ type Config struct {
 	GoogleMapsMapID  string        // optional; enables Advanced Markers
 	AllowedOrigin    string        // optional CORS origin when the frontend is hosted elsewhere
 	CheckInCode      string        // scenario code the dashboard counts as "checked in"
+	// Signs delegate QR passes. Must equal the key scripts/seed uses. Empty
+	// turns off adding delegates from the dashboard.
+	HMACSecretKey []byte
 
 	DBMaxConns int // database connections this process may open
 
@@ -49,6 +52,7 @@ func Load() (*Config, error) {
 		GoogleMapsMapID:  os.Getenv("GOOGLE_MAPS_MAP_ID"),
 		AllowedOrigin:    os.Getenv("ALLOWED_ORIGIN"),
 		CheckInCode:      getenv("CHECKIN_SCENARIO_CODE", "CHECK_IN"),
+		HMACSecretKey:    []byte(os.Getenv("HMAC_SECRET_KEY")),
 		AppBaseURL:       strings.TrimRight(os.Getenv("APP_BASE_URL"), "/"),
 		EventName:        getenv("EVENT_NAME", "NASA Space Apps Colombo"),
 		SMTPHost:         os.Getenv("SMTP_HOST"),
@@ -95,6 +99,9 @@ func Load() (*Config, error) {
 	}
 	if len(c.JWTSecret) < 32 {
 		return nil, errors.New("JWT_SECRET must be at least 32 bytes")
+	}
+	if n := len(c.HMACSecretKey); n > 0 && n < 32 {
+		return nil, errors.New("HMAC_SECRET_KEY must be at least 32 bytes (openssl rand -hex 32)")
 	}
 	return c, nil
 }

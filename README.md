@@ -4,6 +4,7 @@ Delegates get a signed QR pass. Volunteers scan it on a phone that keeps working
 
 ```
 Google Form CSV ──> scripts/seed ──> Supabase (participants + HMAC signature)
+Organizer ──> /admin/ingest.html ──┘  (one at a time or CSV upload; IDs NSAC-001000… generated)
                                           │
 Participant ──> /pass.html ──> QR {"id","sig"} + venue map
                                           │
@@ -41,13 +42,14 @@ than when their JWT expires.
 cmd/api/main.go                     entry point, wiring, graceful shutdown
 internal/config                     environment configuration
 internal/domain                     shared types and sync status codes
-internal/auth                       JWT issue/verify (HS256, algorithm pinned)
+internal/auth                       JWT issue/verify (HS256, algorithm pinned), QR pass signature
 internal/repository/postgres        SQL: participants, scenarios, admins, scans
 internal/service                    validation and business rules
 internal/handler/http               routes, middleware, rate limiting, static files
 migrations/001_schema.sql           tables, indexes, RLS, starter scenarios
 migrations/002_dashboard_schema.sql date of birth, override audit, scanner heartbeats
 migrations/003_rbac_and_emailing.sql roles (volunteer -> scanner), checkpoint grants, temporary passwords
+migrations/004_auto_membership_id.sql membership ID sequence (NSAC-001000, ...)
 scripts/seed                        CSV import + HMAC signing
 scripts/create-admin                create scanner / dashboard logins
 scripts/sample                      example participants.csv and venues.csv
@@ -58,7 +60,8 @@ public/js/pass-card.js              downloadable 70 x 110 mm pass (PNG + print-r
 public/assets                       qr-template.pdf (source), pass-template.jpg (600 dpi render), colombo-mark.png
 public/sw.js                        service worker (offline app shell)
 public/admin/                       organizer dashboard (dashboard.html, app.js), staff page (staff.html,
-                                    staff.js), shared helpers (common.js), compiled CSS
+                                    staff.js), add delegates (ingest.html, ingest.js), shared helpers
+                                    (common.js), compiled CSS
 scripts/tailwind                    Tailwind config + source CSS for the dashboard
 public/vendor                       pinned Dexie 4.0.11, html5-qrcode 2.3.8, qrcodejs 1.0.0,
                                     node-qrcode 1.5.4 encoder core (pass card QR)
@@ -70,7 +73,7 @@ Deploying for real (DigitalOcean App Platform + Supabase + Gmail)? Follow [DEPLO
 
 Requires Go 1.22 or newer. Run `go mod tidy` once to fetch dependencies and create `go.sum`.
 
-1. **Database.** Run `migrations/001_schema.sql`, `002_dashboard_schema.sql` and `003_rbac_and_emailing.sql`, in that order, in the Supabase SQL editor. All are safe to re-run. 003 renames `volunteer` accounts to `scanner` and grants them every existing checkpoint, so nobody loses access on deploy.
+1. **Database.** Run `migrations/001_schema.sql`, `002_dashboard_schema.sql`, `003_rbac_and_emailing.sql` and `004_auto_membership_id.sql`, in that order, in the Supabase SQL editor. All are safe to re-run. 003 renames `volunteer` accounts to `scanner` and grants them every existing checkpoint, so nobody loses access on deploy.
 2. **Environment.** Copy `.env.example` to `.env`, fill it in, then `set -a; source .env; set +a`.
 3. **Venues and delegates.**
    ```sh
@@ -78,6 +81,11 @@ Requires Go 1.22 or newer. Run `go mod tidy` once to fetch dependencies and crea
    go run ./scripts/seed -venues venues.csv -participants participants.csv
    ```
    Re-running is safe: rows are upserted. Lines with problems are reported and skipped.
+
+   The seed script imports delegates who **already have** membership IDs (from the registration form).
+   To add delegates without IDs, use `/admin/ingest.html` instead (one at a time or a CSV upload): the
+   server assigns `NSAC-001000`, `NSAC-001001`, … and signs each pass. That needs `HMAC_SECRET_KEY` set
+   for the API too, with the same value the seed script uses.
 4. **Logins.**
    ```sh
    go run ./scripts/create-admin -email lead@example.org -name "Event lead" -role superadmin
@@ -105,7 +113,7 @@ A database volume created before a migration existed won't run it
 automatically (init scripts only run on an empty volume). Apply new ones once:
 
 ```sh
-docker compose -f nsac-qr.compose.yaml exec -T db psql -U nsac -d nsac_qr < migrations/003_rbac_and_emailing.sql
+docker compose -f nsac-qr.compose.yaml exec -T db psql -U nsac -d nsac_qr < migrations/004_auto_membership_id.sql
 ```
 
 Compose also starts [Mailpit](https://mailpit.axllent.org/), which catches every email the API sends
@@ -149,6 +157,14 @@ calculated from the database's `CURRENT_DATE` (UTC on Supabase).
 
 `venues.csv`: `name,hall_section,latitude,longitude,description`
 
+Upload on `/admin/ingest.html` (no membership IDs; the server assigns them):
+`full_name,email,team_name,date_of_birth,venue_id`. Only `full_name` and `email` are required;
+`date_of_birth` is `YYYY-MM-DD`; `venue_id` is a venue's UUID (the page lists them and its sample
+template fills one in). Up to 10,000 rows or 5 MB per file. Valid rows are added in one batch; invalid
+rows and emails already registered are listed in the report and skipped, so uploading the corrected
+file again adds only what's missing. A file with a `membership_id` column is refused, so delegates who
+already have IDs aren't given new ones by mistake.
+
 Header names are matched case-insensitively and spaces become underscores, so a Google Sheets export with "Full Name" works.
 
 ## API
@@ -168,6 +184,8 @@ Header names are matched case-insensitively and spaces become underscores, so a 
 | POST | `/api/v1/devices/heartbeat` | any admin | Scanner reports its local queue counts |
 | GET | `/api/v1/admin/dashboard/stats` | admin, superadmin | Metric cards, throughput, per-scenario and fleet totals |
 | POST | `/api/v1/admin/participants/filter` | admin, superadmin | Delegate table: search, age group, claim status, venue, confirmation, paging |
+| POST | `/api/v1/admin/participants/create` | admin, superadmin | `{"full_name","email","team_name","date_of_birth","venue_id"}`; returns the new membership ID and signature. 409 if the email is registered |
+| POST | `/api/v1/admin/participants/upload-csv` | admin, superadmin | CSV as multipart field `file` or `text/csv` body; returns `{total_rows, created, duplicates, errors}` |
 | POST | `/api/v1/admin/scenarios/toggle` | admin, superadmin | `{"scenario_id","is_active"}` |
 | POST | `/api/v1/admin/scans/manual-override` | admin, superadmin | Record a scan without a QR; rationale required, 409 if already claimed |
 | GET | `/api/v1/admin/devices/health` | admin, superadmin | Scanner phones with last reported queue |
@@ -217,7 +235,7 @@ Idempotency keys are `{admin_id}_{participant_id}_{scenario_id}` for single-clai
 - **Shared phones:** scans are uploaded by the volunteer who made them. If someone else signs in, the earlier volunteer's scans wait on the phone (the scanner says so) until that person signs in again.
 - **After a deploy that changes `public/`:** bump `CACHE_VERSION` in `public/sw.js`, or phones keep the old scanner until the background refresh lands.
 - **Changing the pass design:** the card background is `public/assets/pass-template.jpg`, rendered from `qr-template.pdf` with `pdftoppm -r 600 -jpeg -jpegopt quality=90 -singlefile public/assets/qr-template.pdf public/assets/pass-template`. If the boxes move, update the millimetre positions at the top of `public/js/pass-card.js`, then bump `CACHE_VERSION` in `public/sw.js`.
-- **Secrets:** keep `HMAC_SECRET_KEY` fixed for the whole event; rotating it invalidates every pass already sent.
+- **Secrets:** keep `HMAC_SECRET_KEY` fixed for the whole event, and the same for the API and the seed script; rotating it invalidates every pass already sent.
 - **Dashboard "Not reporting" phones:** a phone that hasn't reported for 2 minutes is shown with the last queue it reported. If it still holds scans, find the volunteer and get the phone onto Wi-Fi with the scanner open.
 - **Dashboard styles:** `public/admin/dashboard.css` is compiled and committed, so the Go build needs no Node. After changing classes in `public/admin/`, rebuild it with the command at the top of `scripts/tailwind/tailwind.config.js`.
 
@@ -230,5 +248,6 @@ Idempotency keys are `{admin_id}_{participant_id}_{scenario_id}` for single-clai
 - The live stream is fed by one poller per API instance that reads new scans every 2 seconds. This works through every Supabase connection mode, including the transaction pooler. If a phone uploads more than 500 scans within one poll, the stream shows the newest 500. The scans are all stored; the dashboard table and counts include them.
 - The stream holds one HTTP connection per open dashboard. A proxy in front of the API must allow long-lived responses and must not buffer `text/event-stream` (the API sends `X-Accel-Buffering: no` and a keep-alive every 20 s).
 - Removing a checkpoint from a scanner while their phone is offline makes their queued scans for that checkpoint `INVALID` when the phone reconnects (shown in that phone's invalid count on the dashboard). Remove grants after the phone has synced.
+- Membership IDs can have gaps: numbers reserved for a batch that then hit an already-registered email are not reused. Generated IDs stop at `NSAC-999999`.
 - A superadmin can't deactivate, demote or reset themselves from the Staff page, so there is always at least one superadmin.
 - Phone queue counts are self-reported by each scanner, so the dashboard can only show what a phone last reported while it had signal.

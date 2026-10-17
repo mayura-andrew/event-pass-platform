@@ -1,0 +1,88 @@
+# Tests every push and pull request; on main, then applies .do/app.yaml to
+# DigitalOcean App Platform, which rebuilds from the Dockerfile and deploys.
+#
+# Repository secrets this needs (Settings > Secrets and variables > Actions):
+#   DIGITALOCEAN_ACCESS_TOKEN  read/write access to App Platform
+#   DATABASE_URL, JWT_SECRET, HMAC_SECRET_KEY, SMTP_USERNAME, SMTP_PASSWORD, SMTP_FROM
+#   GOOGLE_MAPS_API_KEY        optional
+# See DEPLOY.md, step 5.
+name: Test and deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test ./...
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment: production
+    # One deploy at a time; a newer push waits rather than cancelling a
+    # deploy that is half way through.
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      HMAC_SECRET_KEY: ${{ secrets.HMAC_SECRET_KEY }}
+      SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+      SMTP_FROM: ${{ secrets.SMTP_FROM }}
+      GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # The action replaces the app's whole spec, so a missing secret would
+      # blank that setting in production. Stop before that can happen.
+      - name: Check secrets
+        env:
+          DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+        run: |
+          fail=0
+          for name in DIGITALOCEAN_ACCESS_TOKEN DATABASE_URL JWT_SECRET HMAC_SECRET_KEY SMTP_USERNAME SMTP_PASSWORD SMTP_FROM; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Repository secret $name is not set"
+              fail=1
+            fi
+          done
+          # Values are substituted into single-quoted YAML in .do/app.yaml.
+          for name in DATABASE_URL JWT_SECRET HMAC_SECRET_KEY SMTP_USERNAME SMTP_PASSWORD SMTP_FROM GOOGLE_MAPS_API_KEY; do
+            case "${!name}" in
+              *"'"* | *$'\n'*)
+                echo "::error::Secret $name contains a single quote or a line break; remove it"
+                fail=1 ;;
+            esac
+          done
+          for name in JWT_SECRET HMAC_SECRET_KEY; do
+            value=${!name}
+            if [ -n "$value" ] && [ "${#value}" -lt 32 ]; then
+              echo "::error::$name must be at least 32 characters (openssl rand -hex 32)"
+              fail=1
+            fi
+          done
+          exit $fail
+
+      - name: Deploy to App Platform
+        uses: digitalocean/app_action/deploy@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          print_build_logs: true
+          print_deploy_logs: true

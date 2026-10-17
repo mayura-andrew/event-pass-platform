@@ -14,6 +14,7 @@ type Handler struct {
 	Dashboard    *service.DashboardService
 	Feed         *service.ScanFeed
 	Staff        *service.StaffService
+	Ingest       *service.IngestService // nil when HMAC_SECRET_KEY is unset
 	Tokens       *auth.TokenManager
 	Accounts     AccountLookup // live role/status checks on every request
 

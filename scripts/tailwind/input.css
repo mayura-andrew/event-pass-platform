@@ -51,4 +51,7 @@
   .pill { @apply inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-bold; }
   .th { @apply whitespace-nowrap px-3 py-2 text-left text-xs font-bold uppercase tracking-wide text-ink-soft; }
   .td { @apply px-3 py-2.5 align-top; }
+  .tab { @apply -mb-px min-h-[44px] rounded-t-lg border-2 border-b-0 border-transparent px-4 text-sm font-bold text-ink-soft hover:text-ink aria-selected:border-line aria-selected:bg-panel aria-selected:text-ink; }
+  .dropzone { @apply flex cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-line bg-paper/40 px-4 py-10 text-center transition hover:border-action hover:bg-action/5; }
+  .dropzone.is-over { @apply border-action bg-action/10; }
 }

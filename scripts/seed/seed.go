@@ -26,11 +26,8 @@ package main
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
 	"database/sql"
 	"encoding/csv"
-	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
@@ -42,16 +39,9 @@ import (
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
-)
 
-// GenerateHMAC returns hex(HMAC-SHA256(membership_id + ":" + email, secret)).
-// Inputs must already be normalized (trimmed ID, trimmed lower-case email);
-// the API normalizes portal lookups the same way.
-func GenerateHMAC(membershipID, email string, secret []byte) string {
-	mac := hmac.New(sha256.New, secret)
-	mac.Write([]byte(membershipID + ":" + email))
-	return hex.EncodeToString(mac.Sum(nil))
-}
+	"github.com/nasa-spaceapps/nsac-qr/internal/auth"
+)
 
 func main() {
 	participantsPath := flag.String("participants", "", "path to participants CSV (required)")
@@ -69,7 +59,7 @@ func main() {
 	if dsn == "" {
 		log.Fatal("DATABASE_URL is required")
 	}
-	if len(secret) < 32 {
+	if len(secret) < auth.MinQRKeyBytes {
 		log.Fatal("HMAC_SECRET_KEY must be at least 32 bytes (e.g. `openssl rand -hex 32`)")
 	}
 
@@ -288,7 +278,7 @@ func loadParticipants(ctx context.Context, tx *sql.Tx, path string, secret []byt
 			st.noDOB++
 		}
 
-		sig := GenerateHMAC(membershipID, email, secret)
+		sig := auth.QRSignature(membershipID, email, secret)
 
 		// A savepoint per row means one bad row (e.g. an email already used by
 		// a different membership ID) is reported and skipped instead of

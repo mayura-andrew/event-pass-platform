@@ -214,9 +214,10 @@ func (h *Handler) clientIP(r *http.Request) string {
 // those exhaust a small Supabase pool. The context is cancelled at the
 // deadline, which makes pgx cancel the running query on the server.
 const (
-	apiDeadline   = 15 * time.Second
-	syncDeadline  = 30 * time.Second // up to 500 scans
-	emailDeadline = 45 * time.Second // SMTP send inside the request
+	apiDeadline    = 15 * time.Second
+	syncDeadline   = 30 * time.Second // up to 500 scans
+	emailDeadline  = 45 * time.Second // SMTP send inside the request
+	importDeadline = 55 * time.Second // CSV upload: up to 5 MB arriving, then one batch insert
 )
 
 func deadlines(next http.Handler) http.Handler {
@@ -231,6 +232,8 @@ func deadlines(next http.Handler) http.Handler {
 			d = syncDeadline
 		case p == "/api/v1/admin/staff/create", strings.HasSuffix(p, "/resend-credentials"):
 			d = emailDeadline
+		case p == "/api/v1/admin/participants/upload-csv":
+			d = importDeadline
 		default:
 			d = apiDeadline
 		}

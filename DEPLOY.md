@@ -30,7 +30,8 @@ git push -u origin main
    database password somewhere safe.
 2. **SQL Editor** → run each file's contents, in this order:
    `migrations/001_schema.sql`, `migrations/002_dashboard_schema.sql`,
-   `migrations/003_rbac_and_emailing.sql`. Each is safe to run twice.
+   `migrations/003_rbac_and_emailing.sql`, `migrations/004_auto_membership_id.sql`.
+   Each is safe to run twice.
 3. **Project Settings → Database → Connection string → Session pooler**
    (port 5432). Copy it and put your password in it. If the password has
    symbols such as `@`, `#` or `/`, URL-encode them (`@` → `%40`).
@@ -106,34 +107,53 @@ replaces any other From address with the signed-in account. Gmail allows about
 500 messages a day (2,000 on Workspace), which is far more than staff
 provisioning needs.
 
-## 5. Create the App Platform app
+## 5. Deploy with GitHub Actions
 
-1. In `.do/app.yaml`, replace `YOUR_GITHUB_USER/nsac-qr` with your repository
-   and commit/push the change.
-2. DigitalOcean control panel → **Apps → Create App → GitHub**. The first time,
-   authorize DigitalOcean to read the repository.
-3. Create the app from the spec. Either:
-   - Command line: `doctl auth init` (with a token from the DigitalOcean
-     account you want to bill), then `doctl apps create --spec .do/app.yaml`;
-   - or the control panel: pick the repo and branch `main`, and set the values
-     from `.do/app.yaml` by hand (Dockerfile build, HTTP port 8080, health
-     check `/healthz`, region Bangalore, plan Basic $5).
-4. **Settings → api → Environment Variables**: fill in the secrets and tick
-   **Encrypt** on each:
+`.github/workflows/deploy.yml` runs `go vet` and `go test` on every push and
+pull request. On `main`, once they pass, it applies `.do/app.yaml` to App
+Platform: it creates the app the first time and updates it after that. App
+Platform then builds the Dockerfile and deploys.
 
-   | Variable | Value |
+1. **Connect GitHub to DigitalOcean (once).** Control panel → **Apps →
+   Create App → GitHub** and authorize DigitalOcean to read the repository
+   (for an organization repo, grant access to that organization). You can
+   leave the wizard once the repository shows up in the list; the workflow
+   creates the app itself.
+2. **Create a DigitalOcean API token.** **API → Tokens → Generate New Token**,
+   with read and write access to **App Platform** (custom scopes: `app`
+   create/read/update), and an expiry later than the event.
+3. **Add the repository secrets.** GitHub → the repository → **Settings →
+   Secrets and variables → Actions → New repository secret**:
+
+   | Secret | Value |
    | --- | --- |
-   | `DATABASE_URL` | The Session pooler string from step 2 |
+   | `DIGITALOCEAN_ACCESS_TOKEN` | The token from step 2 |
+   | `DATABASE_URL` | The Session pooler string from step 2 of this guide |
    | `JWT_SECRET` | `openssl rand -hex 32` (a new one, not your local value) |
+   | `HMAC_SECRET_KEY` | The production key from step 3, the one the seed script used. It signs passes for delegates added on **Add delegates** |
    | `SMTP_USERNAME` | `yourname@gmail.com` |
    | `SMTP_PASSWORD` | The 16-character app password |
    | `SMTP_FROM` | `NASA Space Apps Colombo <yourname@gmail.com>` |
    | `GOOGLE_MAPS_API_KEY` | Optional; restrict it to the app's URL |
 
+   The workflow passes them into `.do/app.yaml`, where they are stored
+   encrypted (`type: SECRET`). It refuses to deploy if a required one is
+   missing, because a blank secret would replace the value in production.
+   Values can't contain a single quote (`'`).
+
    The rest (`SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=587`,
    `SMTP_SECURITY=starttls`, `CLIENT_IP_HEADER=DO-Connecting-IP`,
-   `APP_BASE_URL=${APP_URL}`, …) comes from the spec.
-5. Save. The app rebuilds and deploys (a few minutes).
+   `APP_BASE_URL=${APP_URL}`, …) is in the spec itself.
+4. **Run it.** Push to `main`, or GitHub → **Actions → Test and deploy → Run
+   workflow**. The first run creates the app `nsac-qr` and takes a few
+   minutes; the build and deploy logs are printed in the job, and the last
+   line gives the app's URL.
+
+> **`.do/app.yaml` is the source of truth.** Every deploy replaces the app's
+> settings with that file, so a change made in the control panel (an
+> environment variable, the instance size, a domain) is undone by the next
+> push. Make the change in `.do/app.yaml`, or for a secret in the GitHub
+> secret, and push.
 
 ## 6. Check the deployment
 
@@ -156,18 +176,31 @@ provisioning needs.
 
 ## 7. Your own domain (optional)
 
-Apps → Settings → **Domains → Add domain**, then create the DNS record it
-shows. When it's active, set `APP_BASE_URL` to `https://your.domain` so emailed
-sign-in links use it.
+Add the domain to `.do/app.yaml` and push (a domain added only in the control
+panel is removed by the next deploy):
+
+```yaml
+domains:
+  - domain: pass.example.org
+    type: PRIMARY
+```
+
+Then create the DNS record shown under Apps → Settings → **Domains**. When
+it's active, set `APP_BASE_URL` in the spec to `https://pass.example.org` so
+emailed sign-in links use it.
 
 ## Updating
 
-- `git push` to `main` deploys automatically (`deploy_on_push`).
+- `git push` to `main` deploys automatically once the tests pass
+  (**Actions → Test and deploy**). A failing test stops the deploy.
+- To change a secret, update the GitHub secret, then re-run the workflow
+  (**Actions → Test and deploy → Run workflow**).
 - Changed anything under `public/`? Bump `CACHE_VERSION` in `public/sw.js` in
   the same commit, or phones keep the previous version until the background
   refresh lands.
 - New migration? Run it in the Supabase SQL editor **before** pushing the code
-  that needs it.
+  that needs it. (`004_auto_membership_id.sql` must be in place before the
+  **Add delegates** page is used.)
 - Avoid deploying while scanning is in progress. A deploy restarts the
   container: phones keep scanning offline and upload afterwards, but
   dashboards reconnect and in-memory rate limits reset.

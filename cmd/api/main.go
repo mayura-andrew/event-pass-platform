@@ -50,6 +50,7 @@ func run() error {
 	scanRepo := postgres.NewScanRepo(db)
 	dashboardRepo := postgres.NewDashboardRepo(db)
 	staffRepo := postgres.NewStaffRepo(db)
+	ingestRepo := postgres.NewIngestRepo(db)
 
 	mailer, err := newMailer(cfg)
 	if err != nil {
@@ -68,6 +69,7 @@ func run() error {
 		Dashboard:    service.NewDashboardService(dashboardRepo, scenarios, cfg.CheckInCode),
 		Feed:         feed,
 		Staff:        service.NewStaffService(staffRepo, mailer, cfg.AppBaseURL, cfg.EventName),
+		Ingest:       newIngest(ingestRepo, cfg.HMACSecretKey),
 		Accounts:     adminRepo,
 
 		ClientIPHeader:  cfg.ClientIPHeader,
@@ -113,6 +115,16 @@ func run() error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	return srv.Shutdown(shutdownCtx)
+}
+
+// newIngest returns nil when HMAC_SECRET_KEY is unset: the dashboard then
+// answers 503 instead of creating delegates whose passes can't be signed.
+func newIngest(repo *postgres.IngestRepo, key []byte) *service.IngestService {
+	if len(key) == 0 {
+		slog.Warn("HMAC_SECRET_KEY not set: delegates can't be added from the dashboard")
+		return nil
+	}
+	return service.NewIngestService(repo, key)
 }
 
 // newMailer builds the SMTP mailer, or a disabled one when SMTP_HOST is unset

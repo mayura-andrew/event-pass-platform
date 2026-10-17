@@ -61,6 +61,10 @@ func NewRouter(h *Handler, publicDir, allowedOrigin string) http.Handler {
 	mux.Handle("GET /api/v1/admin/scans/recent", manager(h.recentScans))
 	mux.Handle("GET /api/v1/admin/scans/stream", manager(h.scanStream))
 
+	// Adding delegates (membership IDs and QR signatures are generated)
+	mux.Handle("POST /api/v1/admin/participants/create", manager(h.createParticipant))
+	mux.Handle("POST /api/v1/admin/participants/upload-csv", manager(h.uploadParticipantsCSV))
+
 	// Staff accounts: listing for managers, changes for superadmins only
 	mux.Handle("GET /api/v1/admin/staff/list", manager(h.listStaff))
 	mux.Handle("POST /api/v1/admin/staff/create", superadmin(h.createStaff))
