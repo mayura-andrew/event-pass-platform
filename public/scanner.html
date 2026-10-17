@@ -199,6 +199,17 @@
     .facts dt { opacity: .8; }
     .facts dd { margin: 0; font-weight: 700; overflow-wrap: anywhere; }
     #participant-id { font-size: 1.3rem; letter-spacing: .02em; }
+    /* Custom details: solid white badges so they read on green, amber and
+       red alike, and stand out from the plain facts above. */
+    #participant-attrs { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 0; padding: 0; list-style: none; }
+    .attr {
+      display: inline-flex; flex-direction: column; gap: 1px;
+      padding: 7px 12px 8px; border-radius: var(--radius-s);
+      background: #fff; color: #13233D; box-shadow: 0 1px 0 rgba(0,0,0,.18);
+      max-width: 100%;
+    }
+    .attr-label { font-size: .78rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #4A5A73; }
+    .attr-value { font-size: 1.2rem; font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; }
 
     .modal-footer { margin-top: auto; padding-top: 28px; }
     .checkpoint { margin: 0 0 12px; opacity: .9; }
@@ -310,6 +321,8 @@
           <dt>Email</dt><dd id="participant-email"></dd>
           <dt>Venue</dt><dd id="participant-venue"></dd>
         </dl>
+        <!-- Custom fields marked "Scanner popup" on the dashboard -->
+        <ul id="participant-attrs" aria-label="Delegate details" hidden></ul>
       </div>
 
       <div class="modal-footer">

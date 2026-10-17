@@ -19,11 +19,15 @@ import (
 type IngestStore interface {
 	ExistingEmails(ctx context.Context, emails []string) (map[string]string, error)
 	VenueIDs(ctx context.Context) (map[string]bool, error)
-	BulkInsertWithAutoID(ctx context.Context, rows []domain.NewParticipant, sign func(membershipID, email string) string) ([]domain.CreatedParticipant, []domain.NewParticipant, error)
+	FieldDefinitions(ctx context.Context) ([]domain.FieldDefinition, error)
+	// BulkInsertWithAutoID also registers newFields (custom fields first seen
+	// in this upload) in the same transaction.
+	BulkInsertWithAutoID(ctx context.Context, rows []domain.NewParticipant, newFields []domain.NewField, sign func(membershipID, email string) string) ([]domain.CreatedParticipant, []domain.NewParticipant, error)
 }
 
-// ImportColumns is the CSV header the importer reads, in template order.
-// full_name and email are required; the others may be left out or blank.
+// ImportColumns are the core CSV columns, in template order. full_name and
+// email are required; the others may be left out or blank. Any other column
+// is a custom field (see csv_dynamic_service.go).
 var ImportColumns = []string{"full_name", "email", "team_name", "date_of_birth", "venue_id"}
 
 // IngestService adds confirmed delegates from the dashboard, one at a time or
@@ -43,6 +47,18 @@ func (s *IngestService) sign(membershipID, email string) string {
 	return auth.QRSignature(membershipID, email, s.key)
 }
 
+func (s *IngestService) fieldsByKey(ctx context.Context) (map[string]domain.FieldDefinition, error) {
+	list, err := s.store.FieldDefinitions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defs := make(map[string]domain.FieldDefinition, len(list))
+	for _, d := range list {
+		defs[d.Key] = d
+	}
+	return defs, nil
+}
+
 // ---- Single entry ------------------------------------------------------------
 
 // Create adds one delegate. actorID is the organizer from the JWT.
@@ -55,6 +71,15 @@ func (s *IngestService) Create(ctx context.Context, actorID string, req domain.P
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", domain.ErrValidation, err)
 	}
+	if len(req.CustomAttributes) > 0 {
+		defs, err := s.fieldsByKey(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if p.CustomAttributes, err = customFromForm(req.CustomAttributes, defs); err != nil {
+			return nil, fmt.Errorf("%w: %s", domain.ErrValidation, err)
+		}
+	}
 	existing, err := s.store.ExistingEmails(ctx, []string{p.Email})
 	if err != nil {
 		return nil, err
@@ -63,7 +88,7 @@ func (s *IngestService) Create(ctx context.Context, actorID string, req domain.P
 		return nil, fmt.Errorf("%w: %s is already registered as %s", domain.ErrConflict, p.Email, id)
 	}
 
-	created, _, err := s.store.BulkInsertWithAutoID(ctx, []domain.NewParticipant{p}, s.sign)
+	created, _, err := s.store.BulkInsertWithAutoID(ctx, []domain.NewParticipant{p}, nil, s.sign)
 	if err != nil {
 		return nil, err
 	}
@@ -83,10 +108,19 @@ func (s *IngestService) Create(ctx context.Context, actorID string, req domain.P
 // already registered are reported, not inserted, so uploading the corrected
 // file again adds only what was missing.
 //
+// Extra columns become custom fields: each row's values are stored in
+// custom_attributes, and columns not seen before are registered in the same
+// transaction (as text fields, hidden from scanners and filters until an
+// organizer turns them on).
+//
 // A file that can't be read as a whole (no header, broken quoting, too many
 // rows) is a validation error and nothing is inserted.
 func (s *IngestService) ImportCSV(ctx context.Context, actorID string, r io.Reader) (*domain.ImportResult, error) {
 	venues, err := s.store.VenueIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defs, err := s.fieldsByKey(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -102,15 +136,21 @@ func (s *IngestService) ImportCSV(ctx context.Context, actorID string, r io.Read
 	if err != nil {
 		return nil, csvError(err)
 	}
-	col, err := importHeader(header)
+	plan, err := planColumns(header, defs)
 	if err != nil {
 		return nil, err
 	}
 
 	res := &domain.ImportResult{
-		Created:    []domain.CreatedParticipant{},
-		Duplicates: []domain.ImportIssue{},
-		Errors:     []domain.ImportIssue{},
+		Created:        []domain.CreatedParticipant{},
+		Duplicates:     []domain.ImportIssue{},
+		Errors:         []domain.ImportIssue{},
+		CustomFields:   []string{},
+		NewFields:      []string{},
+		IgnoredColumns: append([]string{}, plan.ignored...),
+	}
+	for _, c := range plan.custom {
+		res.CustomFields = append(res.CustomFields, c.key)
 	}
 	var valid []domain.NewParticipant
 	firstLine := make(map[string]int) // email -> line it first appeared on
@@ -125,7 +165,7 @@ func (s *IngestService) ImportCSV(ctx context.Context, actorID string, r io.Read
 		}
 		line, _ := cr.FieldPos(0)
 		get := func(name string) string {
-			if i, ok := col[name]; ok && i < len(rec) {
+			if i, ok := plan.core[name]; ok && i < len(rec) {
 				return rec[i]
 			}
 			return ""
@@ -137,7 +177,8 @@ func (s *IngestService) ImportCSV(ctx context.Context, actorID string, r io.Read
 			DateOfBirth: get("date_of_birth"),
 			VenueID:     get("venue_id"),
 		}
-		if blankRow(req) {
+		custom, customErr := plan.customValues(rec)
+		if blankRow(req) && len(custom) == 0 && customErr == nil {
 			continue // spreadsheets often export trailing ",,,," rows
 		}
 		res.TotalRows++
@@ -147,12 +188,16 @@ func (s *IngestService) ImportCSV(ctx context.Context, actorID string, r io.Read
 		}
 
 		p, err := s.validate(req, venues)
+		if err == nil {
+			err = customErr
+		}
 		if err != nil {
 			res.Errors = append(res.Errors, domain.ImportIssue{
 				Line: line, Email: strings.TrimSpace(req.Email), Message: err.Error(),
 			})
 			continue
 		}
+		p.CustomAttributes = custom
 		if first, dup := firstLine[p.Email]; dup {
 			res.Duplicates = append(res.Duplicates, domain.ImportIssue{
 				Line: line, Email: p.Email, Message: fmt.Sprintf("repeats line %d of this file", first),
@@ -184,9 +229,13 @@ func (s *IngestService) ImportCSV(ctx context.Context, actorID string, r io.Read
 			fresh = append(fresh, p)
 		}
 
-		created, skipped, err := s.store.BulkInsertWithAutoID(ctx, fresh, s.sign)
+		newFields := plan.fieldsToRegister(fresh)
+		created, skipped, err := s.store.BulkInsertWithAutoID(ctx, fresh, newFields, s.sign)
 		if err != nil {
 			return nil, err
+		}
+		for _, f := range newFields {
+			res.NewFields = append(res.NewFields, f.Key)
 		}
 		res.Created = append(res.Created, created...)
 		for _, p := range skipped {
@@ -197,38 +246,9 @@ func (s *IngestService) ImportCSV(ctx context.Context, actorID string, r io.Read
 	}
 
 	slog.Info("participants imported", "actor", actorID, "rows", res.TotalRows,
-		"created", len(res.Created), "duplicates", len(res.Duplicates), "errors", len(res.Errors))
+		"created", len(res.Created), "duplicates", len(res.Duplicates), "errors", len(res.Errors),
+		"new_fields", res.NewFields)
 	return res, nil
-}
-
-// importHeader maps column names to positions. Names are matched loosely
-// ("Full Name" = full_name, Excel's byte-order mark is ignored) so a file
-// saved from a spreadsheet works without editing.
-func importHeader(header []string) (map[string]int, error) {
-	col := make(map[string]int, len(header))
-	for i, h := range header {
-		h = strings.TrimPrefix(h, "\ufeff")
-		h = strings.ToLower(strings.Join(strings.Fields(h), "_"))
-		if h == "membership_id" {
-			return nil, fmt.Errorf("%w: remove the membership_id column; IDs are assigned automatically "+
-				"(to import delegates who already have IDs, use scripts/seed)", domain.ErrValidation)
-		}
-		if _, dup := col[h]; dup && h != "" {
-			return nil, fmt.Errorf("%w: column %q appears twice in the header", domain.ErrValidation, h)
-		}
-		col[h] = i
-	}
-	var missing []string
-	for _, name := range []string{"full_name", "email"} {
-		if _, ok := col[name]; !ok {
-			missing = append(missing, name)
-		}
-	}
-	if len(missing) > 0 {
-		return nil, fmt.Errorf("%w: the header row must include %s (expected: %s)",
-			domain.ErrValidation, strings.Join(missing, " and "), strings.Join(ImportColumns, ","))
-	}
-	return col, nil
 }
 
 func csvError(err error) error {

@@ -30,7 +30,8 @@ git push -u origin main
    database password somewhere safe.
 2. **SQL Editor** → run each file's contents, in this order:
    `migrations/001_schema.sql`, `migrations/002_dashboard_schema.sql`,
-   `migrations/003_rbac_and_emailing.sql`, `migrations/004_auto_membership_id.sql`.
+   `migrations/003_rbac_and_emailing.sql`, `migrations/004_auto_membership_id.sql`,
+   `migrations/005_jsonb_dynamic_schema.sql`.
    Each is safe to run twice.
 3. **Project Settings → Database → Connection string → Session pooler**
    (port 5432). Copy it and put your password in it. If the password has
@@ -200,7 +201,8 @@ emailed sign-in links use it.
   refresh lands.
 - New migration? Run it in the Supabase SQL editor **before** pushing the code
   that needs it. (`004_auto_membership_id.sql` must be in place before the
-  **Add delegates** page is used.)
+  **Add delegates** page is used, and `005_jsonb_dynamic_schema.sql` before
+  this version starts: the API reads `custom_attributes` everywhere.)
 - Avoid deploying while scanning is in progress. A deploy restarts the
   container: phones keep scanning offline and upload afterwards, but
   dashboards reconnect and in-memory rate limits reset.

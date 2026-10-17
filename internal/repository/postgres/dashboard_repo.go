@@ -109,6 +109,10 @@ func (r *DashboardRepo) GetFilteredParticipants(ctx context.Context, f domain.Pa
 		b.and(`NOT p.is_confirmed`)
 	}
 
+	if err := andCustomFilters(&b, f.Custom); err != nil {
+		return nil, err
+	}
+
 	where := b.whereSQL()
 	whereArgs := len(b.args) // the fallback count below binds only these
 	limit := b.arg(f.PageSize)
@@ -152,6 +156,7 @@ SELECT p.id, p.membership_id, p.full_name, p.email, COALESCE(p.team_name, ''),
        COALESCE(p.date_of_birth > ` + minorCutoff + `, false),
        p.assigned_venue_id, COALESCE(v.name, ''), COALESCE(v.hall_section, ''),
        c.claim_count, c.first_at, COALESCE(c.first_by, ''), COALESCE(c.first_method, ''),
+       p.custom_attributes,
        pg.total
 FROM page pg
 JOIN participants p ON p.id = pg.id
@@ -177,14 +182,16 @@ ORDER BY pg.full_name, pg.membership_id`
 			age     sql.NullInt32
 			venueID sql.NullString
 			firstAt sql.NullTime
+			custom  []byte
 		)
 		if err := rows.Scan(&p.ID, &p.MembershipID, &p.FullName, &p.Email, &p.TeamName,
 			&p.IsConfirmed, &dob, &age, &p.IsMinor,
 			&venueID, &p.VenueName, &p.HallSection,
 			&p.ClaimCount, &firstAt, &p.ClaimedBy, &p.ClaimMethod,
-			&page.Total); err != nil {
+			&custom, &page.Total); err != nil {
 			return nil, err
 		}
+		p.CustomAttributes = custom
 		if dob.Valid {
 			p.DateOfBirth = &dob.String
 		}

@@ -5,17 +5,19 @@
 // =============================================================================
 import {
   $, MANAGER_ROLES, AUTH_EVENT, getSession, clearSession, api, el, fmtInt, toast,
+  fieldKey, CORE_COLUMNS, HEADER_ALIASES, RESERVED_KEYS,
 } from './common.js';
 
 // Same limits and header as the server (internal/domain/ingest.go).
 const MAX_BYTES = 5 * 1024 * 1024;
 const MAX_ROWS = 10000;
-const COLUMNS = ['full_name', 'email', 'team_name', 'date_of_birth', 'venue_id'];
+const COLUMNS = CORE_COLUMNS;
 const PREVIEW_ROWS = 200;
 const REPORT_ROWS = 1000; // per table; the downloaded results have every row
 
 const state = {
   venues: [],
+  fields: [],       // custom field definitions
   file: null,       // File chosen for upload
   parsed: null,     // { header, rows: [{ line, cells }] }
   result: null,     // ImportResult from the server
@@ -29,8 +31,49 @@ const state = {
 
 const cleanMessage = (msg) => String(msg || '').replace(/^validation failed: /, '');
 
-/** Normalizes a header cell like the server: "Full Name" -> "full_name". */
-const normalizeHeader = (h) => h.replace(/^\uFEFF/, '').trim().toLowerCase().split(/\s+/).join('_');
+/**
+ * Sorts the header row into core columns, custom fields and ignored columns,
+ * the way the server's planColumns does: aliases ("E-mail") map to core
+ * columns, and a header may name an existing field by key or by label.
+ */
+function classifyColumns(rawHeader) {
+  const byKey = Object.fromEntries(state.fields.map((f) => [f.field_key, f]));
+  const byLabel = {};
+  for (const f of state.fields) {
+    const lk = fieldKey(f.field_label);
+    if (lk && lk !== f.field_key && !byKey[lk]) byLabel[lk] = f.field_key;
+  }
+  const plan = { core: {}, custom: [], ignored: [], error: '' };
+  const seen = {};
+  rawHeader.forEach((raw, i) => {
+    if (plan.error) return;
+    const label = raw.replace(/^\uFEFF/, '').trim();
+    let key = fieldKey(raw);
+    key = HEADER_ALIASES[key] || byLabel[key] || key;
+    if (key === 'membership_id') { plan.error = 'Remove the membership_id column: IDs are assigned automatically.'; return; }
+    if (!key) { if (label) plan.ignored.push(label); return; }
+    if (seen[key]) { plan.error = `Columns “${seen[key]}” and “${label}” both mean ${key}; rename or remove one.`; return; }
+    seen[key] = label;
+    if (COLUMNS.includes(key)) plan.core[key] = i;
+    else if (RESERVED_KEYS.has(key)) plan.ignored.push(label);
+    else {
+      const f = byKey[key];
+      plan.custom.push({ index: i, key, label: f ? f.field_label : label, type: f ? f.data_type : 'text', isNew: !f });
+    }
+  });
+  return plan;
+}
+
+/** Same checks as the server's CoerceCustomValue, for the preview. */
+function customProblem(type, raw) {
+  const v = String(raw || '').replace(/\s+/g, ' ').trim();
+  if (!v) return '';
+  if (v.length > 500) return 'is longer than 500 characters';
+  if (type === 'number' && !Number.isFinite(Number(v.replace(/,/g, '')))) return 'is not a number';
+  if (type === 'boolean' && !/^(true|false|yes|no|y|n|1|0)$/i.test(v)) return 'is not yes or no';
+  if (type === 'date' && (!DATE_RE.test(v) || Number.isNaN(Date.parse(v)))) return 'must be YYYY-MM-DD';
+  return '';
+}
 
 const EMAIL_RE = /^[^\s@<>()",;:]+@[^\s@<>()",;:]+\.[^\s@<>()",;:]+$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -91,6 +134,37 @@ function sessionEnded(message) {
 // Venues and the sample template
 // -----------------------------------------------------------------------------
 
+async function loadFields() {
+  try {
+    state.fields = await api('/api/v1/admin/fields');
+  } catch (err) {
+    if (err.status === 401) return;
+    state.fields = []; // CSV upload still works; columns just all look new
+  }
+  renderCustomInputs();
+  buildTemplate();
+}
+
+/** One typed input per custom field on the single-entry form. */
+function renderCustomInputs() {
+  $('p-custom').replaceChildren(...state.fields.map((f) => {
+    const id = `p-cf-${f.field_key}`;
+    let input;
+    if (f.data_type === 'boolean') {
+      input = el('select', { id, class: 'field', dataset: { key: f.field_key } },
+        el('option', { value: '' }, '—'), el('option', { value: 'yes' }, 'Yes'), el('option', { value: 'no' }, 'No'));
+    } else {
+      const type = { number: 'number', date: 'date' }[f.data_type] || 'text';
+      input = el('input', { id, class: 'field', type, step: type === 'number' ? 'any' : null, maxlength: 500, autocomplete: 'off', dataset: { key: f.field_key } });
+    }
+    return el('div', {},
+      el('label', { class: 'label', for: id }, f.field_label,
+        f.show_in_scanner_popup ? el('span', { class: 'ml-1 font-normal normal-case text-ink-soft' }, '(shown on scanners)') : null),
+      input);
+  }));
+  $('p-custom-set').hidden = state.fields.length === 0;
+}
+
 async function loadVenues() {
   try {
     state.venues = await api('/api/v1/admin/venues');
@@ -123,14 +197,21 @@ function renderVenues() {
   $('venue-empty').hidden = state.venues.length > 0;
 }
 
-/** The template is built here so its example rows use a real venue ID. */
+/**
+ * The template is built here so its example rows use a real venue ID, and
+ * carry columns for the custom fields organizers have chosen to show.
+ */
 function buildTemplate() {
   const venue = state.venues[0]?.id || '';
+  const extra = state.fields.filter((f) => f.show_in_scanner_popup || f.show_in_dashboard_filter).slice(0, 4);
+  const sample = (f, i) => ({
+    boolean: ['yes', 'no', ''][i], number: ['1', '2', ''][i], date: ['2026-10-04', '', ''][i],
+  }[f.data_type] ?? (f.options?.[i] || ['Example', '', ''][i]));
   const text = [
-    csvLine(COLUMNS),
-    csvLine(['Ada Reyes', 'ada.reyes@example.com', 'Orion Developers', '1998-04-12', venue]),
-    csvLine(['Lin Tan', 'lin.tan@example.com', 'Orion Developers', '2010-09-30', venue]),
-    csvLine(['Kwame Mensah', 'k.mensah@example.com', '', '', '']),
+    csvLine([...COLUMNS, ...extra.map((f) => f.field_key)]),
+    csvLine(['Ada Reyes', 'ada.reyes@example.com', 'Orion Developers', '1998-04-12', venue, ...extra.map((f) => sample(f, 0))]),
+    csvLine(['Lin Tan', 'lin.tan@example.com', 'Orion Developers', '2010-09-30', venue, ...extra.map((f) => sample(f, 1))]),
+    csvLine(['Kwame Mensah', 'k.mensah@example.com', '', '', '', ...extra.map((f) => sample(f, 2))]),
   ].join('\r\n') + '\r\n';
   if (state.templateURL) URL.revokeObjectURL(state.templateURL);
   state.templateURL = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }));
@@ -192,6 +273,9 @@ async function submitSingle(e) {
     team_name: $('p-team').value.trim(),
     date_of_birth: $('p-dob').value,
     venue_id: $('p-venue').value,
+    custom_attributes: Object.fromEntries([...$('p-custom').querySelectorAll('[data-key]')]
+      .map((i) => [i.dataset.key, i.value.trim()])
+      .filter(([, v]) => v !== '')),
   };
   if (!body.full_name) {
     singleError('Enter the delegate’s full name.');
@@ -349,12 +433,12 @@ async function handleFile(file) {
     return;
   }
 
-  const header = records[0].cells.map(normalizeHeader);
-  if (header.includes('membership_id')) {
-    csvError('Remove the membership_id column: IDs are assigned automatically.');
+  const plan = classifyColumns(records[0].cells);
+  if (plan.error) {
+    csvError(plan.error);
     return;
   }
-  const missing = ['full_name', 'email'].filter((c) => !header.includes(c));
+  const missing = ['full_name', 'email'].filter((c) => !(c in plan.core));
   if (missing.length) {
     csvError(`The first row must be the header, including ${missing.join(' and ')}. Expected: ${COLUMNS.join(',')}`);
     return;
@@ -370,7 +454,7 @@ async function handleFile(file) {
   }
 
   state.file = file;
-  state.parsed = { header, rows };
+  state.parsed = { plan, rows };
   renderPreview();
   showStep('preview');
 }
@@ -392,20 +476,24 @@ function rowProblem(get, seen) {
 }
 
 function renderPreview() {
-  const { header, rows } = state.parsed;
-  const index = Object.fromEntries(header.map((h, i) => [h, i]));
+  const { plan, rows } = state.parsed;
+  const index = plan.core;
   const shown = COLUMNS.filter((c) => c in index);
-  const ignored = header.filter((h) => h && !COLUMNS.includes(h));
 
   const seen = new Map();
   let flagged = 0;
   const checked = rows.map((r) => {
     const get = (name) => (name in index ? r.cells[index[name]] ?? '' : '');
-    const problem = rowProblem(get, seen);
+    let problem = rowProblem(get, seen);
+    for (const c of plan.custom) {
+      if (problem) break;
+      const p = customProblem(c.type, r.cells[c.index]);
+      if (p) problem = `${c.label} ${p}`;
+    }
     const email = get('email').trim().toLowerCase();
     if (email && !seen.has(email)) seen.set(email, r.line);
     if (problem) flagged++;
-    return { line: r.line, get, problem };
+    return { line: r.line, cells: r.cells, get, problem };
   });
 
   $('pv-file').textContent = state.file.name;
@@ -415,7 +503,12 @@ function renderPreview() {
     ' · Already-registered emails are checked when you import.';
 
   const warnings = [];
-  if (ignored.length) warnings.push(`Ignored column${ignored.length === 1 ? '' : 's'}: ${ignored.join(', ')}.`);
+  const fresh = plan.custom.filter((c) => c.isNew);
+  if (plan.custom.length) {
+    warnings.push(`Kept as custom fields: ${plan.custom.map((c) => c.label + (c.isNew ? ' (new)' : '')).join(', ')}.`);
+  }
+  if (fresh.length) warnings.push('New fields stay hidden from scanners and filters until you turn them on in Fields.');
+  if (plan.ignored.length) warnings.push(`Ignored column${plan.ignored.length === 1 ? '' : 's'}: ${plan.ignored.join(', ')}.`);
   const absent = COLUMNS.filter((c) => !(c in index) && c !== 'full_name' && c !== 'email');
   if (absent.length) warnings.push(`No ${absent.join(', ')} column; those stay blank.`);
   $('pv-warning').textContent = warnings.join(' ');
@@ -425,6 +518,8 @@ function renderPreview() {
   $('pv-head').replaceChildren(
     el('th', { class: 'th', scope: 'col' }, 'Line'),
     ...shown.map((c) => el('th', { class: 'th', scope: 'col' }, c)),
+    ...plan.custom.map((c) => el('th', { class: 'th', scope: 'col' }, c.label,
+      c.isNew ? el('span', { class: 'pill ml-1 bg-action/10 text-action' }, 'new') : null)),
     el('th', { class: 'th', scope: 'col' }, 'Check'),
   );
   $('pv-rows').replaceChildren(...checked.slice(0, PREVIEW_ROWS).map((r) => el('tr', { class: r.problem ? 'bg-stop/5' : '' },
@@ -433,6 +528,10 @@ function renderPreview() {
       const v = r.get(c).trim();
       const label = c === 'venue_id' && venueName[v.toLowerCase()] ? venueName[v.toLowerCase()] : v;
       return el('td', { class: 'td max-w-[240px] truncate', title: v }, label || '—');
+    }),
+    ...plan.custom.map((c) => {
+      const v = String(r.cells[c.index] ?? '').trim();
+      return el('td', { class: 'td max-w-[200px] truncate', title: v }, v || '—');
     }),
     el('td', { class: 'td whitespace-nowrap' }, r.problem
       ? el('span', { class: 'pill bg-stop/10 text-stop' }, r.problem)
@@ -560,6 +659,17 @@ function renderReport() {
   $('rp-created-box').hidden = r.created.length === 0;
   $('rp-created-box').open = r.errors.length === 0;
 
+  const notes = [];
+  if (r.new_fields?.length) {
+    notes.push(`New custom field${r.new_fields.length === 1 ? '' : 's'}: ${r.new_fields.join(', ')}. ` +
+      'They are hidden from scanners and dashboard filters until you turn them on.');
+  }
+  if (r.ignored_columns?.length) notes.push(`Ignored columns: ${r.ignored_columns.join(', ')}.`);
+  $('rp-fields').replaceChildren(...notes.map((n) => el('span', { class: 'block' }, n)),
+    r.new_fields?.length ? el('a', { href: '/admin/fields.html', class: 'font-bold text-action hover:underline' }, 'Open Fields →') : null);
+  $('rp-fields').hidden = notes.length === 0;
+  if (r.new_fields?.length) loadFields(); // the single-entry form gets the new inputs
+
   const tone = r.errors.length ? 'warn' : 'ok';
   toast(`Import finished: ${fmtInt(r.created.length)} added, ${fmtInt(r.duplicates.length)} duplicates, ${fmtInt(r.errors.length)} errors.`, tone);
 }
@@ -655,6 +765,7 @@ function boot() {
 
   buildTemplate(); // usable before venues load; rebuilt with a real venue ID after
   loadVenues();
+  loadFields();
 }
 
 boot();

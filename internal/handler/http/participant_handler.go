@@ -38,6 +38,15 @@ type manifestEntry struct {
 	count int
 }
 
+// invalidate drops the cached directory so the next request rebuilds it, for
+// changes that alter its content without adding delegates (which fields are
+// shown on scanners).
+func (c *manifestCache) invalidate() {
+	c.mu.Lock()
+	c.cur = nil
+	c.mu.Unlock()
+}
+
 func (c *manifestCache) get(ctx context.Context, load func(context.Context) ([]domain.ParticipantManifest, error)) (*manifestEntry, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

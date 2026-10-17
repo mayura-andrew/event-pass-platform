@@ -171,3 +171,60 @@ export function passwordProblem(next, confirm) {
   if (next !== confirm) return 'The two passwords don’t match.';
   return '';
 }
+
+// ---- Custom fields -------------------------------------------------------------
+
+export const FIELD_TYPE_LABELS = { text: 'Text', number: 'Number', boolean: 'Yes / no', date: 'Date' };
+
+// Column names that are delegate columns, not custom fields; keep in step
+// with ReservedFieldKeys and headerAliases in the Go service.
+export const CORE_COLUMNS = ['full_name', 'email', 'team_name', 'date_of_birth', 'venue_id'];
+export const HEADER_ALIASES = {
+  name: 'full_name', e_mail: 'email', email_address: 'email', team: 'team_name',
+  dob: 'date_of_birth', birth_date: 'date_of_birth', birthday: 'date_of_birth',
+  assigned_venue_id: 'venue_id',
+};
+export const RESERVED_KEYS = new Set([
+  'id', 'membership_id', 'email', 'full_name', 'team_name', 'date_of_birth', 'venue_id',
+  'assigned_venue_id', 'is_confirmed', 'qr_signature', 'created_at', 'custom_attributes',
+  'venue_name', 'hall_section',
+]);
+
+/**
+ * CSV header -> field key, exactly as the server does it (NormalizeFieldKey):
+ * accents folded, apostrophes and hyphens dropped, other runs of
+ * non-alphanumerics become one underscore, 50 characters at most, must start
+ * with a letter. Returns '' when unusable.
+ */
+// Same accent table as foldAccent in the Go service, so both sides agree.
+const ACCENT_FROM = 'àáâãäåāçćčèéêëēěìíîïīñńòóôõöøōśšùúûüūýÿžź';
+const ACCENT_TO = 'aaaaaaaccceeeeeeiiiiinnooooooossuuuuuyyzz';
+
+export function fieldKey(header) {
+  const folded = [...String(header).replace(/^\uFEFF/, '').toLowerCase()]
+    .map((ch) => { const i = ACCENT_FROM.indexOf(ch); return i >= 0 ? ACCENT_TO[i] : ch; })
+    .join('');
+  let key = '';
+  let underscore = false;
+  const chars = [...folded];
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i];
+    if (/[a-z0-9]/.test(ch)) { key += ch; underscore = false; }
+    else if (ch === "'" || ch === '’') {
+      // Possessive 's dropped: "Parent's contact" -> parent_contact.
+      if (chars[i + 1] === 's' && !/[a-z0-9]/.test(chars[i + 2] ?? '')) i++;
+    } else if (ch === '-') { /* joiner: "T-Shirt" -> tshirt */ }
+    else if (!underscore && key) { key += '_'; underscore = true; }
+  }
+  key = key.replace(/_+$/, '');
+  if (key.length > 50) key = key.slice(0, 50).replace(/_+$/, '');
+  return /^[a-z][a-z0-9_]{0,49}$/.test(key) ? key : '';
+}
+
+/** Formats a stored custom value for display. */
+export function fmtCustom(value, type) {
+  if (value == null || value === '') return '';
+  if (type === 'boolean' || typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (typeof value === 'number') return value.toLocaleString();
+  return String(value);
+}

@@ -48,7 +48,7 @@ func TestIngestBulkInsert(t *testing.T) {
 	rows[0].TeamName = "Orion"
 	rows[0].DateOfBirth = "1998-04-12"
 
-	created, skipped, err := repo.BulkInsertWithAutoID(ctx, rows, testSign)
+	created, skipped, err := repo.BulkInsertWithAutoID(ctx, rows, nil, testSign)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestIngestBulkInsert(t *testing.T) {
 	}
 
 	// Same emails again: nothing inserted, all reported back as skipped.
-	created2, skipped2, err := repo.BulkInsertWithAutoID(ctx, rows[:10], testSign)
+	created2, skipped2, err := repo.BulkInsertWithAutoID(ctx, rows[:10], nil, testSign)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestIngestConcurrentUploads(t *testing.T) {
 					batch[len(rows)-1-i] = r
 				}
 			}
-			c, s, err := repo.BulkInsertWithAutoID(ctx, batch, testSign)
+			c, s, err := repo.BulkInsertWithAutoID(ctx, batch, nil, testSign)
 			if err != nil {
 				t.Error(err)
 				return
@@ -181,7 +181,7 @@ func TestIngestRetriesMembershipClash(t *testing.T) {
 		}
 	}
 
-	created, _, err := repo.BulkInsertWithAutoID(ctx, ingestRows(tag, 0, 1), testSign)
+	created, _, err := repo.BulkInsertWithAutoID(ctx, ingestRows(tag, 0, 1), nil, testSign)
 	if err != nil {
 		t.Fatalf("insert should retry past the taken ID: %v", err)
 	}

@@ -4,7 +4,8 @@ Delegates get a signed QR pass. Volunteers scan it on a phone that keeps working
 
 ```
 Google Form CSV ──> scripts/seed ──> Supabase (participants + HMAC signature)
-Organizer ──> /admin/ingest.html ──┘  (one at a time or CSV upload; IDs NSAC-001000… generated)
+Organizer ──> /admin/ingest.html ──┘  (one at a time or CSV upload; IDs NSAC-001000… generated;
+                                        extra CSV columns -> custom fields, managed on /admin/fields.html)
                                           │
 Participant ──> /pass.html ──> QR {"id","sig"} + venue map
                                           │
@@ -50,6 +51,7 @@ migrations/001_schema.sql           tables, indexes, RLS, starter scenarios
 migrations/002_dashboard_schema.sql date of birth, override audit, scanner heartbeats
 migrations/003_rbac_and_emailing.sql roles (volunteer -> scanner), checkpoint grants, temporary passwords
 migrations/004_auto_membership_id.sql membership ID sequence (NSAC-001000, ...)
+migrations/005_jsonb_dynamic_schema.sql custom fields: participants.custom_attributes (JSONB) + field definitions
 scripts/seed                        CSV import + HMAC signing
 scripts/create-admin                create scanner / dashboard logins
 scripts/sample                      example participants.csv and venues.csv
@@ -60,8 +62,8 @@ public/js/pass-card.js              downloadable 70 x 110 mm pass (PNG + print-r
 public/assets                       qr-template.pdf (source), pass-template.jpg (600 dpi render), colombo-mark.png
 public/sw.js                        service worker (offline app shell)
 public/admin/                       organizer dashboard (dashboard.html, app.js), staff page (staff.html,
-                                    staff.js), add delegates (ingest.html, ingest.js), shared helpers
-                                    (common.js), compiled CSS
+                                    staff.js), add delegates (ingest.html, ingest.js), custom fields
+                                    (fields.html, fields.js), shared helpers (common.js), compiled CSS
 scripts/tailwind                    Tailwind config + source CSS for the dashboard
 public/vendor                       pinned Dexie 4.0.11, html5-qrcode 2.3.8, qrcodejs 1.0.0,
                                     node-qrcode 1.5.4 encoder core (pass card QR)
@@ -73,7 +75,7 @@ Deploying for real (DigitalOcean App Platform + Supabase + Gmail)? Follow [DEPLO
 
 Requires Go 1.22 or newer. Run `go mod tidy` once to fetch dependencies and create `go.sum`.
 
-1. **Database.** Run `migrations/001_schema.sql`, `002_dashboard_schema.sql`, `003_rbac_and_emailing.sql` and `004_auto_membership_id.sql`, in that order, in the Supabase SQL editor. All are safe to re-run. 003 renames `volunteer` accounts to `scanner` and grants them every existing checkpoint, so nobody loses access on deploy.
+1. **Database.** Run `migrations/001_schema.sql`, `002_dashboard_schema.sql`, `003_rbac_and_emailing.sql`, `004_auto_membership_id.sql` and `005_jsonb_dynamic_schema.sql`, in that order, in the Supabase SQL editor. All are safe to re-run. 003 renames `volunteer` accounts to `scanner` and grants them every existing checkpoint, so nobody loses access on deploy.
 2. **Environment.** Copy `.env.example` to `.env`, fill it in, then `set -a; source .env; set +a`.
 3. **Venues and delegates.**
    ```sh
@@ -113,7 +115,7 @@ A database volume created before a migration existed won't run it
 automatically (init scripts only run on an empty volume). Apply new ones once:
 
 ```sh
-docker compose -f nsac-qr.compose.yaml exec -T db psql -U nsac -d nsac_qr < migrations/004_auto_membership_id.sql
+docker compose -f nsac-qr.compose.yaml exec -T db psql -U nsac -d nsac_qr < migrations/005_jsonb_dynamic_schema.sql
 ```
 
 Compose also starts [Mailpit](https://mailpit.axllent.org/), which catches every email the API sends
@@ -165,6 +167,21 @@ rows and emails already registered are listed in the report and skipped, so uplo
 file again adds only what's missing. A file with a `membership_id` column is refused, so delegates who
 already have IDs aren't given new ones by mistake.
 
+**Extra columns become custom fields.** Any column other than those five (say `food_preference`,
+`T-Shirt Size`, `Parent's contact`) is stored per delegate in `participants.custom_attributes`, under a
+key made from the header: lower case, accents folded, apostrophes and hyphens dropped, everything else
+becomes `_` (`T-Shirt Size` -> `tshirt_size`). A header can also name an existing field by its label.
+Blank cells are left out. A key seen for the first time is registered on `/admin/fields.html` as a text
+field with **both display toggles off**; organizers then choose, per field:
+
+- **Scanner popup**: shown as a badge after each scan. Only these fields' values are put in the scanner
+  manifest, so other columns (a guardian's phone number) never reach a phone.
+- **Dashboard filter**: adds a dropdown (common values) or a text box to the delegate table's filter bar.
+
+A field's type (text, number, yes/no, date) can be changed until a delegate has a value; values are then
+checked against it on every upload. Deleting a field (superadmin) erases its values too. Columns named
+like a delegate column of the seed format (`venue_name`, `hall_section`) are ignored and reported.
+
 Header names are matched case-insensitively and spaces become underscores, so a Google Sheets export with "Full Name" works.
 
 ## API
@@ -183,9 +200,14 @@ Header names are matched case-insensitively and spaces become underscores, so a 
 | PATCH | `/api/v1/scenarios/{id}` | admin, superadmin | Update scenario (partial) |
 | POST | `/api/v1/devices/heartbeat` | any admin | Scanner reports its local queue counts |
 | GET | `/api/v1/admin/dashboard/stats` | admin, superadmin | Metric cards, throughput, per-scenario and fleet totals |
-| POST | `/api/v1/admin/participants/filter` | admin, superadmin | Delegate table: search, age group, claim status, venue, confirmation, paging |
+| POST | `/api/v1/admin/participants/filter` | admin, superadmin | Delegate table: search, age group, claim status, venue, confirmation, paging, and `custom: [{"key","op","value"}]` (`op`: `eq`, `contains` for text, `missing`) |
 | POST | `/api/v1/admin/participants/create` | admin, superadmin | `{"full_name","email","team_name","date_of_birth","venue_id"}`; returns the new membership ID and signature. 409 if the email is registered |
-| POST | `/api/v1/admin/participants/upload-csv` | admin, superadmin | CSV as multipart field `file` or `text/csv` body; returns `{total_rows, created, duplicates, errors}` |
+| POST | `/api/v1/admin/participants/upload-csv` | admin, superadmin | CSV as multipart field `file` or `text/csv` body; returns `{total_rows, created, duplicates, errors, custom_fields, new_fields, ignored_columns}` |
+| GET | `/api/v1/admin/fields` | admin, superadmin | Custom fields with usage counts and, for filter fields, common values |
+| POST | `/api/v1/admin/fields` | admin, superadmin | `{"field_key","field_label","data_type","show_in_scanner_popup","show_in_dashboard_filter"}` |
+| PATCH | `/api/v1/admin/fields/{key}` | admin, superadmin | Any of label, `data_type` (only while unused), the two toggles, `sort_order` |
+| DELETE | `/api/v1/admin/fields/{key}` | superadmin | Removes the field and every delegate's value for it |
+| GET | `/api/v1/fields/scanner` | any account | Labels of the fields shown after a scan (values come with the manifest) |
 | POST | `/api/v1/admin/scenarios/toggle` | admin, superadmin | `{"scenario_id","is_active"}` |
 | POST | `/api/v1/admin/scans/manual-override` | admin, superadmin | Record a scan without a QR; rationale required, 409 if already claimed |
 | GET | `/api/v1/admin/devices/health` | admin, superadmin | Scanner phones with last reported queue |
@@ -248,6 +270,8 @@ Idempotency keys are `{admin_id}_{participant_id}_{scenario_id}` for single-clai
 - The live stream is fed by one poller per API instance that reads new scans every 2 seconds. This works through every Supabase connection mode, including the transaction pooler. If a phone uploads more than 500 scans within one poll, the stream shows the newest 500. The scans are all stored; the dashboard table and counts include them.
 - The stream holds one HTTP connection per open dashboard. A proxy in front of the API must allow long-lived responses and must not buffer `text/event-stream` (the API sends `X-Accel-Buffering: no` and a keep-alive every 20 s).
 - Removing a checkpoint from a scanner while their phone is offline makes their queued scans for that checkpoint `INVALID` when the phone reconnects (shown in that phone's invalid count on the dashboard). Remove grants after the phone has synced.
+- Custom field filters match with JSONB containment (`custom_attributes @> '{"key": value}'`), which the GIN index can serve; `->>`-style comparisons can't use it. At event sizes (a few thousand delegates) PostgreSQL scans the table anyway, in about 2 ms; the index starts to pay off in the hundreds of thousands of rows.
+- Uploading a CSV doesn't update delegates who are already registered (they're reported as duplicates), so a column added later can't be filled in for them by re-uploading.
 - Membership IDs can have gaps: numbers reserved for a batch that then hit an already-registered email are not reused. Generated IDs stop at `NSAC-999999`.
 - A superadmin can't deactivate, demote or reset themselves from the Staff page, so there is always at least one superadmin.
 - Phone queue counts are self-reported by each scanner, so the dashboard can only show what a phone last reported while it had signal.

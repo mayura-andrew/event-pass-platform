@@ -19,6 +19,7 @@
       <h1 class="text-lg font-bold tracking-tight">Add delegates</h1>
       <div class="ml-auto flex items-center gap-2">
         <span class="hidden text-sm text-ink-soft sm:inline">Signed in as <b id="signed-in-as" class="text-ink"></b></span>
+        <a href="/admin/fields.html" class="btn-ghost">Fields</a>
         <a href="/admin/dashboard.html" class="btn-ghost">Dashboard</a>
         <button id="logout" class="btn-ghost" type="button">Sign out</button>
       </div>
@@ -78,6 +79,12 @@
             </div>
           </div>
 
+          <!-- Custom fields (fields.html), one input per field, typed -->
+          <fieldset id="p-custom-set" class="space-y-2" hidden>
+            <legend class="label">More details</legend>
+            <div id="p-custom" class="grid gap-3 sm:grid-cols-2"></div>
+          </fieldset>
+
           <p id="single-error" class="rounded-lg bg-stop/10 px-3 py-2 text-sm font-bold text-stop" role="alert" hidden></p>
 
           <div class="flex flex-wrap items-center justify-end gap-2">
@@ -136,6 +143,11 @@
               Only <b class="text-ink">full_name</b> and <b class="text-ink">email</b> are required. Dates are
               <span class="tabular-nums">YYYY-MM-DD</span>. Don't include membership IDs. Emails already registered are skipped,
               so after fixing errors you can upload the same file again.
+            </p>
+            <p class="mt-1 text-ink-soft">
+              <b class="text-ink">Any other column</b> (food preference, T-shirt size…) is kept as a
+              <a href="/admin/fields.html" class="font-bold text-action hover:underline">custom field</a>.
+              New ones stay hidden from scanners and filters until you turn them on.
             </p>
           </div>
           <a id="template-link" class="btn-ghost" href="#" download="delegates-template.csv">↓ Sample CSV template</a>
@@ -220,6 +232,8 @@
               <p class="mt-1 text-sm text-ink-soft">Not added; fix and upload again</p>
             </article>
           </div>
+
+          <p id="rp-fields" class="rounded-lg border border-action/40 bg-action/5 px-3 py-2 text-sm" hidden></p>
 
           <div class="flex flex-wrap gap-2">
             <button id="rp-download" type="button" class="btn-ghost">↓ Download results (CSV)</button>

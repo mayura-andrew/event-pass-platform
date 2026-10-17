@@ -18,7 +18,7 @@ const MIN_RATIONALE = 10;
 
 import {
   $, MANAGER_ROLES, AUTH_EVENT, getSession, saveSession, clearSession, api, signIn, changePassword,
-  el, fmtInt, fmtTime, debounce, sleep, toast, passwordProblem,
+  el, fmtInt, fmtTime, debounce, sleep, toast, passwordProblem, fmtCustom,
 } from './common.js';
 
 const state = {
@@ -28,8 +28,10 @@ const state = {
   rows: [],             // current table page
   filter: {
     search: '', age_group: '', scenario_id: '', claim_status: '',
-    venue_id: '', confirmation: 'CONFIRMED', page: 1, page_size: PAGE_SIZE,
+    venue_id: '', confirmation: 'CONFIRMED', custom: [], page: 1, page_size: PAGE_SIZE,
   },
+  filterFields: [],     // custom fields marked "Dashboard filter", with their common values
+  customFilter: {},     // field_key -> { op, value } chosen in the filter bar
   total: 0,
   tableSeq: 0,          // drops responses from superseded filter requests
   serverSkewMs: 0,      // server clock minus browser clock, from device health
@@ -76,6 +78,65 @@ async function loadVenues() {
   sel.replaceChildren(new Option('All venues', ''), new Option('Unassigned', 'UNASSIGNED'));
   for (const v of state.venues) sel.add(new Option(`${v.name}, ${v.hall_section}`, v.id));
   sel.value = keep;
+}
+
+// ---- Custom field filters --------------------------------------------------------
+
+/**
+ * Builds one control per filter field: a dropdown of the common values when
+ * there are few (exact match), otherwise a text box (contains, for text).
+ * Both offer "Not given".
+ */
+async function loadFilterFields() {
+  let all;
+  try {
+    all = await api('/api/v1/admin/fields');
+  } catch (err) {
+    if (err.status === 401) throw err;
+    console.warn('Custom field filters unavailable:', err); // the rest of the dashboard still works
+    return;
+  }
+  state.filterFields = all.filter((f) => f.show_in_dashboard_filter);
+  // Drop choices for fields that are no longer filters.
+  for (const key of Object.keys(state.customFilter)) {
+    if (!state.filterFields.some((f) => f.field_key === key)) delete state.customFilter[key];
+  }
+  renderCustomFilters();
+}
+
+const MISSING = '__missing__';
+
+function renderCustomFilters() {
+  $('f-custom').replaceChildren(...state.filterFields.map((f) => {
+    const id = `f-cf-${f.field_key}`;
+    const current = state.customFilter[f.field_key];
+    let control;
+    const useSelect = f.data_type === 'boolean' || (f.options?.length && !f.options_truncated) || f.usage_count === 0;
+    if (useSelect) {
+      const opts = f.data_type === 'boolean' ? ['true', 'false'] : (f.options || []);
+      control = el('select', { id, class: 'field', onchange: (e) => setCustomFilter(f, e.target.value) },
+        el('option', { value: '' }, 'Any'),
+        ...opts.map((o) => el('option', { value: o }, f.data_type === 'boolean' ? (o === 'true' ? 'Yes' : 'No') : o)),
+        el('option', { value: MISSING }, 'Not given'));
+      control.value = current ? (current.op === 'missing' ? MISSING : current.value) : '';
+    } else {
+      control = el('input', {
+        id, class: 'field', type: 'search', autocomplete: 'off', maxlength: 100,
+        placeholder: f.data_type === 'text' ? 'Contains…' : `Exact ${f.data_type}`,
+        value: current?.value || '',
+        oninput: debounce((e) => setCustomFilter(f, e.target.value.trim(), true), SEARCH_DEBOUNCE_MS),
+      });
+    }
+    return el('div', {}, el('label', { class: 'label', for: id }, f.field_label), control);
+  }));
+}
+
+function setCustomFilter(f, value, typed = false) {
+  if (!value) delete state.customFilter[f.field_key];
+  else if (value === MISSING) state.customFilter[f.field_key] = { op: 'missing', value: '' };
+  else if (typed && f.data_type === 'text') state.customFilter[f.field_key] = { op: 'contains', value };
+  else state.customFilter[f.field_key] = { op: 'eq', value };
+  applyFilter({ custom: Object.entries(state.customFilter).map(([key, c]) => ({ key, ...c })) });
 }
 
 function renderScenarioOptions() {
@@ -281,13 +342,24 @@ function delegateRow(r, scenario) {
     el('td', { class: 'td' },
       el('div', { class: 'font-bold' }, r.full_name,
         r.is_confirmed ? null : el('span', { class: 'pill ml-2 bg-stop/10 text-stop' }, 'Unconfirmed')),
-      el('div', { class: 'text-xs text-ink-soft' }, r.email)),
+      el('div', { class: 'text-xs text-ink-soft' }, r.email),
+      customChips(r)),
     el('td', { class: 'td whitespace-nowrap tabular-nums' }, r.membership_id),
     el('td', { class: 'td whitespace-nowrap' }, age),
     el('td', { class: 'td' }, r.team_name || el('span', { class: 'text-ink-soft' }, 'No team')),
     el('td', { class: 'td' }, venue),
     el('td', { class: 'td' }, status),
     el('td', { class: 'td text-right' }, btn));
+}
+
+/** Values of the filter fields, so a filtered table shows why each row matched. */
+function customChips(r) {
+  const attrs = r.custom_attributes || {};
+  const chips = state.filterFields
+    .filter((f) => attrs[f.field_key] != null && attrs[f.field_key] !== '')
+    .map((f) => el('span', { class: 'pill border border-line bg-paper/60 font-normal text-ink-soft' },
+      `${f.field_label}: `, el('b', { class: 'text-ink' }, fmtCustom(attrs[f.field_key], f.data_type))));
+  return chips.length ? el('div', { class: 'mt-1 flex flex-wrap gap-1' }, chips) : null;
 }
 
 // ---- Filter bar ----------------------------------------------------------------
@@ -327,7 +399,9 @@ function bindFilters() {
     $('f-venue').value = '';
     $('f-confirm').value = 'CONFIRMED';
     $('f-claim').value = '';
-    applyFilter({ search: '', age_group: '', venue_id: '', confirmation: 'CONFIRMED', claim_status: '' });
+    state.customFilter = {};
+    renderCustomFilters();
+    applyFilter({ search: '', age_group: '', venue_id: '', confirmation: 'CONFIRMED', claim_status: '', custom: [] });
   });
   $('page-prev').addEventListener('click', () => { state.filter.page--; loadTable(); });
   $('page-next').addEventListener('click', () => { state.filter.page++; loadTable(); });
@@ -837,7 +911,7 @@ async function showApp() {
   $('signed-in-as').textContent = session.full_name;
 
   try {
-    await Promise.all([loadScenarios(), loadVenues()]);
+    await Promise.all([loadScenarios(), loadVenues(), loadFilterFields()]);
     await loadStats(); // picks the default scenario before the first table load
   } catch (err) {
     if (err.status === 403) {

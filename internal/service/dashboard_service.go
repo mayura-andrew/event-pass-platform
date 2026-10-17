@@ -34,14 +34,20 @@ type ScenarioUpdater interface {
 	Update(ctx context.Context, id string, in domain.ScenarioInput) (*domain.Scenario, error)
 }
 
+// FieldLister is the slice of FieldStore the dashboard filter needs.
+type FieldLister interface {
+	ListFields(ctx context.Context) ([]domain.FieldDefinition, error)
+}
+
 type DashboardService struct {
 	store       DashboardStore
 	scenarios   ScenarioUpdater
+	fields      FieldLister
 	checkInCode string // scenario code counted as "checked in"
 }
 
-func NewDashboardService(store DashboardStore, scenarios ScenarioUpdater, checkInCode string) *DashboardService {
-	return &DashboardService{store: store, scenarios: scenarios, checkInCode: checkInCode}
+func NewDashboardService(store DashboardStore, scenarios ScenarioUpdater, fields FieldLister, checkInCode string) *DashboardService {
+	return &DashboardService{store: store, scenarios: scenarios, fields: fields, checkInCode: checkInCode}
 }
 
 // FilterParticipants validates the filter and returns one page of delegates.
@@ -97,6 +103,16 @@ func (s *DashboardService) FilterParticipants(ctx context.Context, f domain.Part
 	// Bound OFFSET so a crafted page number can't force a huge scan.
 	if f.Page > 100_000 {
 		return nil, fmt.Errorf("%w: page is out of range", domain.ErrValidation)
+	}
+
+	if len(f.Custom) > 0 {
+		defs, err := s.fields.ListFields(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if f.Custom, err = validateCustomFilters(f.Custom, defs); err != nil {
+			return nil, err
+		}
 	}
 
 	return s.store.GetFilteredParticipants(ctx, f)

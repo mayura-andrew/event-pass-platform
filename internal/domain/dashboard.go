@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -49,8 +50,10 @@ type ParticipantFilter struct {
 	ClaimStatus  string `json:"claim_status"` // ClaimAll | ClaimClaimed | ClaimUnclaimed
 	VenueID      string `json:"venue_id"`     // venue UUID, or VenueUnassigned
 	Confirmation string `json:"confirmation"` // ConfirmAll | ConfirmConfirmed | ConfirmUnconfirmed
-	Page         int    `json:"page"`         // 1-based
-	PageSize     int    `json:"page_size"`    // 1..MaxPageSize
+	// Custom field filters, all of which must match (AND).
+	Custom   []CustomFilter `json:"custom"`
+	Page     int            `json:"page"`      // 1-based
+	PageSize int            `json:"page_size"` // 1..MaxPageSize
 }
 
 // ---- Delegate table ------------------------------------------------------------
@@ -75,6 +78,9 @@ type ParticipantRow struct {
 	ClaimedAt    *time.Time `json:"claimed_at"`  // first VALID scan, server time
 	ClaimedBy    string     `json:"claimed_by,omitempty"`
 	ClaimMethod  string     `json:"claim_method,omitempty"` // QR | MANUAL_OVERRIDE
+	// Every custom field value ({} when none). Organizers see all of them;
+	// only the scanner manifest is cut down.
+	CustomAttributes json.RawMessage `json:"custom_attributes"`
 }
 
 type ParticipantPage struct {

@@ -21,6 +21,8 @@ type fakeIngestStore struct {
 	next       int
 	inserted   []domain.NewParticipant
 	insertCall int
+	fields     []domain.FieldDefinition
+	newFields  []domain.NewField
 }
 
 func newFakeIngestStore() *fakeIngestStore {
@@ -41,8 +43,13 @@ func (f *fakeIngestStore) VenueIDs(context.Context) (map[string]bool, error) {
 	return map[string]bool{testVenue: true}, nil
 }
 
-func (f *fakeIngestStore) BulkInsertWithAutoID(_ context.Context, rows []domain.NewParticipant, sign func(string, string) string) ([]domain.CreatedParticipant, []domain.NewParticipant, error) {
+func (f *fakeIngestStore) FieldDefinitions(context.Context) ([]domain.FieldDefinition, error) {
+	return f.fields, nil
+}
+
+func (f *fakeIngestStore) BulkInsertWithAutoID(_ context.Context, rows []domain.NewParticipant, newFields []domain.NewField, sign func(string, string) string) ([]domain.CreatedParticipant, []domain.NewParticipant, error) {
 	f.insertCall++
+	f.newFields = append(f.newFields, newFields...)
 	var created []domain.CreatedParticipant
 	var skipped []domain.NewParticipant
 	for _, p := range rows {
@@ -57,7 +64,7 @@ func (f *fakeIngestStore) BulkInsertWithAutoID(_ context.Context, rows []domain.
 		created = append(created, domain.CreatedParticipant{
 			Line: p.Line, ID: "uuid-" + id, MembershipID: id, FullName: p.FullName,
 			Email: p.Email, TeamName: p.TeamName, DateOfBirth: p.DateOfBirth,
-			VenueID: p.VenueID, QRSignature: sign(id, p.Email),
+			VenueID: p.VenueID, QRSignature: sign(id, p.Email), CustomAttributes: p.CustomAttributes,
 		})
 	}
 	return created, skipped, nil

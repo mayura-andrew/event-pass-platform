@@ -51,6 +51,7 @@ func run() error {
 	dashboardRepo := postgres.NewDashboardRepo(db)
 	staffRepo := postgres.NewStaffRepo(db)
 	ingestRepo := postgres.NewIngestRepo(db)
+	fieldRepo := postgres.NewFieldRepo(db)
 
 	mailer, err := newMailer(cfg)
 	if err != nil {
@@ -66,7 +67,8 @@ func run() error {
 		Sync:         service.NewSyncService(participantRepo, scanRepo, scenarioRepo, staffRepo),
 		Participants: service.NewParticipantService(participantRepo),
 		Scenarios:    scenarios,
-		Dashboard:    service.NewDashboardService(dashboardRepo, scenarios, cfg.CheckInCode),
+		Dashboard:    service.NewDashboardService(dashboardRepo, scenarios, fieldRepo, cfg.CheckInCode),
+		Fields:       service.NewFieldService(fieldRepo),
 		Feed:         feed,
 		Staff:        service.NewStaffService(staffRepo, mailer, cfg.AppBaseURL, cfg.EventName),
 		Ingest:       newIngest(ingestRepo, cfg.HMACSecretKey),

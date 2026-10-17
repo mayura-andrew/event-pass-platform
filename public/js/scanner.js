@@ -3,7 +3,7 @@
 // =============================================================================
 import {
   db, api, getSession, saveSession, clearSession, getMeta, setMeta,
-  hydrateLocalManifest, hydrateScenarios, hydrateClaims, AuthExpiredError,
+  hydrateLocalManifest, hydrateScenarios, hydrateClaims, hydrateScannerFields, AuthExpiredError,
 } from './db.js';
 
 const SYNC_CHUNK = 200;            // server accepts up to 500 per request
@@ -30,6 +30,10 @@ let lastDecoded = { text: '', at: 0 };
 let flushing = false;
 const backoff = { failures: 0, until: 0 }; // next automatic upload not before `until`
 let autoDismissTimer = null;
+// Custom fields shown after a scan ({field_key, field_label, data_type}), in
+// order. null until loaded once: then every value the manifest carries is
+// shown under a label made from its key.
+let scannerFields = null;
 
 const $ = (id) => document.getElementById(id);
 
@@ -363,7 +367,8 @@ async function applySyncResults(batch, results) {
 /** Full refresh used on start, on reconnect and when the app returns to the foreground. */
 async function refreshFromServer() {
   try {
-    const [{ count }] = await Promise.all([hydrateLocalManifest(), hydrateClaims()]);
+    const [{ count }, , fields] = await Promise.all([hydrateLocalManifest(), hydrateClaims(), hydrateScannerFields()]);
+    scannerFields = fields;
     await loadScenarioOptions(await hydrateScenarios());
     if (count === 0 && navigator.onLine) {
       setBanner('The delegate list is empty. Ask an organizer to confirm participants.');
@@ -406,6 +411,7 @@ export function renderModal({ status, title, participant, message, scenarioName 
     $('participant-email').textContent = participant.email;
     $('participant-venue').textContent =
       participant.venue_name === 'Unassigned' ? 'No venue assigned' : `${participant.venue_name}, ${participant.hall_section}`;
+    renderAttributes(participant.custom_attributes);
   }
   $('scenario-name').textContent = scenarioName || activeScenario?.name || '';
 
@@ -424,6 +430,42 @@ export function renderModal({ status, title, participant, message, scenarioName 
     modal.classList.add('auto-dismiss');
     autoDismissTimer = setTimeout(dismissModalAndResume, SUCCESS_AUTO_DISMISS_MS);
   }
+}
+
+const prettyKey = (k) => k.split('_').filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1)).join(' ');
+
+function fmtAttr(value, type) {
+  if (type === 'boolean' || typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (typeof value === 'number') return value.toLocaleString();
+  return String(value);
+}
+
+/**
+ * Custom details an organizer chose to show at checkpoints, as badges
+ * ("Food Preference: Vegetarian"). Only fields still marked for the scanner
+ * are shown, so turning one off hides it here at once, even before this
+ * phone downloads the trimmed delegate list.
+ */
+function renderAttributes(attrs) {
+  const box = $('participant-attrs');
+  const values = attrs && typeof attrs === 'object' ? attrs : {};
+  const fields = scannerFields ?? Object.keys(values).map((k) => ({ field_key: k, field_label: prettyKey(k) }));
+  const badges = fields
+    .filter((f) => values[f.field_key] != null && values[f.field_key] !== '')
+    .map((f) => {
+      const badge = document.createElement('li');
+      badge.className = 'attr';
+      const label = document.createElement('span');
+      label.className = 'attr-label';
+      label.textContent = f.field_label;
+      const value = document.createElement('span');
+      value.className = 'attr-value';
+      value.textContent = fmtAttr(values[f.field_key], f.data_type);
+      badge.append(label, value);
+      return badge;
+    });
+  box.replaceChildren(...badges);
+  box.hidden = badges.length === 0;
 }
 
 export function dismissModalAndResume() {
@@ -595,6 +637,7 @@ function showLogin(message) {
 
 async function showApp() {
   const session = getSession();
+  scannerFields = await getMeta('scanner_fields', null); // offline start: last known labels
   $('login-view').hidden = true;
   $('app-view').hidden = false;
   $('signed-in-as').textContent = session.full_name;

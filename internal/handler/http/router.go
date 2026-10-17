@@ -45,6 +45,7 @@ func NewRouter(h *Handler, publicDir, allowedOrigin string) http.Handler {
 	mux.Handle("POST /api/v1/scans/sync", authed(h.syncScans))
 	mux.Handle("GET /api/v1/scans/claims", authed(h.claims))
 	mux.Handle("POST /api/v1/devices/heartbeat", authed(h.deviceHeartbeat))
+	mux.Handle("GET /api/v1/fields/scanner", authed(h.scannerFields))
 
 	// Scenario management: admin and superadmin only
 	mux.Handle("GET /api/v1/scenarios", manager(h.allScenarios))
@@ -64,6 +65,12 @@ func NewRouter(h *Handler, publicDir, allowedOrigin string) http.Handler {
 	// Adding delegates (membership IDs and QR signatures are generated)
 	mux.Handle("POST /api/v1/admin/participants/create", manager(h.createParticipant))
 	mux.Handle("POST /api/v1/admin/participants/upload-csv", manager(h.uploadParticipantsCSV))
+
+	// Custom delegate fields: deleting one erases its values, so superadmin only
+	mux.Handle("GET /api/v1/admin/fields", manager(h.listFields))
+	mux.Handle("POST /api/v1/admin/fields", manager(h.createField))
+	mux.Handle("PATCH /api/v1/admin/fields/{key}", manager(h.updateField))
+	mux.Handle("DELETE /api/v1/admin/fields/{key}", superadmin(h.deleteField))
 
 	// Staff accounts: listing for managers, changes for superadmins only
 	mux.Handle("GET /api/v1/admin/staff/list", manager(h.listStaff))

@@ -10,7 +10,8 @@ export const db = new Dexie('SpaceAppsScannerDB');
 
 db.version(1).stores({
   // Confirmed delegates. Only indexed fields are listed; Dexie stores the
-  // whole object regardless.
+  // whole object regardless, including custom_attributes (the values of the
+  // fields an organizer chose to show after a scan, e.g. food preference).
   participants: 'id, membership_id, email',
 
   // Active scenarios as last fetched from the server.
@@ -24,7 +25,8 @@ db.version(1).stores({
   // Single-claim scans recorded on the server by ANY device.
   claims: '[participant_id+scenario_id]',
 
-  // Small key/value store: ETags, watermarks, timestamps.
+  // Small key/value store: ETags, watermarks, timestamps, and the labels of
+  // the custom fields shown after a scan ('scanner_fields').
   meta: 'key',
 });
 
@@ -121,7 +123,7 @@ export async function wipeDirectory() {
   await db.transaction('rw', db.participants, db.claims, db.meta, async () => {
     await db.participants.clear();
     await db.claims.clear();
-    await db.meta.bulkDelete(['manifest_etag', 'claims_watermark', 'manifest_hydrated_at']);
+    await db.meta.bulkDelete(['manifest_etag', 'claims_watermark', 'manifest_hydrated_at', 'scanner_fields']);
   });
 }
 
@@ -179,6 +181,28 @@ export async function hydrateLocalManifest() {
     if (err instanceof AuthExpiredError) throw err;
     console.warn('Manifest hydration postponed:', err);
     return { updated: false, count: await db.participants.count() };
+  }
+}
+
+/**
+ * Caches the labels of the custom fields shown after a scan, in display
+ * order. The values travel with each delegate in the manifest; the server
+ * only includes the fields listed here.
+ *
+ * @returns {Promise<Array<{field_key:string, field_label:string, data_type:string}>>}
+ */
+export async function hydrateScannerFields() {
+  if (!navigator.onLine) return getMeta('scanner_fields', []);
+  try {
+    const res = await api('/api/v1/fields/scanner');
+    if (!res.ok) throw new Error(`Scanner fields HTTP ${res.status}`);
+    const list = await res.json();
+    await setMeta('scanner_fields', list);
+    return list;
+  } catch (err) {
+    if (err instanceof AuthExpiredError) throw err;
+    console.warn('Scanner field refresh postponed:', err);
+    return getMeta('scanner_fields', []);
   }
 }
 

@@ -13,14 +13,27 @@ type ParticipantRepo struct{ db *sql.DB }
 func NewParticipantRepo(db *sql.DB) *ParticipantRepo { return &ParticipantRepo{db: db} }
 
 // ListConfirmedManifest returns every confirmed delegate for scanner hydration.
+// Custom attributes are cut down to the scanner popup fields here, in SQL, so
+// other values (a guardian's phone number, say) never reach a phone.
 func (r *ParticipantRepo) ListConfirmedManifest(ctx context.Context) ([]domain.ParticipantManifest, error) {
 	rows, err := r.db.QueryContext(ctx, `
+		WITH popup AS (
+			SELECT COALESCE(array_agg(field_key), '{}') AS keys
+			FROM participant_field_definitions
+			WHERE show_in_scanner_popup
+		)
 		SELECT p.id, p.membership_id, p.full_name, p.email,
 		       COALESCE(p.team_name, ''),
 		       COALESCE(v.name, 'Unassigned'),
 		       COALESCE(v.hall_section, 'N/A'),
-		       p.qr_signature
+		       p.qr_signature,
+		       CASE WHEN p.custom_attributes = '{}'::jsonb THEN '{}'::jsonb
+		            ELSE (SELECT COALESCE(jsonb_object_agg(e.key, e.value), '{}'::jsonb)
+		                  FROM jsonb_each(p.custom_attributes) AS e
+		                  WHERE e.key = ANY (popup.keys))
+		       END
 		FROM participants p
+		CROSS JOIN popup
 		LEFT JOIN venues v ON v.id = p.assigned_venue_id
 		WHERE p.is_confirmed
 		ORDER BY p.membership_id`)
@@ -33,10 +46,12 @@ func (r *ParticipantRepo) ListConfirmedManifest(ctx context.Context) ([]domain.P
 	manifest := make([]domain.ParticipantManifest, 0, 1024)
 	for rows.Next() {
 		var m domain.ParticipantManifest
+		var custom []byte
 		if err := rows.Scan(&m.ID, &m.MembershipID, &m.FullName, &m.Email,
-			&m.TeamName, &m.VenueName, &m.HallSection, &m.QRSignature); err != nil {
+			&m.TeamName, &m.VenueName, &m.HallSection, &m.QRSignature, &custom); err != nil {
 			return nil, err
 		}
+		m.CustomAttributes = custom
 		manifest = append(manifest, m)
 	}
 	return manifest, rows.Err()

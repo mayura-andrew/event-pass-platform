@@ -2,6 +2,7 @@
 package domain
 
 import (
+	"encoding/json"
 	"errors"
 	"time"
 )
@@ -44,6 +45,8 @@ type Venue struct {
 
 // ParticipantManifest is one row of the offline directory pushed to scanners.
 // It deliberately carries qr_signature so devices can verify a QR offline.
+// CustomAttributes holds only the fields marked show_in_scanner_popup: the
+// manifest is copied to every phone, so nothing else leaves the server.
 type ParticipantManifest struct {
 	ID           string `json:"id"`
 	MembershipID string `json:"membership_id"`
@@ -53,6 +56,8 @@ type ParticipantManifest struct {
 	VenueName    string `json:"venue_name"`
 	HallSection  string `json:"hall_section"`
 	QRSignature  string `json:"qr_signature"`
+
+	CustomAttributes json.RawMessage `json:"custom_attributes"`
 }
 
 // ParticipantPass is what the public portal shows one delegate.

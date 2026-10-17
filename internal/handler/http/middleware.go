@@ -305,7 +305,7 @@ func cors(origin string, next http.Handler) http.Handler {
 			h := w.Header()
 			h.Set("Access-Control-Allow-Origin", origin)
 			h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, If-None-Match")
-			h.Set("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
+			h.Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 			h.Set("Access-Control-Expose-Headers", "ETag")
 			h.Set("Vary", "Origin")
 		}

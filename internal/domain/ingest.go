@@ -10,6 +10,8 @@ type ParticipantCreateRequest struct {
 	TeamName    string `json:"team_name"`
 	DateOfBirth string `json:"date_of_birth"` // YYYY-MM-DD, optional
 	VenueID     string `json:"venue_id"`      // optional
+	// Values for existing custom fields, keyed by field_key, as typed.
+	CustomAttributes map[string]string `json:"custom_attributes"`
 }
 
 // NewParticipant is one validated delegate ready to insert. Email is
@@ -21,6 +23,9 @@ type NewParticipant struct {
 	TeamName    string
 	DateOfBirth string // YYYY-MM-DD
 	VenueID     string
+	// Custom field values, already converted to their field's type. Nil or
+	// empty is stored as {}.
+	CustomAttributes map[string]any
 }
 
 // CreatedParticipant is a delegate the ingestion just inserted.
@@ -34,6 +39,8 @@ type CreatedParticipant struct {
 	DateOfBirth  string `json:"date_of_birth,omitempty"`
 	VenueID      string `json:"venue_id,omitempty"`
 	QRSignature  string `json:"qr_signature"`
+
+	CustomAttributes map[string]any `json:"custom_attributes,omitempty"`
 }
 
 // ImportIssue is one CSV row that was not imported.
@@ -50,6 +57,14 @@ type ImportResult struct {
 	Created    []CreatedParticipant `json:"created"`
 	Duplicates []ImportIssue        `json:"duplicates"` // email already registered, or repeated in the file
 	Errors     []ImportIssue        `json:"errors"`     // invalid rows, fix and upload again
+
+	// Extra columns stored in custom_attributes, by field key. NewFields are
+	// the ones registered by this upload (both display toggles off).
+	CustomFields []string `json:"custom_fields"`
+	NewFields    []string `json:"new_fields"`
+	// Headers that were neither a core column nor stored (blank header, or a
+	// reserved name such as venue_name from the seed script's format).
+	IgnoredColumns []string `json:"ignored_columns"`
 }
 
 // Ingestion limits.

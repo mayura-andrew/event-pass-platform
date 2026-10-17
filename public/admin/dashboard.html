@@ -72,6 +72,7 @@
         <div class="ml-auto flex items-center gap-2">
           <span class="hidden text-sm text-ink-soft sm:inline">Signed in as <b id="signed-in-as" class="text-ink"></b></span>
           <a href="/admin/ingest.html" class="btn-ghost">Add delegates</a>
+          <a href="/admin/fields.html" class="btn-ghost">Fields</a>
           <a href="/admin/staff.html" class="btn-ghost">Staff</a>
           <button id="open-scenarios" class="btn-ghost" type="button">Checkpoints</button>
           <button id="logout" class="btn-ghost" type="button">Sign out</button>
@@ -164,6 +165,8 @@
                 <option value="UNCONFIRMED">Unconfirmed</option>
               </select>
             </div>
+            <!-- One control per custom field marked "Dashboard filter" (fields.html) -->
+            <div id="f-custom" class="contents"></div>
             <div class="flex items-end sm:col-span-2 lg:col-span-1">
               <button id="f-reset" class="btn-ghost" type="button">Reset filters</button>
             </div>
