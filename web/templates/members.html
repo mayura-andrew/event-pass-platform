@@ -1,0 +1,85 @@
+{{define "content"}}
+{{template "orgtabs" .}}
+<p class="lede">/o/{{.Data.Org.Slug}} · you are {{if eq .Data.Org.Role "owner"}}an owner{{else if eq .Data.Org.Role "admin"}}an admin{{else}}a member{{end}}</p>
+
+{{$csrf := .CSRF}}{{$d := .Data}}
+{{if .Data.CanManage}}
+<section class="card" aria-labelledby="invite-title">
+  <h2 id="invite-title">Invite people</h2>
+  <form method="post" action="/o/{{.Data.Org.Slug}}/invites" class="row">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <div class="field grow">
+      <label for="invite-email">Email</label>
+      <input id="invite-email" name="email" type="email" required autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="invite-role">Role</label>
+      <select id="invite-role" name="role">
+        <option value="member">Member</option>
+        <option value="admin">Admin</option>
+      </select>
+    </div>
+    <button class="btn" type="submit">Send invite</button>
+  </form>
+  {{if .Data.Invites}}
+  <h2 class="mt-20">Pending invites</h2>
+  <ul class="people" aria-label="Pending invites">
+    {{range .Data.Invites}}
+    <li>
+      <div class="who"><b>{{.Email}}</b><span>{{.Role}} · invited by {{.InvitedBy}}{{if $d.Expired .}} · expired{{end}}</span></div>
+      <div class="actions">
+        <form method="post" action="/o/{{$d.Org.Slug}}/invites/{{.ID}}/revoke" class="inline">
+          <input type="hidden" name="csrf" value="{{$csrf}}">
+          <button class="btn btn-danger" type="submit">Withdraw</button>
+        </form>
+      </div>
+    </li>
+    {{end}}
+  </ul>
+  {{end}}
+</section>
+{{end}}
+
+<section class="card" aria-labelledby="members-title">
+  <h2 id="members-title">Members</h2>
+  <ul class="people">
+    {{range .Data.Members}}
+    <li>
+      <div class="who"><b>{{if .Name}}{{.Name}}{{else}}{{.Email}}{{end}}{{if eq .AccountID $d.Me}} (you){{end}}</b>{{if .Name}}<span>{{.Email}}</span>{{end}}</div>
+      <div class="actions">
+        {{if $d.CanChange .}}
+        <form method="post" action="/o/{{$d.Org.Slug}}/members/{{.AccountID}}/role" class="inline">
+          <input type="hidden" name="csrf" value="{{$csrf}}">
+          <select id="role-{{.AccountID}}" name="role" aria-label="Role for {{.Email}}">
+            {{if $d.CanGrantOwner}}<option value="owner"{{if eq .Role "owner"}} selected{{end}}>Owner</option>{{end}}
+            <option value="admin"{{if eq .Role "admin"}} selected{{end}}>Admin</option>
+            <option value="member"{{if eq .Role "member"}} selected{{end}}>Member</option>
+          </select>
+          <button class="btn btn-quiet" type="submit">Save</button>
+        </form>
+        {{else}}<span class="chip">{{.Role}}</span>{{end}}
+        {{if or (eq .AccountID $d.Me) ($d.CanChange .)}}
+        <form method="post" action="/o/{{$d.Org.Slug}}/members/{{.AccountID}}/remove" class="inline">
+          <input type="hidden" name="csrf" value="{{$csrf}}">
+          <button class="btn btn-danger" type="submit">{{if eq .AccountID $d.Me}}Leave{{else}}Remove{{end}}</button>
+        </form>
+        {{end}}
+      </div>
+    </li>
+    {{end}}
+  </ul>
+</section>
+
+{{if .Data.CanEditOrg}}
+<section class="card" aria-labelledby="org-settings">
+  <h2 id="org-settings">Sharing</h2>
+  <form method="post" action="/o/{{.Data.Org.Slug}}/settings">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <label class="check"><input type="checkbox" name="external_sharing"{{if .Data.Org.Settings.AllowsExternalSharing}} checked{{end}}>
+      Events can be shared with people outside {{.Data.Org.Name}}, and by link</label>
+    <p class="hint">Turning this off stops new outside shares and links; existing ones stay until removed.</p>
+    <button class="btn btn-line" type="submit">Save</button>
+  </form>
+</section>
+{{end}}
+{{end}}

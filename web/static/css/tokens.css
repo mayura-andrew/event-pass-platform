@@ -1,0 +1,52 @@
+/* Design tokens (spec: Design system). Components use these, never raw colors.
+   Organization branding may override --primary only. */
+:root {
+  --bg: #EEF2F0;
+  --surface: #FFFFFF;
+  --ink: #15202B;
+  --muted: #5B6874;
+  --line: #D3DBD8;
+  --primary: #2350C8;
+  --primary-ink: #FFFFFF;
+  --success: #17804F;
+  --warning: #A8680C;
+  --danger: #B83A32;
+  --topbar: #15202B;
+  --topbar-ink: #FFFFFF;
+  --radius-lg: 18px;
+  --radius-sm: 8px;
+  --font: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0F161D;
+    --surface: #18222C;
+    --ink: #E7ECEF;
+    --muted: #9AA7B2;
+    --line: #2A3742;
+    --primary: #6E93F5;
+    --primary-ink: #0F161D;
+    --success: #3FBF84;
+    --warning: #E0A13B;
+    --danger: #EE6B62;
+    --topbar: #18222C;
+    --topbar-ink: #E7ECEF;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0F161D;
+  --surface: #18222C;
+  --ink: #E7ECEF;
+  --muted: #9AA7B2;
+  --line: #2A3742;
+  --primary: #6E93F5;
+  --primary-ink: #0F161D;
+  --success: #3FBF84;
+  --warning: #E0A13B;
+  --danger: #EE6B62;
+  --topbar: #18222C;
+  --topbar-ink: #E7ECEF;
+  color-scheme: dark;
+}

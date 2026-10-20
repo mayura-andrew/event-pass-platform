@@ -1,0 +1,91 @@
+{{define "content"}}
+{{template "orgtabs" .}}
+{{$d := .Data}}{{$csrf := .CSRF}}
+
+<div class="home">
+  <nav class="views" aria-label="Event lists">
+    {{if $d.CanCreate}}<a class="btn btn-block" href="/o/{{$d.Org.Slug}}/events/new">New event</a>{{end}}
+    <ul>
+      {{range $d.Views}}
+      <li><a href="{{$d.Href "view" .Key}}"{{if eq .Key $d.View}} aria-current="page"{{end}}>{{.Label}}</a></li>
+      {{end}}
+    </ul>
+  </nav>
+
+  <section class="list" aria-labelledby="list-title">
+    <h2 id="list-title" class="sr-only">{{$d.ViewLabel}}</h2>
+    <form class="toolbar" method="get" action="/o/{{$d.Org.Slug}}" role="search">
+      <input type="hidden" name="view" value="{{$d.View}}">
+      {{if eq $d.Layout "list"}}<input type="hidden" name="layout" value="list">{{end}}
+      <label for="event-search" class="sr-only">Search events</label>
+      <input id="event-search" name="q" type="search" value="{{$d.Q}}" placeholder="Search by name, venue or tag  ( / )" autocomplete="off">
+      <label for="event-sort" class="sr-only">Sort</label>
+      <select id="event-sort" name="sort" data-autosubmit>
+        {{range $d.Sorts}}<option value="{{.Key}}"{{if eq .Key $d.Sort}} selected{{end}}>{{.Label}}</option>{{end}}
+      </select>
+      <button class="btn btn-quiet" type="submit">Search</button>
+      <span class="layout-switch" role="group" aria-label="Layout">
+        <a class="btn btn-quiet" href="{{$d.Href "layout" ""}}"{{if eq $d.Layout "grid"}} aria-current="true"{{end}}>Grid</a>
+        <a class="btn btn-quiet" href="{{$d.Href "layout" "list"}}"{{if eq $d.Layout "list"}} aria-current="true"{{end}}>List</a>
+      </span>
+    </form>
+
+    {{if $d.Events}}
+    <ul class="cards {{$d.Layout}}" aria-label="{{$d.ViewLabel}}">
+      {{range $d.Events}}{{$base := printf "/o/%s/events/%s" $d.Org.Slug .ID}}
+      <li class="card event-card">
+        <div class="ec-top">
+          {{template "status" .DisplayStatus}}
+          {{if ne $d.View "trash"}}
+          <form method="post" action="{{$base}}/{{if .Starred}}unstar{{else}}star{{end}}" class="inline">
+            <input type="hidden" name="csrf" value="{{$csrf}}">
+            <input type="hidden" name="back" value="{{$d.Href "view" $d.View}}">
+            <button class="star{{if .Starred}} on{{end}}" type="submit" aria-pressed="{{.Starred}}"
+              aria-label="{{if .Starred}}Remove {{.Name}} from Starred{{else}}Star {{.Name}}{{end}}">{{if .Starred}}★{{else}}☆{{end}}</button>
+          </form>
+          {{end}}
+        </div>
+        <h3><a href="{{$base}}">{{.Name}}</a></h3>
+        <p class="muted">{{.DateRange}}{{with .Where}} · {{.}}{{end}}</p>
+        <p class="ec-meta">
+          <span>{{plural .Registrations "registration" "registrations"}}</span>
+          {{if or .SharedCount .LinkShared}}<span class="shared" title="Shared"><span aria-hidden="true">👥</span> {{if .SharedCount}}{{plural .SharedCount "person" "people"}}{{end}}{{if .LinkShared}}{{if .SharedCount}} + {{end}}link{{end}}</span>{{end}}
+        </p>
+        <div class="ec-foot">
+          <span class="owner">{{template "avatar" (dict "Name" .OwnerName "Email" .OwnerEmail)}} {{if .OwnerName}}{{.OwnerName}}{{else}}{{.OwnerEmail}}{{end}}</span>
+          <span class="chip">{{roleLabel .Role}}</span>
+          {{if eq $d.View "trash"}}
+          <form method="post" action="{{$base}}/restore" class="inline">
+            <input type="hidden" name="csrf" value="{{$csrf}}">
+            <button class="btn btn-quiet" type="submit">Restore</button>
+          </form>
+          {{else if or (eq .Role "owner") (eq .Role "editor")}}
+          <details class="menu">
+            <summary class="btn btn-quiet" aria-label="More actions for {{.Name}}">⋯</summary>
+            <div class="menu-body">
+              <form method="post" action="{{$base}}/duplicate"><input type="hidden" name="csrf" value="{{$csrf}}"><button type="submit">Duplicate</button></form>
+              <form method="post" action="{{$base}}/{{if .ArchivedAt}}unarchive{{else}}archive{{end}}"><input type="hidden" name="csrf" value="{{$csrf}}"><button type="submit">{{if .ArchivedAt}}Unarchive{{else}}Archive{{end}}</button></form>
+              {{if eq .Role "owner"}}<form method="post" action="{{$base}}/delete"><input type="hidden" name="csrf" value="{{$csrf}}"><button type="submit" class="danger">Move to Trash</button></form>{{end}}
+            </div>
+          </details>
+          {{end}}
+        </div>
+      </li>
+      {{end}}
+    </ul>
+    {{else}}
+    <div class="card empty">
+      {{if $d.Q}}No events match “{{$d.Q}}”.
+      {{else if eq $d.View "mine"}}You haven't created any events here yet.{{if $d.CanCreate}} <a href="/o/{{$d.Org.Slug}}/events/new">Create one</a>.{{end}}
+      {{else if eq $d.View "shared"}}Nothing has been shared with you in {{$d.Org.Name}}.
+      {{else if eq $d.View "recent"}}Events you open show up here.
+      {{else if eq $d.View "starred"}}Star an event to keep it here.
+      {{else if eq $d.View "archived"}}No archived events.
+      {{else if eq $d.View "trash"}}Trash is empty. Deleted events stay here for 30 days.
+      {{else}}No events yet.{{end}}
+    </div>
+    {{end}}
+  </section>
+</div>
+<script type="module" src="/static/js/events-home.js"></script>
+{{end}}

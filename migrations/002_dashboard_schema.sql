@@ -1,3 +1,8 @@
+-- +goose Up
+-- Applied as one statement: every migration up to 006 was written to be
+-- re-run safely by hand, and goose runs it once more on databases set up
+-- before goose (see docs/decisions/0002-goose-migrations.md).
+-- +goose StatementBegin
 -- =============================================================================
 -- NASA Space Apps Challenge: admin dashboard additions
 -- Run after 001_schema.sql. Every statement is idempotent, so re-running is safe.
@@ -136,3 +141,5 @@ CREATE INDEX IF NOT EXISTS idx_scanner_devices_last_seen
     ON scanner_devices (last_seen_at DESC);
 
 ALTER TABLE scanner_devices ENABLE ROW LEVEL SECURITY;
+
+-- +goose StatementEnd

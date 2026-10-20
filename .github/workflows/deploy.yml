@@ -10,7 +10,7 @@ name: Test and deploy
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'saas/**']
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -21,12 +21,28 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # A throwaway database so the repository tests, the RLS tests and the
+    # tenant isolation suite run instead of skipping.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: nsac_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d nsac_test"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      NSAC_TEST_DATABASE_URL: postgres://postgres:ci@localhost:5432/nsac_test?sslmode=disable
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
       - run: go vet ./...
+      - name: Apply migrations
+        run: DATABASE_URL="$NSAC_TEST_DATABASE_URL" go run ./cmd/migrate up
       - run: go test ./...
 
   deploy:

@@ -45,6 +45,13 @@ type Config struct {
 	// EmailDailyLimit per rolling 24 hours (0 = no cap).
 	EmailSendInterval time.Duration
 	EmailDailyLimit   int
+
+	// SaaS sign-in (milestone M1). Google sign-in is off unless both are set;
+	// the OAuth client's redirect URI is APP_BASE_URL + /auth/google/callback.
+	GoogleClientID     string
+	GoogleClientSecret string
+	ProductName        string        // platform name in pages and emails
+	SessionTTL         time.Duration // signed-in session lifetime
 }
 
 func Load() (*Config, error) {
@@ -66,6 +73,11 @@ func Load() (*Config, error) {
 		SMTPPassword:     os.Getenv("SMTP_PASSWORD"),
 		SMTPFrom:         os.Getenv("SMTP_FROM"),
 		SMTPSecurity:     strings.ToLower(os.Getenv("SMTP_SECURITY")),
+
+		GoogleClientID:     os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
+		GoogleClientSecret: os.Getenv("GOOGLE_OAUTH_CLIENT_SECRET"),
+		// Neutral working title: "NASA" and "Space Apps" are NASA's marks.
+		ProductName: getenv("PRODUCT_NAME", "Event Pass"),
 	}
 	c.ClientIPHeader = os.Getenv("CLIENT_IP_HEADER")
 	var err error
@@ -111,6 +123,20 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("JWT_TTL: %w", err)
 	}
 	c.JWTTTL = ttl
+
+	// Spec: staff sessions last 12 hours.
+	if c.SessionTTL, err = time.ParseDuration(getenv("SESSION_TTL", "12h")); err != nil || c.SessionTTL < 5*time.Minute {
+		return nil, errors.New("SESSION_TTL must be a duration of at least 5m (e.g. 12h)")
+	}
+	if (c.GoogleClientID == "") != (c.GoogleClientSecret == "") {
+		return nil, errors.New("set both GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET, or neither")
+	}
+	if c.GoogleClientID != "" {
+		u, err := url.Parse(c.AppBaseURL)
+		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+			return nil, errors.New("APP_BASE_URL must be the site's public URL when Google sign-in is configured (the OAuth redirect URI is built from it)")
+		}
+	}
 
 	if c.DatabaseURL == "" {
 		return nil, errors.New("DATABASE_URL is required")

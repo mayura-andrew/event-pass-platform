@@ -1,3 +1,8 @@
+-- +goose Up
+-- Applied as one statement: every migration up to 006 was written to be
+-- re-run safely by hand, and goose runs it once more on databases set up
+-- before goose (see docs/decisions/0002-goose-migrations.md).
+-- +goose StatementBegin
 -- =============================================================================
 -- NASA Space Apps Challenge: custom delegate fields (JSONB)
 -- Run after 004_auto_membership_id.sql. Safe to re-run.
@@ -78,3 +83,5 @@ VALUES
     ('tshirt_size',     'T-Shirt Size',              'text', false, true,  20, 'seed'),
     ('parent_contact',  'Parent / Guardian Contact', 'text', false, false, 30, 'seed')
 ON CONFLICT (field_key) DO NOTHING;
+
+-- +goose StatementEnd

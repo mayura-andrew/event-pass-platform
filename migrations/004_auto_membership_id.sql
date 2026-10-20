@@ -1,3 +1,8 @@
+-- +goose Up
+-- Applied as one statement: every migration up to 006 was written to be
+-- re-run safely by hand, and goose runs it once more on databases set up
+-- before goose (see docs/decisions/0002-goose-migrations.md).
+-- +goose StatementBegin
 -- =============================================================================
 -- NASA Space Apps Challenge: auto-generated membership IDs (NSAC-001000, ...)
 -- Run after 003_rbac_and_emailing.sql. Safe to re-run.
@@ -64,3 +69,5 @@ BEGIN
         REVOKE ALL ON SEQUENCE participant_membership_seq FROM authenticated;
     END IF;
 END $$;
+
+-- +goose StatementEnd

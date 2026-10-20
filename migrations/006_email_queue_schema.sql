@@ -1,3 +1,8 @@
+-- +goose Up
+-- Applied as one statement: every migration up to 006 was written to be
+-- re-run safely by hand, and goose runs it once more on databases set up
+-- before goose (see docs/decisions/0002-goose-migrations.md).
+-- +goose StatementBegin
 -- =============================================================================
 -- NASA Space Apps Challenge: delegate pass email queue
 -- Run after 005_jsonb_dynamic_schema.sql. Safe to re-run.
@@ -75,3 +80,5 @@ CREATE TABLE IF NOT EXISTS email_queue_state (
 INSERT INTO email_queue_state (id) VALUES (true) ON CONFLICT (id) DO NOTHING;
 
 ALTER TABLE email_queue_state ENABLE ROW LEVEL SECURITY;
+
+-- +goose StatementEnd

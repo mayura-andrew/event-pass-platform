@@ -1,0 +1,20 @@
+{{define "content"}}
+<section class="narrow">
+  {{if .Data.Invite.EventID}}
+  <h1>{{.Data.Invite.EventName}}</h1>
+  <p class="lede">{{if .Data.Invite.InvitedBy}}{{.Data.Invite.InvitedBy}} invited {{else}}You were invited {{end}}<b>{{.Data.Invite.Email}}</b> to this event in {{.Data.Invite.OrgName}} as {{roleLabel .Data.Invite.Role}}.</p>
+  {{else}}
+  <h1>Join {{.Data.Invite.OrgName}}</h1>
+  <p class="lede">{{if .Data.Invite.InvitedBy}}{{.Data.Invite.InvitedBy}} invited {{else}}You were invited {{end}}<b>{{.Data.Invite.Email}}</b> to join as {{if eq .Data.Invite.Role "admin"}}an admin{{else}}a member{{end}}.</p>
+  {{end}}
+  {{if .Data.WrongAccount}}
+    <p class="alert alert-danger" role="alert">You're signed in as {{.Account.Email}}. Sign out, then sign in as {{.Data.Invite.Email}} to accept.</p>
+  {{else}}
+  <form method="post" action="/invite/accept">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <input type="hidden" name="token" value="{{.Data.Token}}">
+    <button class="btn btn-block" type="submit">{{if .Data.Invite.EventID}}Accept and open{{else}}Accept and join{{end}}</button>
+  </form>
+  {{end}}
+</section>
+{{end}}

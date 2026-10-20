@@ -215,8 +215,13 @@ emailed sign-in links use it.
 - Changed anything under `public/`? Bump `CACHE_VERSION` in `public/sw.js` in
   the same commit, or phones keep the previous version until the background
   refresh lands.
-- New migration? Run it in the Supabase SQL editor **before** pushing the code
-  that needs it. (`004_auto_membership_id.sql` must be in place before the
+- New migration? Apply it **before** pushing the code that needs it, either
+  in the Supabase SQL editor or with `DATABASE_URL=... go run ./cmd/migrate up`
+  (goose; it records applied versions, and 001-006 are safe to re-run, so
+  the first run on an existing database is harmless). `007_tenancy.sql` adds
+  the SaaS tables and creates the `nsac_tenant` role; the current build
+  doesn't use them, so it can go in any time before the SaaS pages are used.
+  `008_events_sharing.sql` (events, sharing, audit log) likewise. (`004_auto_membership_id.sql` must be in place before the
   **Add delegates** page is used, and `005_jsonb_dynamic_schema.sql` before
   this version starts: the API reads `custom_attributes` everywhere.)
 - Avoid deploying while scanning is in progress. A deploy restarts the

@@ -1,0 +1,7 @@
+{{define "content"}}
+<section class="narrow">
+  <h1>{{.Data.Heading}}</h1>
+  <p class="lede">{{.Data.Message}}</p>
+  <a class="btn btn-line" href="{{if .Account}}/app{{else}}/login{{end}}">{{if .Account}}Back to your organizations{{else}}Sign in{{end}}</a>
+</section>
+{{end}}

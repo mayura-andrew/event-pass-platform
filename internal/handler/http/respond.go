@@ -45,6 +45,13 @@ func writeDomainError(w http.ResponseWriter, r *http.Request, err error) {
 		})
 	case errors.Is(err, domain.ErrEmailUnavailable):
 		writeError(w, http.StatusServiceUnavailable, strings.TrimPrefix(err.Error(), domain.ErrEmailUnavailable.Error()+": "))
+	case errors.Is(err, domain.ErrUnauthenticated):
+		writeError(w, http.StatusUnauthorized, domain.ErrUnauthenticated.Error())
+	case errors.Is(err, domain.ErrForbidden):
+		writeError(w, http.StatusForbidden, strings.TrimPrefix(err.Error(), domain.ErrForbidden.Error()+": "))
+	case errors.Is(err, domain.ErrRateLimited):
+		w.Header().Set("Retry-After", "900")
+		writeError(w, http.StatusTooManyRequests, strings.TrimPrefix(err.Error(), domain.ErrRateLimited.Error()+": "))
 	case errors.Is(err, domain.ErrConflict) && err != domain.ErrConflict:
 		// Wrapped with a specific message (e.g. duplicate staff email).
 		writeError(w, http.StatusConflict, strings.TrimPrefix(err.Error(), domain.ErrConflict.Error()+": "))

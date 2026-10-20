@@ -1,0 +1,32 @@
+{{define "layout"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="same-origin">
+  <title>{{.Title}} · {{.Product}}</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/tokens.css">
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="topbar-brand" href="/app">{{.Product}}</a>
+    {{if .Account}}
+      <span class="topbar-user">{{.Account.Email}}</span>
+      <form method="post" action="/logout">
+        <input type="hidden" name="csrf" value="{{.CSRF}}">
+        <button class="btn btn-quiet" type="submit">Sign out</button>
+      </form>
+    {{end}}
+  </header>
+  <main class="wrap">
+    {{if .Error}}<p class="alert alert-danger" role="alert">{{.Error}}</p>{{end}}
+    {{if .Notice}}<p class="alert alert-success" role="status">{{.Notice}}</p>{{end}}
+    {{template "content" .}}
+  </main>
+</body>
+</html>{{end}}

@@ -55,6 +55,8 @@ migrations/003_rbac_and_emailing.sql roles (volunteer -> scanner), checkpoint gr
 migrations/004_auto_membership_id.sql membership ID sequence (NSAC-001000, ...)
 migrations/005_jsonb_dynamic_schema.sql custom fields: participants.custom_attributes (JSONB) + field definitions
 migrations/006_email_queue_schema.sql  pass email queue (email_jobs) and its pause switch
+migrations/007_tenancy.sql          SaaS: accounts, sessions, organizations, members, invites, Row Level Security
+migrations/008_events_sharing.sql   SaaS: events, sharing (people and links), stars, recent, audit log
 scripts/seed                        CSV import + HMAC signing
 scripts/create-admin                create scanner / dashboard logins
 scripts/sample                      example participants.csv and venues.csv
@@ -116,10 +118,11 @@ docker compose -f nsac-qr.compose.yaml up --build
 ```
 
 A database volume created before a migration existed won't run it
-automatically (init scripts only run on an empty volume). Apply new ones once:
+automatically (init scripts only run on an empty volume). Apply pending ones
+with the migration command, which records what it applied (goose):
 
 ```sh
-docker compose -f nsac-qr.compose.yaml exec -T db psql -U nsac -d nsac_qr < migrations/006_email_queue_schema.sql
+DATABASE_URL='postgres://nsac:nsac-local-password@127.0.0.1:5433/nsac_qr?sslmode=disable' go run ./cmd/migrate up
 ```
 
 Compose also starts [Mailpit](https://mailpit.axllent.org/), which catches every email the API sends

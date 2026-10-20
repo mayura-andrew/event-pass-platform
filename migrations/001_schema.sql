@@ -1,3 +1,8 @@
+-- +goose Up
+-- Applied as one statement: every migration up to 006 was written to be
+-- re-run safely by hand, and goose runs it once more on databases set up
+-- before goose (see docs/decisions/0002-goose-migrations.md).
+-- +goose StatementBegin
 -- =============================================================================
 -- NASA Space Apps Challenge: Offline-first QR delegate management
 -- Supabase / PostgreSQL schema (run once in the Supabase SQL editor or psql)
@@ -123,3 +128,5 @@ INSERT INTO scan_scenarios (name, code, description, allow_duplicates) VALUES
     ('Swag kit pickup',    'SWAG_KIT',  'One kit per delegate',              false),
     ('Hall re-entry',      'RE_ENTRY',  'Repeatable entry after check-in',   true)
 ON CONFLICT (code) DO NOTHING;
+
+-- +goose StatementEnd

@@ -1,0 +1,25 @@
+{{define "content"}}
+{{template "eventhead" .}}
+{{$d := .Data}}
+{{if and ($d.Can "event.edit") (not $d.InTrash)}}
+<form method="post" action="{{$d.Base}}" class="card">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <h2>Details</h2>
+  {{template "eventfields" $d}}
+  <button class="btn" type="submit">Save changes</button>
+</form>
+<script type="module" src="/static/js/event-form.js"></script>
+{{else}}
+<section class="card" aria-labelledby="details">
+  <h2 id="details">Details</h2>
+  <dl class="facts">
+    <dt>When</dt><dd>{{$d.Event.DateRange}} ({{$d.Event.TimeZone}})</dd>
+    <dt>Where</dt><dd>{{with $d.Event.Venue.Name}}{{.}}{{else}}{{if $d.Event.OnlineURL}}Online{{else}}Not set{{end}}{{end}}{{with $d.Event.Venue.Address}}<br><span class="muted">{{.}}</span>{{end}}</dd>
+    {{with $d.Event.OnlineURL}}<dt>Online</dt><dd><a href="{{.}}" rel="noopener noreferrer">{{.}}</a></dd>{{end}}
+    <dt>Capacity</dt><dd>{{with $d.Event.Capacity}}{{.}}{{else}}No limit{{end}}</dd>
+    <dt>Owner</dt><dd>{{if $d.Event.OwnerName}}{{$d.Event.OwnerName}}{{else}}{{$d.Event.OwnerEmail}}{{end}}</dd>
+  </dl>
+  {{with $d.Event.Description}}<p class="prewrap">{{.}}</p>{{end}}
+</section>
+{{end}}
+{{end}}

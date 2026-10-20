@@ -1,0 +1,33 @@
+{{define "content"}}
+<h1>Your organizations</h1>
+<p class="lede">An organization owns events and the people who run them.</p>
+
+{{if .Data.Orgs}}
+<ul class="org-list" aria-label="Organizations">
+  {{range .Data.Orgs}}
+  <li><a href="/o/{{.Slug}}"><span class="text"><span class="name">{{.Name}}</span><span class="slug">/o/{{.Slug}}</span></span><span class="chip">{{.Role}}</span></a></li>
+  {{end}}
+</ul>
+{{else}}
+<div class="card empty">You don't belong to an organization yet. Create one below, or open an invite from your email.</div>
+{{end}}
+
+<section class="card mt-24" aria-labelledby="new-org">
+  <h2 id="new-org">Create an organization</h2>
+  <form method="post" action="/app/orgs">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <div class="field">
+      <label for="org-name">Name</label>
+      <input id="org-name" name="name" type="text" maxlength="120" required value="{{.Data.Name}}" placeholder="Colombo Space Club">
+    </div>
+    <div class="field">
+      <label for="org-slug">Address</label>
+      <div class="prefixed"><span>/o/</span><input id="org-slug" name="slug" type="text" maxlength="40" required
+        pattern="[a-z0-9][a-z0-9-]{1,38}[a-z0-9]" value="{{.Data.Slug}}" placeholder="colombo-space" autocapitalize="none" spellcheck="false"></div>
+      <p class="hint">3 to 40 lower-case letters, digits and hyphens. Used in links you share.</p>
+    </div>
+    <button class="btn" type="submit">Create organization</button>
+  </form>
+</section>
+<script type="module" src="/static/js/org-new.js"></script>
+{{end}}

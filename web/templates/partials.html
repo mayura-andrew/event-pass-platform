@@ -1,0 +1,114 @@
+{{/* Shared pieces for SaaS pages. */}}
+
+{{define "orgtabs"}}{{/* called with the page (view); its Data embeds orgPageData */}}
+{{$d := .Data}}
+<p class="crumb"><a href="/app">Organizations</a></p>
+<h1 class="org-title">{{$d.Org.Name}}</h1>
+<nav class="tabs" aria-label="{{$d.Org.Name}}">
+  <a href="/o/{{$d.Org.Slug}}"{{if eq $d.OrgTab "events"}} aria-current="page"{{end}}>Events</a>
+  {{if $d.CanSeeMembers}}<a href="/o/{{$d.Org.Slug}}/members"{{if eq $d.OrgTab "members"}} aria-current="page"{{end}}>Members</a>{{end}}
+  {{if $d.CanSeeActivity}}<a href="/o/{{$d.Org.Slug}}/activity"{{if eq $d.OrgTab "activity"}} aria-current="page"{{end}}>Activity</a>{{end}}
+</nav>
+{{end}}
+
+{{define "status"}}<span class="status status-{{.}}"><span aria-hidden="true">{{statusIcon .}}</span> {{statusLabel .}}</span>{{end}}
+
+{{define "eventhead"}}{{/* called with the page (view); Data is eventPageData */}}
+{{$d := .Data}}
+<p class="crumb"><a href="/o/{{$d.Org.Slug}}">{{$d.Org.Name}}</a> · Events</p>
+<div class="event-head">
+  <h1>{{$d.Event.Name}}</h1>
+  {{template "status" $d.Status}}
+  <span class="chip">You: {{roleLabel $d.Role}}</span>
+</div>
+<p class="lede">{{$d.Event.DateRange}}{{with $d.Event.Where}} · {{.}}{{end}} · {{typeLabel $d.Event.Type}}</p>
+{{if $d.InTrash}}
+<div class="alert alert-danger" role="alert">
+  This event is in Trash and will be deleted for good 30 days after it was removed.
+  {{if $d.Can "event.delete"}}
+  <form method="post" action="{{$d.Base}}/restore" class="inline">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <button class="btn btn-quiet" type="submit">Restore</button>
+  </form>{{end}}
+</div>
+{{else if $d.Event.ArchivedAt}}
+<p class="alert alert-info" role="status">This event is archived. It stays searchable; bring it back from Settings.</p>
+{{end}}
+<nav class="tabs" aria-label="Event sections">
+  <a href="{{$d.Base}}"{{if eq $d.Tab "overview"}} aria-current="page"{{end}}>Overview</a>
+  {{if $d.CanSeeShare}}<a href="{{$d.Base}}/share"{{if eq $d.Tab "share"}} aria-current="page"{{end}}>Share</a>{{end}}
+  {{if $d.Can "event.audit.view"}}<a href="{{$d.Base}}/activity"{{if eq $d.Tab "activity"}} aria-current="page"{{end}}>Activity</a>{{end}}
+  {{if $d.Can "event.edit"}}<a href="{{$d.Base}}/settings"{{if eq $d.Tab "settings"}} aria-current="page"{{end}}>Settings</a>{{end}}
+</nav>
+{{end}}
+
+{{define "avatar"}}<span class="avatar" aria-hidden="true">{{initial .Name .Email}}</span>{{end}}
+
+{{define "auditlist"}}
+{{if .}}
+<ol class="audit">
+  {{range .}}
+  <li>
+    <time datetime="{{.CreatedAt.UTC.Format "2006-01-02T15:04:05Z"}}">{{when .CreatedAt}}</time>
+    <p><b>{{.ActorName}}</b> {{describe .}}{{if .EventName}} <span class="muted">· {{.EventName}}</span>{{end}}</p>
+  </li>
+  {{end}}
+</ol>
+{{else}}
+<div class="empty">Nothing has happened here yet.</div>
+{{end}}
+{{end}}
+
+{{define "eventfields"}}{{/* called with eventFormData */}}
+{{$f := .Form}}
+<div class="field">
+  <label for="ev-name">Name</label>
+  <input id="ev-name" name="name" type="text" maxlength="150" value="{{$f.Name}}" placeholder="Space Apps Colombo 2026"{{if not $f.DuplicateFrom}} required{{end}}>
+</div>
+<div class="row cols">
+  <div class="field grow">
+    <label for="ev-type">Type</label>
+    <select id="ev-type" name="type">
+      {{range .Types}}<option value="{{.Key}}"{{if eq .Key $f.Type}} selected{{end}}>{{.Label}}</option>{{end}}
+    </select>
+  </div>
+  <div class="field grow">
+    <label for="ev-vis">Visibility</label>
+    <select id="ev-vis" name="visibility">
+      {{range .Visibility}}<option value="{{.Key}}"{{if eq .Key $f.Visibility}} selected{{end}}>{{.Label}}</option>{{end}}
+    </select>
+  </div>
+</div>
+<fieldset class="group">
+  <legend>When</legend>
+  <div class="row cols">
+    <div class="field grow"><label for="ev-starts">Starts</label><input id="ev-starts" name="starts" type="datetime-local" value="{{$f.Starts}}"></div>
+    <div class="field grow"><label for="ev-ends">Ends</label><input id="ev-ends" name="ends" type="datetime-local" value="{{$f.Ends}}"></div>
+  </div>
+  <div class="field">
+    <label for="ev-tz">Time zone</label>
+    <select id="ev-tz" name="time_zone" data-default-tz="{{$f.TimeZone}}">
+      {{range .Zones}}<option value="{{.}}"{{if eq . $f.TimeZone}} selected{{end}}>{{.}}</option>{{end}}
+    </select>
+    <p class="hint">Times are in this zone wherever people view them.</p>
+  </div>
+</fieldset>
+<fieldset class="group">
+  <legend>Where</legend>
+  <div class="field"><label for="ev-venue">Venue</label><input id="ev-venue" name="venue_name" type="text" maxlength="150" value="{{$f.VenueName}}" placeholder="BMICH, Colombo"></div>
+  <div class="field"><label for="ev-addr">Address</label><input id="ev-addr" name="venue_address" type="text" maxlength="300" value="{{$f.VenueAddress}}"></div>
+  <div class="row cols">
+    <div class="field grow"><label for="ev-lat">Map pin latitude</label><input id="ev-lat" name="lat" type="text" inputmode="decimal" value="{{$f.Lat}}" placeholder="6.9010"></div>
+    <div class="field grow"><label for="ev-lng">Longitude</label><input id="ev-lng" name="lng" type="text" inputmode="decimal" value="{{$f.Lng}}" placeholder="79.8722"></div>
+  </div>
+  <div class="field"><label for="ev-online">Online link</label><input id="ev-online" name="online_url" type="url" maxlength="500" value="{{$f.Online}}" placeholder="https://"></div>
+</fieldset>
+<div class="row cols">
+  <div class="field grow"><label for="ev-cap">Capacity</label><input id="ev-cap" name="capacity" type="text" inputmode="numeric" value="{{$f.Cap}}" placeholder="No limit"></div>
+  <div class="field grow"><label for="ev-tags">Tags</label><input id="ev-tags" name="tags" type="text" value="{{$f.Tags}}" placeholder="hackathon, 2026"><p class="hint">Separate with commas. Search finds them.</p></div>
+</div>
+<div class="field">
+  <label for="ev-desc">Description</label>
+  <textarea id="ev-desc" name="description" rows="5" maxlength="10000">{{$f.Description}}</textarea>
+</div>
+{{end}}

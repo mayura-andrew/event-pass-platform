@@ -1,0 +1,15 @@
+{{define "content"}}
+{{$e := .Data.Event}}
+<p class="crumb">{{.Data.OrgName}}</p>
+<div class="event-head"><h1>{{$e.Name}}</h1><span class="chip">View only</span></div>
+<p class="lede">{{$e.DateRange}}{{with $e.Where}} · {{.}}{{end}}</p>
+<section class="card">
+  <dl class="facts">
+    <dt>When</dt><dd>{{$e.DateRange}} ({{$e.TimeZone}})</dd>
+    {{with $e.Venue.Name}}<dt>Where</dt><dd>{{.}}{{with $e.Venue.Address}}<br><span class="muted">{{.}}</span>{{end}}</dd>{{end}}
+    {{with $e.OnlineURL}}<dt>Online</dt><dd><a href="{{.}}" rel="noopener noreferrer">{{.}}</a></dd>{{end}}
+  </dl>
+  {{with $e.Description}}<p class="prewrap">{{.}}</p>{{end}}
+</section>
+<p class="hint">You're viewing this through a shared link. The live dashboard will appear here once the event takes registrations.</p>
+{{end}}

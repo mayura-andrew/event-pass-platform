@@ -2,7 +2,7 @@
 //
 // Bump CACHE_VERSION on every deploy that changes a file below, otherwise
 // devices keep the previous shell until it is revalidated in the background.
-const CACHE_VERSION = 'nsac-shell-v8';
+const CACHE_VERSION = 'nsac-shell-v9';
 const FONT_CACHE = 'nsac-fonts-v1';
 
 const SHELL = [
@@ -59,11 +59,20 @@ self.addEventListener('fetch', (event) => {
   }
 
   // App shell: stale-while-revalidate. Serve instantly from cache, refresh
-  // in the background for the next launch.
-  if (url.origin === self.location.origin) {
+  // in the background for the next launch. Only the scanner and pass files:
+  // the SaaS pages (/login, /auth/, /app, /o/, /invite, /l/, /static/) are
+  // per-person and carry one-time tokens, so they must never come from here.
+  if (url.origin === self.location.origin && isShell(url.pathname)) {
     event.respondWith(staleWhileRevalidate(request, event));
   }
 });
+
+const SHELL_PATHS = new Set(SHELL);
+
+function isShell(path) {
+  return SHELL_PATHS.has(path) || path.startsWith('/js/') || path.startsWith('/vendor/') ||
+    path.startsWith('/assets/') || path.startsWith('/icon');
+}
 
 async function cacheFirst(request, cacheName) {
   const cache = await caches.open(cacheName);

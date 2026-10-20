@@ -1,0 +1,23 @@
+{{define "content"}}
+{{$d := .Data}}
+<p class="crumb"><a href="/o/{{$d.Org.Slug}}">{{$d.Org.Name}}</a> · Events</p>
+<h1>New event</h1>
+<p class="lede">Start blank, or copy one of your events to keep its details and team.</p>
+<form method="post" action="{{$d.Action}}" class="card">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  {{if $d.CopyFrom}}
+  <div class="field">
+    <label for="ev-from">Start from</label>
+    <select id="ev-from" name="duplicate_from">
+      <option value="">Blank event</option>
+      {{range $d.CopyFrom}}<option value="{{.ID}}"{{if eq .ID $d.Form.DuplicateFrom}} selected{{end}}>Copy of {{.Name}} ({{.DateRange}})</option>{{end}}
+    </select>
+    <p class="hint">A copy keeps the details and the people it was shared with. Set a new name and dates below; anything else you leave blank comes from the copy.</p>
+  </div>
+  {{end}}
+  {{template "eventfields" $d}}
+  <button class="btn" type="submit">Create event</button>
+  <a class="btn btn-line" href="/o/{{$d.Org.Slug}}">Cancel</a>
+</form>
+<script type="module" src="/static/js/event-form.js"></script>
+{{end}}

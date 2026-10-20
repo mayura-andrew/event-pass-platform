@@ -1,0 +1,67 @@
+{{define "content"}}
+{{template "eventhead" .}}
+{{$d := .Data}}{{$csrf := .CSRF}}
+
+{{if $d.Can "event.transfer"}}
+<section class="card" aria-labelledby="perm-title">
+  <h2 id="perm-title">Sharing permissions</h2>
+  <form method="post" action="{{$d.Base}}/settings">
+    <input type="hidden" name="csrf" value="{{$csrf}}">
+    <label class="check"><input type="checkbox" name="editors_can_share"{{if $d.Event.Settings.EditorsCanShare}} checked{{end}}> Editors can share and change roles</label>
+    <label class="check"><input type="checkbox" name="viewers_can_export"{{if $d.Event.Settings.ViewersCanExport}} checked{{end}}> Viewers can export data</label>
+    <button class="btn" type="submit">Save</button>
+  </form>
+</section>
+{{end}}
+
+<section class="card" aria-labelledby="copy-title">
+  <h2 id="copy-title">Duplicate</h2>
+  <p class="muted">Make a new draft with these details and the same people. Change its name and dates afterwards.</p>
+  <form method="post" action="{{$d.Base}}/duplicate">
+    <input type="hidden" name="csrf" value="{{$csrf}}">
+    <button class="btn btn-line" type="submit">Duplicate event</button>
+  </form>
+</section>
+
+<section class="card" aria-labelledby="archive-title">
+  <h2 id="archive-title">Archive</h2>
+  {{if $d.Event.ArchivedAt}}
+  <p class="muted">Archived events stay out of your main lists but remain searchable.</p>
+  <form method="post" action="{{$d.Base}}/unarchive"><input type="hidden" name="csrf" value="{{$csrf}}"><button class="btn btn-line" type="submit">Unarchive</button></form>
+  {{else}}
+  <p class="muted">Finished with this event? Archive it to move it out of your main lists. It stays searchable.</p>
+  <form method="post" action="{{$d.Base}}/archive"><input type="hidden" name="csrf" value="{{$csrf}}"><button class="btn btn-line" type="submit">Archive event</button></form>
+  {{end}}
+</section>
+
+{{if $d.Can "event.transfer"}}
+<section class="card" aria-labelledby="owner-title">
+  <h2 id="owner-title">Transfer ownership</h2>
+  {{if $d.Members}}
+  <form method="post" action="{{$d.Base}}/transfer" class="row">
+    <input type="hidden" name="csrf" value="{{$csrf}}">
+    <div class="field grow">
+      <label for="new-owner">New owner</label>
+      <select id="new-owner" name="account_id" required>
+        <option value="">Choose a member</option>
+        {{range $d.Members}}<option value="{{.AccountID}}">{{if .Name}}{{.Name}} ({{.Email}}){{else}}{{.Email}}{{end}}</option>{{end}}
+      </select>
+    </div>
+    <button class="btn btn-line" type="submit">Transfer</button>
+  </form>
+  <p class="hint">The new owner must be a member of {{$d.Org.Name}}. You keep editor access.</p>
+  {{else}}<p class="muted">Invite someone to {{$d.Org.Name}} first: the owner must be a member.</p>{{end}}
+</section>
+{{end}}
+
+{{if $d.Can "event.delete"}}
+<section class="card danger-zone" aria-labelledby="delete-title">
+  <h2 id="delete-title">Delete</h2>
+  <p class="muted">The event moves to Trash, where it can be restored for 30 days.</p>
+  <form method="post" action="{{$d.Base}}/delete">
+    <input type="hidden" name="csrf" value="{{$csrf}}">
+    <button class="btn btn-danger" type="submit">Move to Trash</button>
+  </form>
+</section>
+{{end}}
+{{end}}

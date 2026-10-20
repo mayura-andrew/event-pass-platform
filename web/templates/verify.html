@@ -1,0 +1,12 @@
+{{define "content"}}
+<section class="narrow">
+  <h1>Finish signing in</h1>
+  <p class="lede">Continue to sign in on this device.</p>
+  {{/* A button rather than signing in on page load: mail scanners open
+       links in emails, which would use up the one-time link. */}}
+  <form method="post" action="/auth/email/verify">
+    <input type="hidden" name="token" value="{{.Data.Token}}">
+    <button class="btn btn-block" type="submit">Sign in</button>
+  </form>
+</section>
+{{end}}

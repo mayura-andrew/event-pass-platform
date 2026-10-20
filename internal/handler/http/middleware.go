@@ -230,7 +230,8 @@ func deadlines(next http.Handler) http.Handler {
 			return
 		case p == "/api/v1/scans/sync":
 			d = syncDeadline
-		case p == "/api/v1/admin/staff/create", strings.HasSuffix(p, "/resend-credentials"):
+		case p == "/api/v1/admin/staff/create", strings.HasSuffix(p, "/resend-credentials"),
+			p == "/api/v1/auth/email-link", strings.HasPrefix(p, "/api/v1/orgs/") && strings.HasSuffix(p, "/invites"):
 			d = emailDeadline
 		case p == "/api/v1/admin/participants/upload-csv":
 			d = importDeadline

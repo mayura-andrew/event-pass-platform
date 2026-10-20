@@ -1,17 +1,24 @@
 package httphandler
 
 import (
+	"io/fs"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/nasa-spaceapps/nsac-qr/internal/domain"
+	"github.com/nasa-spaceapps/nsac-qr/web"
 )
 
 // NewRouter wires every route using Go 1.22+ method-aware patterns.
 func NewRouter(h *Handler, publicDir, allowedOrigin string) http.Handler {
 	mux := http.NewServeMux()
 	h.accounts = newAccountCache(h.Accounts)
+	pages, err := loadPages()
+	if err != nil {
+		panic(err) // templates are embedded; a parse error is a build bug
+	}
+	h.pages = pages
 
 	authed := func(f http.HandlerFunc) http.Handler { return h.authenticate(f, false) }
 	managers := []string{domain.RoleSuperAdmin, domain.RoleAdmin}
@@ -85,6 +92,14 @@ func NewRouter(h *Handler, publicDir, allowedOrigin string) http.Handler {
 	mux.Handle("PATCH /api/v1/admin/staff/{id}", superadmin(h.updateStaff))
 	mux.Handle("POST /api/v1/admin/staff/{id}/resend-credentials", superadmin(h.resendCredentials))
 
+	// SaaS: sign-in, organizations, invites (milestone M1). Sign-in links
+	// share the login limiter: both are per-IP sign-in attempts.
+	if h.SignIn != nil {
+		h.registerSaaS(mux, loginLimit)
+		static, _ := fs.Sub(web.FS, "static")
+		mux.Handle("GET /static/", noCache(http.StripPrefix("/static/", http.FileServerFS(static))))
+	}
+
 	// Unknown API paths return JSON, not the static file server's HTML 404.
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "no such endpoint")
@@ -94,6 +109,13 @@ func NewRouter(h *Handler, publicDir, allowedOrigin string) http.Handler {
 	mux.Handle("/", staticFiles(publicDir))
 
 	return recoverer(logging(securityHeaders(cors(allowedOrigin, deadlines(mux)))))
+}
+
+func noCache(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		next.ServeHTTP(w, r)
+	})
 }
 
 // staticFiles serves /public. The service worker and app shell must never be

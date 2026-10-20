@@ -31,4 +31,15 @@ type Handler struct {
 	// Values exposed to browsers through GET /api/v1/config/public.
 	MapsAPIKey string
 	MapsMapID  string
+
+	// SaaS (milestone M1): accounts, sessions and organizations.
+	SignIn    *service.AccountService
+	Orgs      *service.OrgService
+	Events    *service.EventService
+	BaseURL   string // APP_BASE_URL; https enables Secure cookies
+	Product   string // platform name on pages
+	CookieKey []byte // signs the Google sign-in state cookie
+
+	pages       pageSet      // set by NewRouter
+	signInLimit *rateLimiter // set by NewRouter
 }

@@ -1,3 +1,8 @@
+-- +goose Up
+-- Applied as one statement: every migration up to 006 was written to be
+-- re-run safely by hand, and goose runs it once more on databases set up
+-- before goose (see docs/decisions/0002-goose-migrations.md).
+-- +goose StatementBegin
 -- =============================================================================
 -- NASA Space Apps Challenge: staff roles, checkpoint grants, emailed credentials
 -- Run after 002_dashboard_schema.sql. Safe to re-run.
@@ -65,3 +70,5 @@ CROSS JOIN scan_scenarios s
 WHERE a.role = 'scanner'
   AND NOT EXISTS (SELECT 1 FROM staff_scenario_grants)
 ON CONFLICT DO NOTHING;
+
+-- +goose StatementEnd

@@ -13,6 +13,8 @@ services:
       - ./migrations/004_auto_membership_id.sql:/docker-entrypoint-initdb.d/004_auto_membership_id.sql:ro
       - ./migrations/005_jsonb_dynamic_schema.sql:/docker-entrypoint-initdb.d/005_jsonb_dynamic_schema.sql:ro
       - ./migrations/006_email_queue_schema.sql:/docker-entrypoint-initdb.d/006_email_queue_schema.sql:ro
+      - ./migrations/007_tenancy.sql:/docker-entrypoint-initdb.d/007_tenancy.sql:ro
+      - ./migrations/008_events_sharing.sql:/docker-entrypoint-initdb.d/008_events_sharing.sql:ro
     ports:
       - "127.0.0.1:5433:5432"
     healthcheck:

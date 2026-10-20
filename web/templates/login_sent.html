@@ -1,0 +1,7 @@
+{{define "content"}}
+<section class="narrow">
+  <h1>Check your email</h1>
+  <p class="lede">We sent a sign-in link to <b>{{.Data.Email}}</b>. It works once, for the next 15 minutes.</p>
+  <p class="muted">Nothing there? Check spam, or <a href="/login{{if .Data.Next}}?next={{.Data.Next}}{{end}}">send another link</a>.</p>
+</section>
+{{end}}

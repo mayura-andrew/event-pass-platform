@@ -1,0 +1,10 @@
+{{define "content"}}
+{{$d := .Data}}
+{{if $d.Event}}{{template "eventhead" (dict "Data" $d.Event "CSRF" .CSRF)}}
+{{else}}{{template "orgtabs" .}}{{end}}
+<section class="card" aria-labelledby="act-title">
+  <h2 id="act-title">{{if $d.Event}}Event activity{{else}}Everything in {{$d.Org.Name}}{{end}}</h2>
+  <p class="hint">Who shared, invited, changed roles, edited, archived or deleted, newest first. Entries can't be edited or removed.</p>
+  {{template "auditlist" $d.Entries}}
+</section>
+{{end}}

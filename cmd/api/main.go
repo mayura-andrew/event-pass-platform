@@ -54,6 +54,9 @@ func run() error {
 	ingestRepo := postgres.NewIngestRepo(db)
 	fieldRepo := postgres.NewFieldRepo(db)
 	emailRepo := postgres.NewEmailRepo(db)
+	accountRepo := postgres.NewAccountRepo(db)
+	orgRepo := postgres.NewOrgRepo(db)
+	eventRepo := postgres.NewEventRepo(db)
 
 	mailer, err := newMailer(cfg)
 	if err != nil {
@@ -99,6 +102,15 @@ func run() error {
 		Tokens:          tokens,
 		MapsAPIKey:      cfg.GoogleMapsAPIKey,
 		MapsMapID:       cfg.GoogleMapsMapID,
+
+		SignIn: service.NewAccountService(accountRepo, mailer, newGoogle(cfg), service.AccountConfig{
+			BaseURL: cfg.AppBaseURL, Product: cfg.ProductName, SessionTTL: cfg.SessionTTL,
+		}),
+		Orgs:      service.NewOrgService(orgRepo, mailer, cfg.AppBaseURL, cfg.ProductName),
+		Events:    service.NewEventService(eventRepo, accountRepo, orgRepo, mailer, cfg.AppBaseURL, cfg.ProductName),
+		BaseURL:   cfg.AppBaseURL,
+		Product:   cfg.ProductName,
+		CookieKey: cfg.JWTSecret,
 	}
 
 	srv := &http.Server{
@@ -164,6 +176,14 @@ func newIngest(repo *postgres.IngestRepo, key []byte) *service.IngestService {
 		return nil
 	}
 	return service.NewIngestService(repo, key)
+}
+
+// newGoogle returns the Google sign-in client, or nil when it isn't configured.
+func newGoogle(cfg *config.Config) *service.GoogleOAuth {
+	if cfg.GoogleClientID == "" {
+		return nil
+	}
+	return service.NewGoogleOAuth(cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.AppBaseURL+"/auth/google/callback")
 }
 
 // emailLogoFile is the white event logo sized for email headers, made from

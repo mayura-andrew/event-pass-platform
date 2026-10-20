@@ -1,0 +1,118 @@
+{{define "content"}}
+{{template "eventhead" .}}
+{{$d := .Data}}{{$csrf := .CSRF}}{{$st := $d.Sharing}}{{$canShare := $d.Can "event.share"}}
+
+{{if $canShare}}
+<section class="card" aria-labelledby="add-title">
+  <h2 id="add-title">Add people</h2>
+  <form method="post" action="{{$d.Base}}/share" class="row">
+    <input type="hidden" name="csrf" value="{{$csrf}}">
+    <div class="field grow">
+      <label for="share-email">Email</label>
+      <input id="share-email" name="email" type="email" required autocomplete="off" value="{{$d.Email}}">
+    </div>
+    <div class="field">
+      <label for="share-role">Role</label>
+      <select id="share-role" name="role">
+        {{range $d.Roles}}<option value="{{.Key}}"{{if eq .Key "viewer"}} selected{{end}}>{{.Label}}</option>{{end}}
+      </select>
+    </div>
+    <button class="btn" type="submit">Share</button>
+  </form>
+  <p class="hint">People with an account get access now and an email. Anyone else gets an invite to accept.
+    Editors change the event; check-in staff scan; viewers see the dashboard.</p>
+</section>
+{{else}}
+<p class="alert alert-info" role="status">Only the owner{{if not $d.Event.Settings.EditorsCanShare}} and organization admins{{end}} can change who has access.</p>
+{{end}}
+
+<section class="card" aria-labelledby="people-title">
+  <h2 id="people-title">People with access</h2>
+  <ul class="people">
+    <li>
+      <div class="who">{{template "avatar" (dict "Name" $st.Owner.Name "Email" $st.Owner.Email)}}<b>{{if $st.Owner.Name}}{{$st.Owner.Name}}{{else}}{{$st.Owner.Email}}{{end}}</b>{{if $st.Owner.Name}}<span>{{$st.Owner.Email}}</span>{{end}}</div>
+      <div class="actions"><span class="chip">Owner</span></div>
+    </li>
+    {{range $st.Shares}}
+    <li>
+      <div class="who">{{template "avatar" (dict "Name" .Name "Email" .Email)}}<b>{{if .Name}}{{.Name}}{{else}}{{.Email}}{{end}}{{if .Guest}} <span class="chip">Guest</span>{{end}}</b>{{if .Name}}<span>{{.Email}}</span>{{end}}</div>
+      <div class="actions">
+        {{if $canShare}}
+        <form method="post" action="{{$d.Base}}/shares/{{.ID}}/role" class="inline">
+          <input type="hidden" name="csrf" value="{{$csrf}}">
+          <select name="role" aria-label="Role for {{.Email}}">
+            {{$role := .Role}}{{range $d.Roles}}<option value="{{.Key}}"{{if eq .Key $role}} selected{{end}}>{{.Label}}</option>{{end}}
+          </select>
+          <button class="btn btn-quiet" type="submit">Save</button>
+        </form>
+        <form method="post" action="{{$d.Base}}/shares/{{.ID}}/remove" class="inline">
+          <input type="hidden" name="csrf" value="{{$csrf}}">
+          <button class="btn btn-danger" type="submit">Remove</button>
+        </form>
+        {{else}}<span class="chip">{{roleLabel .Role}}</span>{{end}}
+      </div>
+    </li>
+    {{end}}
+  </ul>
+  <p class="hint">Organization owners and admins can also open every event in {{$d.Org.Name}}.</p>
+</section>
+
+{{if $st.Invites}}
+<section class="card" aria-labelledby="pending-title">
+  <h2 id="pending-title">Waiting to accept</h2>
+  <ul class="people">
+    {{range $st.Invites}}
+    <li>
+      <div class="who"><b>{{.Email}}</b><span>{{roleLabel .Role}} · invited by {{.InvitedBy}}</span></div>
+      {{if $canShare}}
+      <div class="actions">
+        <form method="post" action="{{$d.Base}}/invites/{{.ID}}/revoke" class="inline">
+          <input type="hidden" name="csrf" value="{{$csrf}}">
+          <button class="btn btn-danger" type="submit">Withdraw</button>
+        </form>
+      </div>
+      {{end}}
+    </li>
+    {{end}}
+  </ul>
+</section>
+{{end}}
+
+<section class="card" aria-labelledby="link-title">
+  <h2 id="link-title">Link sharing</h2>
+  {{if $d.NewLink}}
+  <div class="field">
+    <label for="new-link">Anyone with this link can view the event</label>
+    <input id="new-link" type="text" readonly value="{{$d.NewLink}}" data-select-on-focus>
+    <p class="hint">Copy it now: for safety it is only shown once. Reset the link to get a new one.</p>
+  </div>
+  {{end}}
+  {{if $st.Link.Enabled}}
+  <p><span class="status status-live"><span aria-hidden="true">◉</span> On</span> Anyone with the link can view{{with $st.Link.ExpiresAt}}, until {{whenPtr .}}{{end}}. Check-in access is never given by link.</p>
+  {{else}}
+  <p><span class="status status-draft"><span aria-hidden="true">○</span> Off</span> Only the people above can open this event.</p>
+  {{end}}
+  {{if $canShare}}
+  <form method="post" action="{{$d.Base}}/link" class="row">
+    <input type="hidden" name="csrf" value="{{$csrf}}">
+    <div class="field">
+      <label for="link-days">Link expires</label>
+      <select id="link-days" name="expires_in_days">
+        <option value="7">In 7 days</option>
+        <option value="30" selected>In 30 days</option>
+        <option value="90">In 90 days</option>
+        <option value="0">Never</option>
+      </select>
+    </div>
+    <button class="btn btn-line" type="submit">{{if $st.Link.Enabled}}Reset link{{else}}Turn on link{{end}}</button>
+  </form>
+  {{if $st.Link.Enabled}}
+  <form method="post" action="{{$d.Base}}/link/remove" class="inline">
+    <input type="hidden" name="csrf" value="{{$csrf}}">
+    <button class="btn btn-danger" type="submit">Turn off link</button>
+  </form>
+  {{end}}
+  {{end}}
+</section>
+<script type="module" src="/static/js/share.js"></script>
+{{end}}
