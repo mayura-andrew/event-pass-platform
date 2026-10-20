@@ -69,6 +69,18 @@ type Message struct {
 	// Images the HTML shows with <img src="cid:ContentID">, sent inside the
 	// message instead of fetched from a server.
 	Inline []InlineImage
+	// Files to download, such as the pass PDF.
+	Attachments []Attachment
+	// ReplyTo, when set, sends replies to the organizer rather than the
+	// platform's sending address.
+	ReplyTo *mail.Address
+}
+
+// Attachment is a file sent with a message.
+type Attachment struct {
+	ContentType string // e.g. application/pdf
+	Filename    string
+	Data        []byte
 }
 
 // InlineImage is one image embedded in a message.
@@ -239,6 +251,10 @@ func buildMIME(from mail.Address, m Message) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	mixed, err := randomHex(16)
+	if err != nil {
+		return nil, err
+	}
 	msgID, err := randomHex(16)
 	if err != nil {
 		return nil, err
@@ -255,7 +271,17 @@ func buildMIME(from mail.Address, m Message) ([]byte, error) {
 	hdr("Subject", mime.QEncoding.Encode("utf-8", m.Subject))
 	hdr("Date", time.Now().Format(time.RFC1123Z))
 	hdr("Message-ID", fmt.Sprintf("<%s@%s>", msgID, domainPart))
+	if m.ReplyTo != nil {
+		hdr("Reply-To", m.ReplyTo.String())
+	}
 	hdr("MIME-Version", "1.0")
+	// With attachments, the message body below is the first part of a
+	// multipart/mixed; without, the structure is unchanged.
+	if len(m.Attachments) > 0 {
+		hdr("Content-Type", fmt.Sprintf(`multipart/mixed; boundary="%s"`, mixed))
+		b.WriteString("\r\n")
+		fmt.Fprintf(&b, "--%s\r\n", mixed)
+	}
 	if len(m.Inline) > 0 {
 		hdr("Content-Type", fmt.Sprintf(`multipart/related; boundary="%s"; type="multipart/alternative"`, related))
 		b.WriteString("\r\n")
@@ -301,6 +327,26 @@ func buildMIME(from mail.Address, m Message) ([]byte, error) {
 			b.WriteString("\r\n")
 		}
 		fmt.Fprintf(&b, "--%s--\r\n", related)
+	}
+	if len(m.Attachments) > 0 {
+		for _, a := range m.Attachments {
+			if !safeMIMEToken(a.ContentType) || !safeMIMEToken(a.Filename) {
+				return nil, fmt.Errorf("attachment %q: unsafe header value", a.Filename)
+			}
+			fmt.Fprintf(&b, "\r\n--%s\r\n", mixed)
+			fmt.Fprintf(&b, "Content-Type: %s\r\n", a.ContentType)
+			b.WriteString("Content-Transfer-Encoding: base64\r\n")
+			fmt.Fprintf(&b, "Content-Disposition: attachment; filename=\"%s\"\r\n\r\n", a.Filename)
+			enc := base64.StdEncoding.EncodeToString(a.Data)
+			for len(enc) > 76 {
+				b.WriteString(enc[:76])
+				b.WriteString("\r\n")
+				enc = enc[76:]
+			}
+			b.WriteString(enc)
+			b.WriteString("\r\n")
+		}
+		fmt.Fprintf(&b, "--%s--\r\n", mixed)
 	}
 	return b.Bytes(), nil
 }

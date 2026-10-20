@@ -33,13 +33,19 @@ type Handler struct {
 	MapsMapID  string
 
 	// SaaS (milestone M1): accounts, sessions and organizations.
-	SignIn    *service.AccountService
-	Orgs      *service.OrgService
-	Events    *service.EventService
-	BaseURL   string // APP_BASE_URL; https enables Secure cookies
-	Product   string // platform name on pages
-	CookieKey []byte // signs the Google sign-in state cookie
+	SignIn *service.AccountService
+	Orgs   *service.OrgService
+	Events *service.EventService
+	// Registrations: publishing, forms, public registration (M3).
+	Registrations *service.RegistrationService
+	Passes        *service.PassService
+	Portal        *service.PortalService
+	Checker       service.ParticipantChecker // pass checks (the registration repo)
+	BaseURL       string                     // APP_BASE_URL; https enables Secure cookies
+	Product       string                     // platform name on pages
+	CookieKey     []byte                     // signs the Google sign-in state cookie
 
-	pages       pageSet      // set by NewRouter
-	signInLimit *rateLimiter // set by NewRouter
+	pages         pageSet      // set by NewRouter
+	signInLimit   *rateLimiter // set by NewRouter
+	registerLimit *rateLimiter // public registration, per IP
 }

@@ -47,7 +47,27 @@ authorization tests; every change appears in the audit log.
 Deferred (ADR 6): move event to another org, purge job after 30 days in
 Trash, template starting points with content.
 
-## Next: M3 Register and pass
+## M3 Register and pass: built, gate not yet shown on staging
+
+Gate: a participant registers on a phone and receives a pass email built
+from a gallery template within 60 seconds; the event migrated from the
+current database keeps its old QR codes working.
+
+| Part | State |
+| --- | --- |
+| Migrations 009 (publishing, form fields, event_participants) and 010 (outbox) | Done |
+| Publish / unpublish; registration settings: open or approval, opens/closes, waitlist, pass ID prefix | Done |
+| Form builder: 11 answer types, required, help, options, who sees the answer, reorder | Done (list editor; drag and drop later) |
+| Public page `/e/{org}/{event}`: form with per-question errors, capacity, waitlist, closed states; already-registered re-sends the pass | Done |
+| Participant list: status filters and counts, search, approve, cancel, give a place, pass preview and download | Done |
+| Pass IDs (PREFIX-XXXX-XXXX), Ed25519 tokens with key rotation, pass check endpoint | Done |
+| Pass rendering: Classic band, PNG 1080 x 1920 and A6 PDF, Sinhala and Tamil shaped | Done |
+| Outbox and worker: pass issued, received, waitlist, cancelled; retries; Reply-To the organizer | Done; pass email measured at ~4 s locally |
+| My passes portal `/me`: passes across orgs, pass page, PNG/PDF | Done |
+| `cmd/legacy-import`: current delegates into an event, old QR codes valid | Done; checked on local data (NSAC-1092) |
+| Tests: registration journey, capacity with 10 concurrent registrations, RLS for participants, pass emails, portal, import and old QR codes; matrix covers the new routes | Done |
+
+## Next: M4 Check-in and workshops
 
 ## Open questions (need a decision)
 

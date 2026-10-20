@@ -1,0 +1,36 @@
+{{define "content"}}
+{{template "eventhead" .}}
+{{$d := .Data}}{{$csrf := .CSRF}}{{$edit := $d.Can "event.edit"}}
+<nav class="filters" aria-label="Filter by status">
+  {{range $d.Statuses}}<a href="{{$d.Href .Key}}"{{if eq .Key $d.Filter}} aria-current="page"{{end}}>{{.Label}} <span class="count">{{$d.Count .Key}}</span></a>{{end}}
+</nav>
+<form class="toolbar" method="get" action="{{$d.Base}}/participants" role="search">
+  {{if $d.Filter}}<input type="hidden" name="status" value="{{$d.Filter}}">{{end}}
+  <label for="p-search" class="sr-only">Search participants</label>
+  <input id="p-search" name="q" type="search" value="{{$d.Q}}" placeholder="Search by name, email or pass ID">
+  <button class="btn btn-quiet" type="submit">Search</button>
+</form>
+{{if $d.Participants}}
+<ul class="people card">
+  {{range $d.Participants}}
+  <li>
+    <div class="who">{{template "avatar" (dict "Name" .FullName "Email" .Email)}}<b>{{.FullName}}</b><span>{{.Email}} · <code>{{.PassID}}</code> · {{when .RegisteredAt}}</span></div>
+    <div class="actions">
+      <span class="pstatus pstatus-{{.Status}}">{{statusWord .Status}}</span>
+      <a class="btn btn-quiet" href="{{$d.Base}}/participants/{{.ID}}/pass.png" target="_blank" rel="noopener">Pass</a>
+      {{if $edit}}
+        {{if or (eq .Status "pending") (eq .Status "waitlisted") (eq .Status "cancelled")}}
+        <form method="post" action="{{$d.Base}}/participants/{{.ID}}/status" class="inline"><input type="hidden" name="csrf" value="{{$csrf}}"><input type="hidden" name="status" value="registered"><button class="btn btn-quiet" type="submit">{{if eq .Status "pending"}}Approve{{else if eq .Status "waitlisted"}}Give a place{{else}}Restore{{end}}</button></form>
+        {{end}}
+        {{if ne .Status "cancelled"}}
+        <form method="post" action="{{$d.Base}}/participants/{{.ID}}/status" class="inline"><input type="hidden" name="csrf" value="{{$csrf}}"><input type="hidden" name="status" value="cancelled"><button class="btn btn-danger" type="submit">Cancel</button></form>
+        {{end}}
+      {{end}}
+    </div>
+  </li>
+  {{end}}
+</ul>
+{{else}}
+<div class="card empty">{{if or $d.Q $d.Filter}}Nobody matches.{{else}}No registrations yet. Publish the event and share its page.{{end}}</div>
+{{end}}
+{{end}}

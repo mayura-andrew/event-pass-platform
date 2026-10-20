@@ -57,6 +57,8 @@ migrations/005_jsonb_dynamic_schema.sql custom fields: participants.custom_attri
 migrations/006_email_queue_schema.sql  pass email queue (email_jobs) and its pause switch
 migrations/007_tenancy.sql          SaaS: accounts, sessions, organizations, members, invites, Row Level Security
 migrations/008_events_sharing.sql   SaaS: events, sharing (people and links), stars, recent, audit log
+migrations/009_registration.sql     SaaS: publishing, registration forms, event participants
+migrations/010_outbox.sql           SaaS: participant email outbox (pass issued, approval, waitlist, cancelled)
 scripts/seed                        CSV import + HMAC signing
 scripts/create-admin                create scanner / dashboard logins
 scripts/sample                      example participants.csv and venues.csv

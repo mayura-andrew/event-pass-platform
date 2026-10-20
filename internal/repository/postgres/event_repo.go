@@ -23,7 +23,8 @@ func NewEventRepo(db *sql.DB) *EventRepo { return &EventRepo{db: db} }
 const eventCols = `e.id, e.org_id, e.slug, e.name, e.type, e.status, e.description, e.starts_at, e.ends_at,
 	e.time_zone, e.venue, e.online_url, e.capacity, e.visibility, e.language, e.tags, e.settings,
 	e.owner_id, COALESCE(oa.name, ''), COALESCE(oa.email, ''), COALESCE(oa.avatar_url, ''),
-	e.created_at, e.updated_at, e.archived_at, e.deleted_at`
+	e.created_at, e.updated_at, e.archived_at, e.deleted_at,
+	e.published_at, e.reg_mode, e.reg_opens_at, e.reg_closes_at, e.waitlist, e.pass_prefix`
 
 // eventFrom joins the owner's account; it can be missing from view when the
 // owner has left the org, hence the LEFT JOIN and COALESCEs above.
@@ -35,7 +36,8 @@ func eventDest(e *domain.Event, venue, settings *[]byte) []any {
 	return []any{&e.ID, &e.OrgID, &e.Slug, &e.Name, &e.Type, &e.Status, &e.Description, &e.StartsAt, &e.EndsAt,
 		&e.TimeZone, venue, &e.OnlineURL, &e.Capacity, &e.Visibility, &e.Language, textArray{&e.Tags}, settings,
 		&e.OwnerID, &e.OwnerName, &e.OwnerEmail, &e.OwnerAvatar,
-		&e.CreatedAt, &e.UpdatedAt, &e.ArchivedAt, &e.DeletedAt}
+		&e.CreatedAt, &e.UpdatedAt, &e.ArchivedAt, &e.DeletedAt,
+		&e.PublishedAt, &e.RegMode, &e.RegOpensAt, &e.RegClosesAt, &e.Waitlist, &e.PassPrefix}
 }
 
 func decodeEvent(e *domain.Event, venue, settings []byte) error {
@@ -164,10 +166,13 @@ func (r *EventRepo) CreateEvent(ctx context.Context, sc authz.OrgScope, e *domai
 		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO events (id, org_id, slug, name, type, description, starts_at, ends_at, time_zone, venue,
-			                    online_url, capacity, visibility, language, tags, settings, owner_id, created_by)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::text[], $16, $17, $17)`,
+			                    online_url, capacity, visibility, language, tags, settings, owner_id, created_by,
+			                    reg_mode, waitlist, pass_prefix)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::text[], $16, $17, $17,
+			        $18, $19, $20)`,
 			id, sc.OrgID(), slug, e.Name, e.Type, e.Description, e.StartsAt, e.EndsAt, e.TimeZone, venue,
-			e.OnlineURL, e.Capacity, e.Visibility, e.Language, pgTextArray(e.Tags), settings, sc.AccountID()); err != nil {
+			e.OnlineURL, e.Capacity, e.Visibility, e.Language, pgTextArray(e.Tags), settings, sc.AccountID(),
+			orDefault(e.RegMode, domain.RegOpen), e.Waitlist, orDefault(e.PassPrefix, "EVT")); err != nil {
 			if pgCode(err) == pgUniqueViolation {
 				return fmt.Errorf("%w: another event was just created with this address; try again", domain.ErrConflict)
 			}
@@ -709,4 +714,33 @@ func (r *EventRepo) EventByLink(ctx context.Context, tokenHash []byte) (*domain.
 		return nil, "", err
 	}
 	return &e, orgName, decodeEvent(&e, venue, settings)
+}
+
+func orDefault(s, def string) string {
+	if s == "" {
+		return def
+	}
+	return s
+}
+
+// SetPublished publishes or unpublishes. Already in that state is a no-op.
+func (r *EventRepo) SetPublished(ctx context.Context, es authz.EventScope, published bool) error {
+	if published {
+		return r.toggle(ctx, es, "event.publish", "status = 'published', published_at = COALESCE(published_at, NOW())",
+			"status <> 'published'")
+	}
+	return r.toggle(ctx, es, "event.unpublish", "status = 'draft'", "status = 'published'")
+}
+
+// UpdateRegistration saves the registration settings.
+func (r *EventRepo) UpdateRegistration(ctx context.Context, es authz.EventScope, st domain.RegistrationSettings) error {
+	diff := map[string]any{"reg_mode": st.Mode, "waitlist": st.Waitlist, "pass_prefix": st.PassPrefix}
+	return r.inEvent(ctx, es, domain.Audit{Action: "event.registration", Diff: diff}, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `
+			UPDATE events SET reg_mode = $3, reg_opens_at = $4, reg_closes_at = $5, waitlist = $6, pass_prefix = $7,
+			       updated_at = NOW()
+			WHERE org_id = $1 AND id = $2`,
+			es.OrgID(), es.EventID(), st.Mode, st.OpensAt, st.ClosesAt, st.Waitlist, st.PassPrefix)
+		return err
+	})
 }

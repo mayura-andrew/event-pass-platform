@@ -1,0 +1,19 @@
+{{define "content"}}
+<h1>My passes</h1>
+<p class="lede">Every event you've registered for with {{.Account.Email}}.</p>
+{{if .Data}}
+<ul class="cards grid" aria-label="Your passes">
+  {{range .Data}}
+  <li class="card event-card{{if not .Upcoming}} past{{end}}">
+    <div class="ec-top"><span class="pstatus pstatus-{{.Participant.Status}}">{{statusWord .Participant.Status}}</span>{{if not .Upcoming}}<span class="chip">Finished</span>{{end}}</div>
+    <h3><a href="/me/passes/{{.Participant.ID}}">{{.Event.Name}}</a></h3>
+    <p class="muted">{{.OrgName}}</p>
+    <p class="muted">{{.Event.DateRange}}{{with .Event.Where}} · {{.}}{{end}}</p>
+    <p class="ec-meta"><span>Pass ID <code>{{.Participant.PassID}}</code></span></p>
+  </li>
+  {{end}}
+</ul>
+{{else}}
+<div class="card empty">No passes yet. When you register for an event with this email address, its pass appears here.</div>
+{{end}}
+{{end}}

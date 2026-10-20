@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/nasa-spaceapps/nsac-qr/internal/domain"
+	"github.com/nasa-spaceapps/nsac-qr/internal/passes"
 	"github.com/nasa-spaceapps/nsac-qr/internal/repository/postgres"
 	"github.com/nasa-spaceapps/nsac-qr/internal/service"
 )
@@ -97,9 +98,13 @@ func newSaaSEnvWith(t *testing.T, google *service.GoogleOAuth) *saasEnv {
 		Orgs: service.NewOrgService(postgres.NewOrgRepo(db), env.mail, base, "Event Pass"),
 		Events: service.NewEventService(postgres.NewEventRepo(db), postgres.NewAccountRepo(db), postgres.NewOrgRepo(db),
 			env.mail, base, "Event Pass"),
-		BaseURL:   base,
-		Product:   "Event Pass",
-		CookieKey: []byte("test-cookie-key-0123456789abcdef"),
+		Registrations: service.NewRegistrationService(postgres.NewRegistrationRepo(db), postgres.NewEventRepo(db), postgres.NewOutboxRepo(db)),
+		Passes:        service.NewPassService(passes.DerivedKeyRing([]byte("test-pass-key"))),
+		Portal:        service.NewPortalService(postgres.NewPortalRepo(db)),
+		Checker:       postgres.NewRegistrationRepo(db),
+		BaseURL:       base,
+		Product:       "Event Pass",
+		CookieKey:     []byte("test-cookie-key-0123456789abcdef"),
 	}
 	env.srv = httptest.NewServer(NewRouter(h, "../../../public", ""))
 	t.Cleanup(func() {

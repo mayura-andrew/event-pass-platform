@@ -221,7 +221,16 @@ emailed sign-in links use it.
   the first run on an existing database is harmless). `007_tenancy.sql` adds
   the SaaS tables and creates the `nsac_tenant` role; the current build
   doesn't use them, so it can go in any time before the SaaS pages are used.
-  `008_events_sharing.sql` (events, sharing, audit log) likewise. (`004_auto_membership_id.sql` must be in place before the
+  `008_events_sharing.sql` (events, sharing, audit log), `009_registration.sql`
+  (publishing, forms, event participants) and `010_outbox.sql` (participant
+  emails) likewise.
+- Before taking registrations, set `PASS_SIGNING_KEYS` (see `.env.example`).
+  Without it pass QR codes are signed with a key derived from `JWT_SECRET`,
+  so rotating that secret would invalidate every pass.
+- Moving the current event into an organization:
+  `DATABASE_URL=... go run ./cmd/legacy-import -org <slug> -owner <email> -event "<name>"`.
+  It copies confirmed delegates with their membership IDs and QR signatures
+  (passes already sent keep working), emails nobody, and is safe to re-run. (`004_auto_membership_id.sql` must be in place before the
   **Add delegates** page is used, and `005_jsonb_dynamic_schema.sql` before
   this version starts: the API reads `custom_attributes` everywhere.)
 - Avoid deploying while scanning is in progress. A deploy restarts the

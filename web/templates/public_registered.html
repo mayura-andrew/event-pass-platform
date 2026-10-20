@@ -1,0 +1,27 @@
+{{define "content"}}
+{{$d := .Data}}{{$p := $d.Result.Participant}}{{$e := $d.Event.Event}}
+<article class="narrow public">
+  <p class="crumb">{{$d.Event.OrgName}}</p>
+  {{if $d.Result.Already}}
+    <h1>You're already registered</h1>
+    <p class="lede">{{$p.Email}} is registered for {{$e.Name}}. Your pass ID is <b>{{$p.PassID}}</b>.
+      {{if $d.Result.Resent}}We've emailed your pass again.{{else}}Your pass was emailed a few minutes ago; check your inbox and spam folder.{{end}}</p>
+  {{else if eq $p.Status "registered"}}
+    <h1>You're registered</h1>
+    <p class="lede">Thanks, {{$p.FullName}}. Your place at {{$e.Name}} is confirmed. Your pass ID is <b>{{$p.PassID}}</b>; your pass is on its way to {{$p.Email}}.</p>
+  {{else if eq $p.Status "pending"}}
+    <h1>Registration received</h1>
+    <p class="lede">Thanks, {{$p.FullName}}. The organizers review each registration; you'll get an email at {{$p.Email}} when yours is approved.</p>
+  {{else if eq $p.Status "waitlisted"}}
+    <h1>You're on the waitlist</h1>
+    <p class="lede">{{$e.Name}} is full. You'll get an email at {{$p.Email}} if a place opens up.</p>
+  {{end}}
+  <section class="card">
+    <dl class="facts">
+      <dt>Event</dt><dd>{{$e.Name}}</dd>
+      <dt>When</dt><dd>{{$e.DateRange}} ({{$e.TimeZone}})</dd>
+      {{with $e.Where}}<dt>Where</dt><dd>{{.}}</dd>{{end}}
+    </dl>
+  </section>
+</article>
+{{end}}

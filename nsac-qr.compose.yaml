@@ -15,6 +15,8 @@ services:
       - ./migrations/006_email_queue_schema.sql:/docker-entrypoint-initdb.d/006_email_queue_schema.sql:ro
       - ./migrations/007_tenancy.sql:/docker-entrypoint-initdb.d/007_tenancy.sql:ro
       - ./migrations/008_events_sharing.sql:/docker-entrypoint-initdb.d/008_events_sharing.sql:ro
+      - ./migrations/009_registration.sql:/docker-entrypoint-initdb.d/009_registration.sql:ro
+      - ./migrations/010_outbox.sql:/docker-entrypoint-initdb.d/010_outbox.sql:ro
     ports:
       - "127.0.0.1:5433:5432"
     healthcheck:

@@ -17,6 +17,7 @@ import (
 	"github.com/nasa-spaceapps/nsac-qr/internal/auth"
 	"github.com/nasa-spaceapps/nsac-qr/internal/config"
 	httphandler "github.com/nasa-spaceapps/nsac-qr/internal/handler/http"
+	"github.com/nasa-spaceapps/nsac-qr/internal/passes"
 	"github.com/nasa-spaceapps/nsac-qr/internal/repository/postgres"
 	"github.com/nasa-spaceapps/nsac-qr/internal/service"
 )
@@ -57,6 +58,13 @@ func run() error {
 	accountRepo := postgres.NewAccountRepo(db)
 	orgRepo := postgres.NewOrgRepo(db)
 	eventRepo := postgres.NewEventRepo(db)
+	registrationRepo := postgres.NewRegistrationRepo(db)
+	outboxRepo := postgres.NewOutboxRepo(db)
+	passKeys, err := passKeyRing(cfg)
+	if err != nil {
+		return err
+	}
+	passService := service.NewPassService(passKeys)
 
 	mailer, err := newMailer(cfg)
 	if err != nil {
@@ -106,11 +114,15 @@ func run() error {
 		SignIn: service.NewAccountService(accountRepo, mailer, newGoogle(cfg), service.AccountConfig{
 			BaseURL: cfg.AppBaseURL, Product: cfg.ProductName, SessionTTL: cfg.SessionTTL,
 		}),
-		Orgs:      service.NewOrgService(orgRepo, mailer, cfg.AppBaseURL, cfg.ProductName),
-		Events:    service.NewEventService(eventRepo, accountRepo, orgRepo, mailer, cfg.AppBaseURL, cfg.ProductName),
-		BaseURL:   cfg.AppBaseURL,
-		Product:   cfg.ProductName,
-		CookieKey: cfg.JWTSecret,
+		Orgs:          service.NewOrgService(orgRepo, mailer, cfg.AppBaseURL, cfg.ProductName),
+		Events:        service.NewEventService(eventRepo, accountRepo, orgRepo, mailer, cfg.AppBaseURL, cfg.ProductName),
+		Registrations: service.NewRegistrationService(registrationRepo, eventRepo, outboxRepo),
+		Passes:        passService,
+		Portal:        service.NewPortalService(postgres.NewPortalRepo(db)),
+		Checker:       registrationRepo,
+		BaseURL:       cfg.AppBaseURL,
+		Product:       cfg.ProductName,
+		CookieKey:     cfg.JWTSecret,
 	}
 
 	srv := &http.Server{
@@ -141,6 +153,20 @@ func run() error {
 		close(workerDone)
 	}
 
+	// Participant emails (pass issued, approval, waitlist). Like the pass
+	// email queue, only with SMTP configured; queued emails wait otherwise.
+	outboxDone := make(chan struct{})
+	if cfg.SMTPHost != "" {
+		ow := service.NewOutboxWorker(outboxRepo, mailer, passService, cfg.AppBaseURL, cfg.ProductName)
+		go func() {
+			defer close(outboxDone)
+			ow.Run(ctx)
+		}()
+	} else {
+		close(outboxDone)
+		slog.Warn("SMTP_HOST not set: participant emails stay queued")
+	}
+
 	errCh := make(chan error, 1)
 	go func() {
 		slog.Info("listening", "addr", srv.Addr)
@@ -160,6 +186,7 @@ func run() error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	err = srv.Shutdown(shutdownCtx)
+	<-outboxDone
 	select {
 	case <-workerDone:
 	case <-time.After(60 * time.Second):
@@ -176,6 +203,19 @@ func newIngest(repo *postgres.IngestRepo, key []byte) *service.IngestService {
 		return nil
 	}
 	return service.NewIngestService(repo, key)
+}
+
+// passKeyRing loads the pass signing keys, or derives a development key.
+func passKeyRing(cfg *config.Config) (*passes.KeyRing, error) {
+	if cfg.PassSigningKeys != "" {
+		kr, err := passes.ParseKeyRing(cfg.PassSigningKeys)
+		if err != nil {
+			return nil, fmt.Errorf("PASS_SIGNING_KEYS: %w", err)
+		}
+		return kr, nil
+	}
+	slog.Warn("PASS_SIGNING_KEYS not set: pass QR codes use a key derived from JWT_SECRET; set real keys in production (openssl rand -base64 32)")
+	return passes.DerivedKeyRing(cfg.JWTSecret), nil
 }
 
 // newGoogle returns the Google sign-in client, or nil when it isn't configured.

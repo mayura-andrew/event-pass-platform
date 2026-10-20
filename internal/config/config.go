@@ -52,6 +52,11 @@ type Config struct {
 	GoogleClientSecret string
 	ProductName        string        // platform name in pages and emails
 	SessionTTL         time.Duration // signed-in session lifetime
+
+	// Ed25519 seeds for pass QR tokens, "1:<base64>,2:<base64>"; the highest
+	// ID signs new passes, the others still verify. Empty: a key derived from
+	// JWT_SECRET (local development only).
+	PassSigningKeys string
 }
 
 func Load() (*Config, error) {
@@ -77,7 +82,8 @@ func Load() (*Config, error) {
 		GoogleClientID:     os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
 		GoogleClientSecret: os.Getenv("GOOGLE_OAUTH_CLIENT_SECRET"),
 		// Neutral working title: "NASA" and "Space Apps" are NASA's marks.
-		ProductName: getenv("PRODUCT_NAME", "Event Pass"),
+		ProductName:     getenv("PRODUCT_NAME", "Event Pass"),
+		PassSigningKeys: os.Getenv("PASS_SIGNING_KEYS"),
 	}
 	c.ClientIPHeader = os.Getenv("CLIENT_IP_HEADER")
 	var err error

@@ -72,6 +72,12 @@ func (h *Handler) registerSaaS(mux *http.ServeMux, signInLimit *rateLimiter) {
 	mux.Handle("POST /invite/accept", h.pageAuthed((*Handler).acceptInvitePost))
 
 	mux.HandleFunc("GET /l/{token}", h.linkPage)
+	// Public event pages and registration. Venue Wi-Fi puts many phones
+	// behind one address, so the limit is generous.
+	h.registerLimit = newRateLimiter(max(h.PassRatePerMin, 60), time.Minute, h.clientIP)
+	h.registerPortal(mux)
+	mux.HandleFunc("GET /e/{org}/{event}", h.publicEventPage)
+	mux.HandleFunc("POST /e/{org}/{event}/register", h.registerPost)
 
 	for _, rt := range orgRoutes {
 		if rt.api {

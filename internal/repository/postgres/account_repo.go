@@ -95,6 +95,12 @@ func (r *AccountRepo) SignIn(ctx context.Context, provider, subject, email, name
 		return nil, err
 	}
 	a.AvatarURL = avatar.String
+	// Registrations made with this (verified) email become the account's
+	// passes, in every org.
+	if _, err := tx.ExecContext(ctx, `UPDATE event_participants SET account_id = $1 WHERE email = $2 AND account_id IS NULL`,
+		a.ID, a.Email); err != nil {
+		return nil, err
+	}
 	return &a, tx.Commit()
 }
 

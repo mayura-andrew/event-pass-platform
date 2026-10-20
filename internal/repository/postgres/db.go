@@ -64,6 +64,15 @@ const (
 	pgTooManyConnections   = "53300"
 )
 
+// pgConstraint is the name of the constraint an error violated, or "".
+func pgConstraint(err error) string {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.ConstraintName
+	}
+	return ""
+}
+
 func pgCode(err error) string {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {

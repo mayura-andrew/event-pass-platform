@@ -1,0 +1,28 @@
+{{define "content"}}
+{{$pc := .Data.Pass}}{{$p := $pc.Participant}}{{$e := $pc.Event}}
+<p class="crumb"><a href="/me">My passes</a></p>
+<div class="event-head"><h1>{{$e.Name}}</h1><span class="pstatus pstatus-{{$p.Status}}">{{statusWord $p.Status}}</span></div>
+<p class="lede">{{$pc.OrgName}} · {{$e.DateRange}}{{with $e.Where}} · {{.}}{{end}}</p>
+<div class="pass-layout">
+  <figure class="pass-figure">
+    <img src="/me/passes/{{$p.ID}}/pass.png" width="1080" height="1920" alt="Pass for {{$p.FullName}}, pass ID {{$p.PassID}}, with a QR code">
+    <figcaption class="hint">Show the QR code at the entrance. Turn your screen brightness up.</figcaption>
+  </figure>
+  <section class="card" aria-labelledby="pass-details">
+    <h2 id="pass-details">Details</h2>
+    <dl class="facts">
+      <dt>Name</dt><dd>{{$p.FullName}}</dd>
+      <dt>Pass ID</dt><dd><code>{{$p.PassID}}</code></dd>
+      <dt>When</dt><dd>{{$e.DateRange}} ({{$e.TimeZone}})</dd>
+      {{with $e.Venue.Name}}<dt>Where</dt><dd>{{.}}{{with $e.Venue.Address}}<br><span class="muted">{{.}}</span>{{end}}</dd>{{end}}
+      {{with $e.OnlineURL}}<dt>Online</dt><dd><a href="{{.}}" rel="noopener noreferrer">{{.}}</a></dd>{{end}}
+      {{range .Data.Answers}}<dt>{{.Label}}</dt><dd>{{.Value}}</dd>{{end}}
+    </dl>
+    <div class="row">
+      <a class="btn" href="/me/passes/{{$p.ID}}/pass.png?download=1">Save image</a>
+      <a class="btn btn-line" href="/me/passes/{{$p.ID}}/pass.pdf?download=1">Print-ready PDF</a>
+    </div>
+    <p class="hint">Print the PDF at actual size (100%).</p>
+  </section>
+</div>
+{{end}}

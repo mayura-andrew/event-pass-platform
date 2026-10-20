@@ -184,3 +184,44 @@ fieldset.group legend { font-weight: 700; font-size: 1.05rem; margin-bottom: 8px
   .cards.list .event-card { grid-template-columns: 1fr; grid-template-areas: "status" "name" "meta" "foot"; }
 }
 .row.cols { align-items: flex-start; } /* form fields side by side, tops aligned */
+
+/* ---- M3: registration, participants, public page ---------------------- */
+.fields { list-style: none; margin: 0 0 16px; padding: 0; }
+.fields > li { border-top: 1px solid var(--line); padding: 10px 0; }
+.fields > li:first-child { border-top: 0; }
+.field-row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.field-row .who { flex: 1 1 220px; min-width: 0; }
+.field-row .who > b, .field-row .who > span { display: block; overflow-wrap: anywhere; }
+.field-row .who > span { color: var(--muted); font-size: .88rem; }
+.field-row .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.fields details { margin-top: 8px; }
+.fields summary, .add-field summary { cursor: pointer; font-weight: 700; color: var(--primary); min-height: 44px; display: inline-flex; align-items: center; }
+.add-field summary { color: var(--ink); }
+.add-field[open] summary { margin-bottom: 12px; }
+.req { color: var(--danger); }
+.btn:disabled { opacity: .45; cursor: default; }
+.filters { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.filters a { display: inline-flex; gap: 6px; align-items: center; min-height: 40px; padding: 0 12px; border: 1.5px solid var(--line);
+  border-radius: 999px; color: var(--ink); text-decoration: none; font-weight: 700; font-size: .9rem; }
+.filters a[aria-current="page"] { border-color: var(--primary); color: var(--primary); }
+.filters .count { color: var(--muted); font-weight: 400; }
+.pstatus { display: inline-flex; align-items: center; min-height: 28px; padding: 0 10px; border-radius: 999px; font-size: .82rem; font-weight: 700; border: 1.5px solid currentColor; }
+.pstatus-registered { color: var(--success); }
+.pstatus-pending { color: var(--warning); }
+.pstatus-waitlisted { color: var(--primary); }
+.pstatus-cancelled { color: var(--danger); }
+.people code { font-size: .85rem; }
+.field-error { color: var(--danger); font-weight: 700; margin: 4px 0 0; font-size: .92rem; }
+[aria-invalid="true"] { border-color: var(--danger) !important; }
+.public h1 { margin-top: 4px; }
+input[type=number], input[type=date], input[type=tel] {
+  width: 100%; min-height: 48px; padding: 10px 12px; background: var(--surface);
+  border: 1.5px solid var(--line); border-radius: var(--radius-sm);
+}
+.topbar-link { color: var(--topbar-ink); font-weight: 700; text-decoration: none; white-space: nowrap; }
+.topbar-link:hover { text-decoration: underline; }
+.past { opacity: .75; }
+.pass-layout { display: grid; grid-template-columns: minmax(0, 340px) 1fr; gap: 24px; align-items: start; }
+.pass-figure { margin: 0; }
+.pass-figure img { display: block; width: 100%; height: auto; border-radius: var(--radius-lg); border: 1.5px solid var(--line); background: #fff; }
+@media (max-width: 720px) { .pass-layout { grid-template-columns: 1fr; } }

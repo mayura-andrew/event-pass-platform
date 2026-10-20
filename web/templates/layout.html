@@ -16,6 +16,7 @@
   <header class="topbar">
     <a class="topbar-brand" href="/app">{{.Product}}</a>
     {{if .Account}}
+      <a class="topbar-link" href="/me">My passes</a>
       <span class="topbar-user">{{.Account.Email}}</span>
       <form method="post" action="/logout">
         <input type="hidden" name="csrf" value="{{.CSRF}}">

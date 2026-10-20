@@ -72,6 +72,20 @@ type Event struct {
 	UpdatedAt   time.Time     `json:"updated_at"`
 	ArchivedAt  *time.Time    `json:"archived_at,omitempty"`
 	DeletedAt   *time.Time    `json:"deleted_at,omitempty"`
+
+	// Publishing and registration (M3).
+	PublishedAt *time.Time `json:"published_at,omitempty"`
+	RegMode     string     `json:"reg_mode"`
+	RegOpensAt  *time.Time `json:"reg_opens_at,omitempty"`
+	RegClosesAt *time.Time `json:"reg_closes_at,omitempty"`
+	Waitlist    bool       `json:"waitlist"`
+	PassPrefix  string     `json:"pass_prefix"`
+}
+
+// Public reports whether the event has a public page: published, not
+// archived or deleted, and not private.
+func (e *Event) Public() bool {
+	return e.Status == StatusPublished && e.ArchivedAt == nil && e.DeletedAt == nil && e.Visibility != "private"
 }
 
 // DisplayStatus is the status chip: stored status, dates, archive and trash.

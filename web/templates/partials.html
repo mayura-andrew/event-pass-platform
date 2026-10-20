@@ -36,6 +36,8 @@
 {{end}}
 <nav class="tabs" aria-label="Event sections">
   <a href="{{$d.Base}}"{{if eq $d.Tab "overview"}} aria-current="page"{{end}}>Overview</a>
+  {{if $d.Can "event.edit"}}<a href="{{$d.Base}}/registration"{{if eq $d.Tab "registration"}} aria-current="page"{{end}}>Registration</a>{{end}}
+  {{if $d.Can "event.dashboard"}}<a href="{{$d.Base}}/participants"{{if eq $d.Tab "participants"}} aria-current="page"{{end}}>Participants</a>{{end}}
   {{if $d.CanSeeShare}}<a href="{{$d.Base}}/share"{{if eq $d.Tab "share"}} aria-current="page"{{end}}>Share</a>{{end}}
   {{if $d.Can "event.audit.view"}}<a href="{{$d.Base}}/activity"{{if eq $d.Tab "activity"}} aria-current="page"{{end}}>Activity</a>{{end}}
   {{if $d.Can "event.edit"}}<a href="{{$d.Base}}/settings"{{if eq $d.Tab "settings"}} aria-current="page"{{end}}>Settings</a>{{end}}

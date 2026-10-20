@@ -281,11 +281,13 @@ func (s *EventService) Create(ctx context.Context, sc authz.OrgScope, req Create
 		}
 		return s.Duplicate(ctx, es, src, req.EventInput)
 	}
-	e := &domain.Event{Type: "hackathon", TimeZone: "UTC", Visibility: "private", Language: "en", Tags: []string{}}
+	e := &domain.Event{Type: "hackathon", TimeZone: "UTC", Visibility: "private", Language: "en", Tags: []string{},
+		RegMode: domain.RegOpen, Waitlist: true}
 	if err := applyInput(e, req.EventInput); err != nil {
 		return nil, err
 	}
 	e.Slug = Slugify(e.Name)
+	e.PassPrefix = PassPrefix(e.Name)
 	return s.events.CreateEvent(ctx, sc, e, "", domain.Audit{Action: "event.create", TargetType: "event",
 		Diff: map[string]any{"name": e.Name, "type": e.Type}})
 }

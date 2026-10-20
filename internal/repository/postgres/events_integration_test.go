@@ -8,6 +8,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -222,5 +224,101 @@ func TestDuplicateKeepsTeamAndTrashRetention(t *testing.T) {
 	rows, _ := events.ListEvents(ctx, scA, domain.EventListQuery{View: domain.ViewTrash}, true)
 	if len(rows) != 0 {
 		t.Errorf("trash lists %d events past retention", len(rows))
+	}
+}
+
+// Ten people at once for three places: exactly three get them, the rest are
+// waitlisted, and every pass ID is distinct.
+func TestRegisterCapacityUnderConcurrency(t *testing.T) {
+	f := newTenancyFixture(t)
+	ctx := context.Background()
+	a := f.account(t, "a")
+	sc, _ := f.org(t, a, "a")
+	es := f.event(t, sc, "Popular workshop")
+	f.db.ExecContext(ctx, `UPDATE events SET capacity = 3, waitlist = true, status = 'published' WHERE id = $1`, es.EventID())
+	acc, err := NewEventRepo(f.db).EventAccess(ctx, sc, es.EventID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	regs := NewRegistrationRepo(f.db)
+
+	var wg sync.WaitGroup
+	results := make([]*domain.EventParticipant, 10)
+	errs := make([]error, 10)
+	for i := range results {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			results[i], errs[i] = regs.Register(ctx, acc.Event, domain.EventParticipant{
+				Email: fmt.Sprintf("it-%s-r%d@test.local", f.tag, i), FullName: "Person", Answers: map[string]any{},
+			}, func() string { return fmt.Sprintf("T-%s-%02d", f.tag[:4], i) })
+		}(i)
+	}
+	wg.Wait()
+	counts := map[string]int{}
+	ids := map[string]bool{}
+	for i, p := range results {
+		if errs[i] != nil {
+			t.Fatalf("register %d: %v", i, errs[i])
+		}
+		counts[p.Status]++
+		ids[p.PassID] = true
+	}
+	if counts[domain.PartRegistered] != 3 || counts[domain.PartWaitlisted] != 7 || len(ids) != 10 {
+		t.Fatalf("got %v and %d distinct pass IDs; want 3 registered, 7 waitlisted, 10 IDs", counts, len(ids))
+	}
+
+	// A pass ID collision is retried with a fresh one.
+	n := 0
+	p, err := regs.Register(ctx, acc.Event, domain.EventParticipant{Email: "it-" + f.tag + "-dup@test.local", FullName: "Dup",
+		Answers: map[string]any{}}, func() string {
+		n++
+		if n == 1 {
+			return results[0].PassID // taken
+		}
+		return "T-" + f.tag[:4] + "-NEW"
+	})
+	if err != nil || p.PassID != "T-"+f.tag[:4]+"-NEW" {
+		t.Fatalf("pass ID collision: %+v, %v", p, err)
+	}
+}
+
+// A participant's own passes are readable across orgs (portal), nothing else.
+func TestParticipantRowsRLS(t *testing.T) {
+	f := newTenancyFixture(t)
+	ctx := context.Background()
+	a, b, person := f.account(t, "a"), f.account(t, "b"), f.account(t, "person")
+	scA, orgA := f.org(t, a, "a")
+	scB, _ := f.org(t, b, "b")
+	esA, esB := f.event(t, scA, "A"), f.event(t, scB, "B")
+	regs, events := NewRegistrationRepo(f.db), NewEventRepo(f.db)
+	for i, es := range []authz.EventScope{esA, esB} {
+		acc, _ := events.EventAccess(ctx, map[int]authz.OrgScope{0: scA, 1: scB}[i], es.EventID())
+		p, err := regs.Register(ctx, acc.Event, domain.EventParticipant{Email: person.Email, FullName: "Person", Answers: map[string]any{}},
+			func() string { return fmt.Sprintf("P-%s-%d", f.tag[:4], i) })
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.db.ExecContext(ctx, `UPDATE event_participants SET account_id = $1 WHERE id = $2`, person.ID, p.ID)
+	}
+	err := withTenant(ctx, f.db, "", person.ID, func(tx *sql.Tx) error {
+		if n := count(t, tx, `SELECT count(*) FROM event_participants`); n != 2 {
+			t.Errorf("person sees %d of their passes, want 2", n)
+		}
+		if n := count(t, tx, `SELECT count(*) FROM events`); n != 2 {
+			t.Errorf("person sees %d events, want the 2 they're registered for", n)
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM events`); err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var left int
+	f.db.QueryRowContext(ctx, `SELECT count(*) FROM events WHERE org_id = $1`, orgA.ID).Scan(&left)
+	if left != 1 {
+		t.Fatal("a participant's tenant transaction deleted an event")
 	}
 }

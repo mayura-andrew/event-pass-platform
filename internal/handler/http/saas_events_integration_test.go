@@ -76,16 +76,17 @@ func newMatrixFixture(t *testing.T) *matrixFixture {
 // testEvent is a fresh event owned by evOwner, shared with the personas'
 // roles, plus one pending invite: the IDs routes need.
 type testEvent struct {
-	id, editorShare, invite string
-	es                      authz.EventScope
+	id, editorShare, invite, field, participant string
+	es                                          authz.EventScope
 }
 
 func (f *matrixFixture) newEvent(t *testing.T) testEvent {
 	t.Helper()
 	ctx := context.Background()
+	starts := time.Now().Add(30 * 24 * time.Hour)
 	e, err := f.events.CreateEvent(ctx, f.ownerSc, &domain.Event{
-		Slug: "matrix", Name: "Matrix event", Type: "hackathon", TimeZone: "UTC", Visibility: "private", Language: "en",
-		Tags: []string{},
+		Slug: "matrix", Name: "Matrix event", Type: "hackathon", TimeZone: "UTC", Visibility: "unlisted", Language: "en",
+		Tags: []string{}, StartsAt: &starts, RegMode: domain.RegOpen, Waitlist: true, PassPrefix: "MTX",
 	}, "", domain.Audit{Action: "event.create", TargetType: "event"})
 	if err != nil {
 		t.Fatal(err)
@@ -110,6 +111,18 @@ func (f *matrixFixture) newEvent(t *testing.T) testEvent {
 		t.Fatal(err)
 	}
 	te.invite = inv.ID
+	regs := postgres.NewRegistrationRepo(f.env.db)
+	field, err := regs.SaveField(ctx, es, domain.FormField{Key: "setup_question", Type: "text", Label: "Setup question", Visibility: "admin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	te.field = field.ID
+	p, err := regs.Register(ctx, e, domain.EventParticipant{Email: f.env.prefix + "reg-" + e.ID[len(e.ID)-6:] + "@test.local",
+		FullName: "Matrix Participant", Answers: map[string]any{}}, func() string { return "MTX-" + e.ID[len(e.ID)-9:] })
+	if err != nil {
+		t.Fatal(err)
+	}
+	te.participant = p.ID
 	return te
 }
 
@@ -142,7 +155,8 @@ func (f *matrixFixture) expected(p persona, rt eventRoute) string {
 }
 
 func (f *matrixFixture) call(p persona, rt eventRoute, te testEvent) (int, string) {
-	path := fill(rt.pattern, map[string]string{"org": f.org.Slug, "event": te.id, "share": te.editorShare, "id": te.invite})
+	path := fill(rt.pattern, map[string]string{"org": f.org.Slug, "event": te.id, "share": te.editorShare, "id": te.invite,
+		"field": te.field, "participant": te.participant})
 	u := p.u
 	if u == nil {
 		u = f.env.newBrowser(f.t, "anon")
@@ -152,7 +166,11 @@ func (f *matrixFixture) call(p persona, rt eventRoute, te testEvent) (int, strin
 		switch rt.method {
 		case "POST", "PATCH", "PUT":
 			body = map[string]any{"name": "Matrix renamed", "role": "viewer", "email": f.env.prefix + "new-" + te.id[len(te.id)-6:] + "@test.local",
-				"account_id": f.member.id, "editors_can_share": true, "expires_in_days": 7}
+				"account_id": f.member.id, "editors_can_share": true, "expires_in_days": 7,
+				"label": "Matrix question", "status": "cancelled"}
+			if strings.Contains(rt.pattern, "/fields") {
+				body.(map[string]any)["type"] = "text"
+			}
 		}
 		status, _ := u.api(rt.method, path, body)
 		return status, ""
@@ -161,9 +179,15 @@ func (f *matrixFixture) call(p persona, rt eventRoute, te testEvent) (int, strin
 	if rt.method == "GET" {
 		res = u.get(path)
 	} else {
-		res = u.form(rt.method, path, url.Values{"name": {"Matrix renamed"}, "type": {"hackathon"}, "time_zone": {"UTC"},
+		form := url.Values{"name": {"Matrix renamed"}, "type": {"hackathon"}, "time_zone": {"UTC"},
 			"visibility": {"private"}, "role": {"viewer"}, "email": {f.env.prefix + "new-" + te.id[len(te.id)-6:] + "@test.local"},
-			"account_id": {f.member.id}, "editors_can_share": {"on"}, "expires_in_days": {"7"}})
+			"account_id": {f.member.id}, "editors_can_share": {"on"}, "expires_in_days": {"7"},
+			"label": {"Matrix question"}, "status": {"cancelled"}, "reg_mode": {"open"}, "pass_prefix": {"MTX"}}
+		if strings.Contains(rt.pattern, "/fields") {
+			form.Set("type", "text") // a question's answer type and audience, not the event's
+			form.Set("visibility", "admin")
+		}
+		res = u.form(rt.method, path, form)
 	}
 	res.Body.Close()
 	return res.StatusCode, res.Request.URL.Path
@@ -182,6 +206,10 @@ func TestEventAuthorizationMatrix(t *testing.T) {
 				}
 			case strings.HasSuffix(rt.pattern, "/unarchive"):
 				if err := f.events.SetArchived(ctx, te.es, true); err != nil {
+					t.Fatal(err)
+				}
+			case rt.audit == "event.unpublish":
+				if err := f.events.SetPublished(ctx, te.es, true); err != nil {
 					t.Fatal(err)
 				}
 			case rt.audit == "event.link.off":

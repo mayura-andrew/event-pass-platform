@@ -40,12 +40,27 @@ var pageFuncs = template.FuncMap{
 		}
 		return m
 	},
-	"plural": func(n int, one, many string) string {
-		if n == 1 {
-			return fmt.Sprintf("%d %s", n, one)
-		}
-		return fmt.Sprintf("%d %s", n, many)
+	"plural": plural,
+	// statusWord is a participant status as people say it.
+	"statusWord": func(s string) string {
+		return map[string]string{domain.PartPending: "Waiting for approval", domain.PartRegistered: "Registered",
+			domain.PartWaitlisted: "Waitlist", domain.PartCancelled: "Cancelled"}[s]
 	},
+	// inputType is the HTML input type for a form field type.
+	"inputType": func(t string) string {
+		if it, ok := map[string]string{"email": "email", "phone": "tel", "number": "number", "date": "date", "url": "url"}[t]; ok {
+			return it
+		}
+		return "text"
+	},
+}
+
+// plural writes "1 place" or "3 places".
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return fmt.Sprintf("%d %s", n, one)
+	}
+	return fmt.Sprintf("%d %s", n, many)
 }
 
 // Status chips show color, text and an icon together (spec).

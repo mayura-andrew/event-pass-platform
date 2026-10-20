@@ -1,0 +1,55 @@
+{{define "content"}}
+{{$d := .Data}}{{$e := $d.Event.Event}}
+<article class="narrow public">
+  <p class="crumb">{{$d.Event.OrgName}}</p>
+  <h1>{{$e.Name}}</h1>
+  <p class="lede">{{$e.DateRange}}{{with $e.Where}} · {{.}}{{end}}</p>
+  {{with $e.Description}}<p class="prewrap">{{.}}</p>{{end}}
+  {{with $e.Venue.Address}}<p class="muted">{{.}}</p>{{end}}
+
+  <section class="card" aria-labelledby="reg-title">
+    <h2 id="reg-title">Register</h2>
+    {{if not $d.Open}}
+      <p class="alert alert-info" role="status">{{$d.Closed}}</p>
+    {{else}}
+    {{with $d.Capacity}}<p class="hint">{{.}}</p>{{end}}
+    <form method="post" action="{{$d.Action}}" novalidate>
+      <div class="field">
+        <label for="full_name">Full name</label>
+        <input id="full_name" name="full_name" type="text" autocomplete="name" required maxlength="150" value="{{$d.Value "full_name"}}"{{with index $d.Errors "full_name"}} aria-invalid="true" aria-describedby="err-full_name"{{end}}>
+        {{with index $d.Errors "full_name"}}<p id="err-full_name" class="field-error">{{.}}</p>{{end}}
+      </div>
+      <div class="field">
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" autocomplete="email" required value="{{$d.Value "email"}}"{{with index $d.Errors "email"}} aria-invalid="true" aria-describedby="err-email"{{end}}>
+        <p class="hint">Your pass is sent here.</p>
+        {{with index $d.Errors "email"}}<p id="err-email" class="field-error">{{.}}</p>{{end}}
+      </div>
+      {{range $d.Event.Fields}}{{$name := printf "q.%s" .Key}}{{$err := index $d.Errors .Key}}
+      <div class="field">
+        {{if or (eq .Type "checkbox") (eq .Type "consent")}}
+          <label class="check"><input type="checkbox" name="{{$name}}" value="yes"{{if $d.Has $name "yes"}} checked{{end}}> {{.Label}}{{if .Required}} *{{end}}</label>
+        {{else if eq .Type "multi_select"}}
+          <fieldset class="group"><legend>{{.Label}}{{if .Required}} *{{end}}</legend>
+            {{range .Options}}<label class="check"><input type="checkbox" name="{{$name}}" value="{{.}}"{{if $d.Has $name .}} checked{{end}}> {{.}}</label>{{end}}
+          </fieldset>
+        {{else}}
+          <label for="f-{{.Key}}">{{.Label}}{{if .Required}} *{{end}}</label>
+          {{if eq .Type "select"}}
+            <select id="f-{{.Key}}" name="{{$name}}"><option value="">Choose…</option>{{range .Options}}<option{{if $d.Has $name .}} selected{{end}}>{{.}}</option>{{end}}</select>
+          {{else if eq .Type "long_text"}}
+            <textarea id="f-{{.Key}}" name="{{$name}}" rows="4" maxlength="5000">{{$d.Value $name}}</textarea>
+          {{else}}
+            <input id="f-{{.Key}}" name="{{$name}}" value="{{$d.Value $name}}" type="{{inputType .Type}}"{{if eq .Type "phone"}} autocomplete="tel"{{end}}>
+          {{end}}
+        {{end}}
+        {{with .Help}}<p class="hint">{{.}}</p>{{end}}
+        {{with $err}}<p class="field-error">{{.}}</p>{{end}}
+      </div>
+      {{end}}
+      <button class="btn btn-block" type="submit">Register</button>
+    </form>
+    {{end}}
+  </section>
+</article>
+{{end}}

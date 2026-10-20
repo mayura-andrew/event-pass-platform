@@ -1,0 +1,107 @@
+{{define "content"}}
+{{template "eventhead" .}}
+{{$d := .Data}}{{$csrf := .CSRF}}{{$ev := $d.Event}}
+
+<section class="card" aria-labelledby="pub-title">
+  <h2 id="pub-title">Publishing</h2>
+  {{if eq $ev.Status "published"}}
+    <p>{{template "status" $d.Status}} {{if $d.PublicURL}}The public page is live:{{else}}This event is private, so it has no public page.{{end}}</p>
+    {{with $d.PublicURL}}<p><a href="{{.}}" target="_blank" rel="noopener">{{.}}</a></p>{{end}}
+    <form method="post" action="{{$d.Base}}/unpublish" class="inline">
+      <input type="hidden" name="csrf" value="{{$csrf}}">
+      <button class="btn btn-line" type="submit">Unpublish</button>
+    </form>
+  {{else}}
+    <p class="muted">Draft: only your team can see it. Publishing puts {{if $d.PublicURL}}the public page and registration form{{else}}the event (private: no public page){{end}} online.</p>
+    <form method="post" action="{{$d.Base}}/publish" class="inline">
+      <input type="hidden" name="csrf" value="{{$csrf}}">
+      <button class="btn" type="submit">Publish</button>
+    </form>
+  {{end}}
+</section>
+
+<section class="card" aria-labelledby="reg-title">
+  <h2 id="reg-title">Registration</h2>
+  <form method="post" action="{{$d.Base}}/registration">
+    <input type="hidden" name="csrf" value="{{$csrf}}">
+    <div class="row cols">
+      <div class="field grow">
+        <label for="reg-mode">Who gets a pass</label>
+        <select id="reg-mode" name="reg_mode">
+          <option value="open"{{if eq $ev.RegMode "open"}} selected{{end}}>Everyone who registers</option>
+          <option value="approval"{{if eq $ev.RegMode "approval"}} selected{{end}}>Only people you approve</option>
+        </select>
+      </div>
+      <div class="field grow">
+        <label for="reg-prefix">Pass ID prefix</label>
+        <input id="reg-prefix" name="pass_prefix" type="text" maxlength="6" value="{{$ev.PassPrefix}}" autocapitalize="characters">
+        <p class="hint">Pass IDs look like {{$ev.PassPrefix}}-7KQ4-M2XD.</p>
+      </div>
+    </div>
+    <div class="row cols">
+      <div class="field grow"><label for="reg-opens">Opens</label><input id="reg-opens" name="reg_opens" type="datetime-local" value="{{$d.OpensAt}}"><p class="hint">Empty: as soon as it's published.</p></div>
+      <div class="field grow"><label for="reg-closes">Closes</label><input id="reg-closes" name="reg_closes" type="datetime-local" value="{{$d.ClosesAt}}"><p class="hint">Times in {{$ev.TimeZone}}.</p></div>
+    </div>
+    <label class="check"><input type="checkbox" name="waitlist"{{if $ev.Waitlist}} checked{{end}}> When full{{with $ev.Capacity}} ({{.}} places){{end}}, put new registrations on a waitlist</label>
+    <button class="btn" type="submit">Save</button>
+  </form>
+</section>
+
+<section class="card" aria-labelledby="form-title">
+  <h2 id="form-title">Questions</h2>
+  <p class="hint">Everyone is asked for their full name and email. Add any other questions below.</p>
+  {{if $d.Fields}}
+  <ol class="fields">
+    {{range $i, $f := $d.Fields}}
+    <li>
+      <div class="field-row">
+        <div class="who"><b>{{$f.Label}}{{if $f.Required}} <span class="req" title="Required">*</span>{{end}}</b>
+          <span>{{index $.Data.TypeLabels $f.Type}} · {{$f.Key}} · visible to {{$f.Visibility}}</span></div>
+        <div class="actions">
+          <form method="post" action="{{$d.Base}}/fields/{{$f.ID}}/up" class="inline"><input type="hidden" name="csrf" value="{{$csrf}}"><button class="btn btn-quiet" type="submit" aria-label="Move {{$f.Label}} up"{{if eq $i 0}} disabled{{end}}>↑</button></form>
+          <form method="post" action="{{$d.Base}}/fields/{{$f.ID}}/down" class="inline"><input type="hidden" name="csrf" value="{{$csrf}}"><button class="btn btn-quiet" type="submit" aria-label="Move {{$f.Label}} down">↓</button></form>
+          <form method="post" action="{{$d.Base}}/fields/{{$f.ID}}/remove" class="inline"><input type="hidden" name="csrf" value="{{$csrf}}"><button class="btn btn-danger" type="submit">Remove</button></form>
+        </div>
+      </div>
+      <details>
+        <summary>Edit</summary>
+        <form method="post" action="{{$d.Base}}/fields/{{$f.ID}}">
+          <input type="hidden" name="csrf" value="{{$csrf}}">
+          {{template "fieldform" (dict "F" $f "Types" $d.FieldTypes "Prefix" $f.ID)}}
+          <button class="btn" type="submit">Save question</button>
+        </form>
+      </details>
+    </li>
+    {{end}}
+  </ol>
+  {{else}}<div class="empty">No extra questions yet.</div>{{end}}
+
+  <details class="add-field"{{if not $d.Fields}} open{{end}}>
+    <summary class="btn btn-line">Add a question</summary>
+    <form method="post" action="{{$d.Base}}/fields">
+      <input type="hidden" name="csrf" value="{{$csrf}}">
+      {{template "fieldform" (dict "F" nil "Types" $d.FieldTypes "Prefix" "new")}}
+      <button class="btn" type="submit">Add question</button>
+    </form>
+  </details>
+</section>
+{{end}}
+
+{{define "fieldform"}}{{$f := .F}}
+<div class="field"><label for="{{.Prefix}}-label">Question</label><input id="{{.Prefix}}-label" name="label" type="text" maxlength="200" required value="{{if $f}}{{$f.Label}}{{end}}" placeholder="University"></div>
+<div class="row cols">
+  <div class="field grow"><label for="{{.Prefix}}-type">Answer type</label>
+    <select id="{{.Prefix}}-type" name="type">{{range .Types}}<option value="{{.Key}}"{{if and $f (eq .Key $f.Type)}} selected{{end}}>{{.Label}}</option>{{end}}</select></div>
+  <div class="field grow"><label for="{{.Prefix}}-vis">Who sees the answer</label>
+    <select id="{{.Prefix}}-vis" name="visibility">
+      <option value="admin"{{if and $f (eq $f.Visibility "admin")}} selected{{end}}>Organizers only</option>
+      <option value="staff"{{if and $f (eq $f.Visibility "staff")}} selected{{end}}>Organizers and check-in staff</option>
+      <option value="participant"{{if and $f (eq $f.Visibility "participant")}} selected{{end}}>Also the participant</option>
+      <option value="pass"{{if and $f (eq $f.Visibility "pass")}} selected{{end}}>Printed on the pass</option>
+    </select></div>
+</div>
+<div class="field"><label for="{{.Prefix}}-options">Options</label><textarea id="{{.Prefix}}-options" name="options" rows="3" placeholder="One per line (for Choose one / Choose several)">{{if $f}}{{range $f.Options}}{{.}}
+{{end}}{{end}}</textarea></div>
+<div class="field"><label for="{{.Prefix}}-help">Help text</label><input id="{{.Prefix}}-help" name="help" type="text" maxlength="300" value="{{if $f}}{{$f.Help}}{{end}}"></div>
+<label class="check"><input type="checkbox" name="required"{{if and $f $f.Required}} checked{{end}}> Required</label>
+{{end}}
