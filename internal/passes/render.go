@@ -33,6 +33,10 @@ type Card struct {
 	Status    string // registered | pending | waitlisted | cancelled
 	Token     string // QR content
 	Lines     []Line // answers marked "printed on the pass"
+	// Answers by question key, for {{answers.<key>}} in designs.
+	Answers map[string]string
+	// Design is the event's pass template; nil means Classic.
+	Design *Design
 }
 
 // Line is one labelled answer.
@@ -100,57 +104,30 @@ func (c *canvas) qr(token string, x, y, size int) {
 	}
 }
 
-// Render draws the pass.
-func Render(card Card) (*image.RGBA, error) {
-	if err := loadFonts(); err != nil {
-		return nil, err
-	}
-	renderMu.Lock()
-	defer renderMu.Unlock()
-
-	c := &canvas{img: image.NewRGBA(image.Rect(0, 0, cardW, cardH))}
-	c.rect(0, 0, cardW, cardH, surface)
-	band, ok := bands[card.Status]
-	if !ok {
-		band = bands["registered"]
-	}
-	w := cardW - 2*pad
-	text := func(s string, fs fontSet, max, min float64, lines int, col color.Color, y int, lh float64) int {
-		l, size := fit(s, fs, max, min, w, lines)
-		return drawLines(c.img, l, size, col, pad, y, w, lh)
-	}
-
-	// Status band, readable at arm's length.
-	c.rect(0, 0, cardW, 190, band.bg)
-	text(band.label, bold, 64, 40, 1, surface, 62, 1)
-
-	y := text(strings.ToUpper(card.OrgName), bold, 34, 26, 1, muted, 250, 1.3)
-	y = text(card.EventName, bold, 56, 38, 2, ink, y+4, 1.2)
-	y = text(card.FullName, bold, 96, 52, 2, ink, y+40, 1.15)
-	for _, l := range card.Lines {
-		y = text(l.Label+": "+l.Value, regular, 38, 30, 1, muted, y+18, 1.3)
-	}
-
-	// QR: 640 px is about 59% of the phone width (spec: at least 40%).
-	qrSize := 640
-	qrY := max(y+40, 900)
-	if qrY+qrSize > cardH-300 {
-		qrY = cardH - 300 - qrSize
-	}
-	c.qr(card.Token, (cardW-qrSize)/2, qrY, qrSize)
-
-	y = text(card.PassID, bold, 60, 40, 1, ink, qrY+qrSize+28, 1.25)
-	c.rect(pad, y+16, cardW-pad, y+18, line)
+// CardVars turns a Card into design variables.
+func CardVars(card Card) Vars {
 	when := card.When
 	if card.Where != "" {
 		when += " · " + card.Where
 	}
-	text(when, regular, 40, 30, 2, muted, y+44, 1.3)
-
-	if c.err != nil {
-		return nil, c.err
+	vals := map[string]string{
+		"org.name": card.OrgName, "event.name": card.EventName, "event.dateRange": card.When, "event.venue": card.Where,
+		"event.when": when, "participant.fullName": card.FullName, "pass.id": card.PassID,
 	}
-	return c.img, nil
+	for k, v := range card.Answers {
+		vals["answers."+k] = v
+	}
+	return Vars{Values: vals, Status: card.Status, Token: card.Token, Answers: card.Lines}
+}
+
+// Render draws the pass in its design (Classic when the card has none).
+func Render(card Card) (*image.RGBA, error) {
+	d := Classic()
+	if card.Design != nil {
+		d = *card.Design
+	}
+	img, _, err := RenderDesign(d, CardVars(card))
+	return img, err
 }
 
 // PNG renders the pass as PNG bytes.
@@ -178,10 +155,16 @@ func PDF(card Card) ([]byte, error) {
 		return nil, err
 	}
 	const mm = 72 / 25.4
+	w, h := img.Bounds().Dx(), img.Bounds().Dy()
+	// Phone designs print centered on A6; badges fill a 4 x 3 inch page.
 	pageW, pageH := 105*mm, 148*mm
 	imgH := pageH - 8*mm
-	imgW := imgH * cardW / cardH
+	imgW := imgH * float64(w) / float64(h)
 	x, y := (pageW-imgW)/2, 4*mm
+	if w > h {
+		pageW, pageH = 101.6*mm, 76.2*mm
+		imgW, imgH, x, y = pageW, pageH, 0, 0
+	}
 	content := fmt.Sprintf("q %.3f 0 0 %.3f %.3f %.3f cm /Im0 Do Q\n", imgW, imgH, x, y)
 
 	var out bytes.Buffer
@@ -196,7 +179,7 @@ func PDF(card Card) ([]byte, error) {
 	obj(3, fmt.Sprintf("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 %.3f %.3f] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>", pageW, pageH))
 	offsets[4] = out.Len()
 	fmt.Fprintf(&out, "4 0 obj\n<< /Type /XObject /Subtype /Image /Width %d /Height %d /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length %d >>\nstream\n",
-		cardW, cardH, jpg.Len())
+		w, h, jpg.Len())
 	out.Write(jpg.Bytes())
 	out.WriteString("\nendstream\nendobj\n")
 	obj(5, fmt.Sprintf("<< /Length %d >>\nstream\n%sendstream", len(content), content))

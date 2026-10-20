@@ -1,6 +1,9 @@
 package domain
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // ---- Registration and participants (SaaS milestone M3) ----------------------
 // See migrations/009_registration.sql.
@@ -69,6 +72,7 @@ type EventParticipant struct {
 	PassID       string         `json:"pass_id"`
 	Answers      map[string]any `json:"answers"`
 	Source       string         `json:"source"`
+	ExternalRef  string         `json:"-"` // e.g. a Google Form response ID, imported once
 	RegisteredAt time.Time      `json:"registered_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
 }
@@ -158,4 +162,6 @@ type PassContext struct {
 	Fields      []FormField
 	// Imported from the current build: the QR keeps its old payload.
 	LegacySig string
+	// The event's pinned pass design (nil: Classic).
+	Design json.RawMessage
 }

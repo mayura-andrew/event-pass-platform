@@ -147,3 +147,108 @@ func (g *GoogleOAuth) checkIDToken(idToken, nonce string, now time.Time) (*Googl
 		Subject: c.Sub, Email: strings.ToLower(c.Email), Name: c.Name, Picture: c.Picture,
 	}, nil
 }
+
+// ---- Integrations: consent for Sheets and Forms (M5) --------------------------
+
+// Google API scopes for integrations. drive.file reaches only spreadsheets
+// the platform creates, the narrowest scope that lets it make and update one.
+var (
+	ScopeSheets = []string{"https://www.googleapis.com/auth/drive.file", "email"}
+	ScopeForms  = []string{"https://www.googleapis.com/auth/forms.body.readonly",
+		"https://www.googleapis.com/auth/forms.responses.readonly", "email"}
+)
+
+// ConsentURL asks for API access with a refresh token (offline), returning
+// to redirect. state and the PKCE verifier work as in sign-in.
+func (g *GoogleOAuth) ConsentURL(redirect, state, verifier string, scopes []string) string {
+	sum := sha256.Sum256([]byte(verifier))
+	q := url.Values{
+		"client_id":              {g.ClientID},
+		"redirect_uri":           {redirect},
+		"response_type":          {"code"},
+		"scope":                  {strings.Join(scopes, " ")},
+		"state":                  {state},
+		"code_challenge":         {base64.RawURLEncoding.EncodeToString(sum[:])},
+		"code_challenge_method":  {"S256"},
+		"access_type":            {"offline"},
+		"prompt":                 {"consent"}, // always hand out a refresh token
+		"include_granted_scopes": {"true"},
+	}
+	return g.AuthURL + "?" + q.Encode()
+}
+
+// Tokens are what the token endpoint returns.
+type Tokens struct {
+	Access  string
+	Refresh string
+	Email   string // from the ID token when "email" was granted
+}
+
+func (g *GoogleOAuth) tokenRequest(ctx context.Context, form url.Values) (map[string]any, error) {
+	form.Set("client_id", g.ClientID)
+	form.Set("client_secret", g.ClientSecret)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, g.TokenURL, strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	res, err := g.HTTP.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("google token request: %w", err)
+	}
+	defer res.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(res.Body, 64<<10))
+	var out map[string]any
+	_ = json.Unmarshal(body, &out)
+	if res.StatusCode != http.StatusOK {
+		if out["error"] == "invalid_grant" {
+			return nil, ErrGoogleRevoked
+		}
+		return nil, fmt.Errorf("google token endpoint: HTTP %d: %.200s", res.StatusCode, body)
+	}
+	return out, nil
+}
+
+// ErrGoogleRevoked: the refresh token no longer works (access removed in the
+// Google account, or expired); the organizer has to connect again.
+var ErrGoogleRevoked = errors.New("Google access was removed; connect again")
+
+// ExchangeTokens swaps a consent code for tokens.
+func (g *GoogleOAuth) ExchangeTokens(ctx context.Context, code, verifier, redirect string) (*Tokens, error) {
+	out, err := g.tokenRequest(ctx, url.Values{"code": {code}, "code_verifier": {verifier}, "redirect_uri": {redirect},
+		"grant_type": {"authorization_code"}})
+	if err != nil {
+		return nil, err
+	}
+	t := &Tokens{}
+	t.Access, _ = out["access_token"].(string)
+	t.Refresh, _ = out["refresh_token"].(string)
+	if t.Access == "" || t.Refresh == "" {
+		return nil, errors.New("google didn't return a refresh token")
+	}
+	if idt, _ := out["id_token"].(string); idt != "" {
+		if parts := strings.Split(idt, "."); len(parts) == 3 {
+			if b, err := base64.RawURLEncoding.DecodeString(parts[1]); err == nil {
+				var c struct {
+					Email string `json:"email"`
+				}
+				json.Unmarshal(b, &c)
+				t.Email = strings.ToLower(c.Email)
+			}
+		}
+	}
+	return t, nil
+}
+
+// AccessToken gets a fresh access token from a refresh token.
+func (g *GoogleOAuth) AccessToken(ctx context.Context, refresh string) (string, error) {
+	out, err := g.tokenRequest(ctx, url.Values{"refresh_token": {refresh}, "grant_type": {"refresh_token"}})
+	if err != nil {
+		return "", err
+	}
+	tok, _ := out["access_token"].(string)
+	if tok == "" {
+		return "", errors.New("google returned no access token")
+	}
+	return tok, nil
+}

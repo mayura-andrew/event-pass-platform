@@ -57,6 +57,10 @@ type Config struct {
 	// ID signs new passes, the others still verify. Empty: a key derived from
 	// JWT_SECRET (local development only).
 	PassSigningKeys string
+
+	// AES-256 key (base64) that encrypts Google refresh tokens for Sheets
+	// sync and Form import. Empty: derived from JWT_SECRET (development).
+	IntegrationsKey string
 }
 
 func Load() (*Config, error) {
@@ -84,6 +88,7 @@ func Load() (*Config, error) {
 		// Neutral working title: "NASA" and "Space Apps" are NASA's marks.
 		ProductName:     getenv("PRODUCT_NAME", "Event Pass"),
 		PassSigningKeys: os.Getenv("PASS_SIGNING_KEYS"),
+		IntegrationsKey: os.Getenv("INTEGRATIONS_KEY"),
 	}
 	c.ClientIPHeader = os.Getenv("CLIENT_IP_HEADER")
 	var err error

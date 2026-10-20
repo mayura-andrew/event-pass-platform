@@ -19,6 +19,7 @@ import (
 	httphandler "github.com/nasa-spaceapps/nsac-qr/internal/handler/http"
 	"github.com/nasa-spaceapps/nsac-qr/internal/passes"
 	"github.com/nasa-spaceapps/nsac-qr/internal/repository/postgres"
+	"github.com/nasa-spaceapps/nsac-qr/internal/secrets"
 	"github.com/nasa-spaceapps/nsac-qr/internal/service"
 )
 
@@ -120,6 +121,7 @@ func run() error {
 		Events:        service.NewEventService(eventRepo, accountRepo, orgRepo, mailer, cfg.AppBaseURL, cfg.ProductName),
 		Registrations: service.NewRegistrationService(registrationRepo, eventRepo, outboxRepo),
 		Passes:        passService,
+		Templates:     service.NewPassTemplateService(postgres.NewPassTemplateRepo(db), passService),
 		Portal:        service.NewPortalService(postgres.NewPortalRepo(db)),
 		Checker:       registrationRepo,
 		LiveFeed:      liveFeed,
@@ -127,6 +129,13 @@ func run() error {
 		Product:       cfg.ProductName,
 		CookieKey:     cfg.JWTSecret,
 	}
+
+	box, err := integrationsBox(cfg)
+	if err != nil {
+		return err
+	}
+	h.Integrations = service.NewIntegrationService(postgres.NewIntegrationRepo(db), registrationRepo, newGoogle(cfg),
+		service.NewGoogleAPI(), box, cfg.AppBaseURL+"/auth/google/integration/callback")
 
 	h.Checkins = service.NewCheckinService(checkinRepo, postgres.NewWorkshopRepo(db), h.Registrations, registrationRepo,
 		passService, registrationRepo)
@@ -146,6 +155,7 @@ func run() error {
 	defer stopFeed()
 	go feed.Run(feedCtx)
 	go liveFeed.Run(feedCtx)
+	go h.Integrations.Run(feedCtx)
 	srv.RegisterOnShutdown(stopFeed)
 
 	// The email worker stops with ctx too, after recording any message it
@@ -223,6 +233,15 @@ func passKeyRing(cfg *config.Config) (*passes.KeyRing, error) {
 	}
 	slog.Warn("PASS_SIGNING_KEYS not set: pass QR codes use a key derived from JWT_SECRET; set real keys in production (openssl rand -base64 32)")
 	return passes.DerivedKeyRing(cfg.JWTSecret), nil
+}
+
+// integrationsBox loads INTEGRATIONS_KEY, or derives a development key.
+func integrationsBox(cfg *config.Config) (*secrets.Box, error) {
+	if cfg.IntegrationsKey != "" {
+		return secrets.FromBase64(cfg.IntegrationsKey)
+	}
+	slog.Warn("INTEGRATIONS_KEY not set: Google tokens are encrypted with a key derived from JWT_SECRET; set a real key in production (openssl rand -base64 32)")
+	return secrets.Derived(cfg.JWTSecret), nil
 }
 
 // newGoogle returns the Google sign-in client, or nil when it isn't configured.

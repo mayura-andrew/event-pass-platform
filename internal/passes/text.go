@@ -104,13 +104,14 @@ func scriptOf(rs []rune) language.Script {
 
 // fit returns s laid out in at most maxLines lines of width, at the largest
 // size from max down to min that fits; if even min doesn't fit, the last
-// line ends with "…". It returns the size used.
-func fit(s string, fs fontSet, max, min float64, width, maxLines int) ([]shaped, float64) {
-	for size := max; ; size -= 2 {
+// line ends with "…" and overflow is true. It returns the size used.
+func fit(s string, fs fontSet, max, min float64, width, maxLines int) (lines []shaped, size float64, overflow bool) {
+	for size = max; ; size -= 2 {
 		if size < min {
 			size = min
 		}
-		lines, ok := wrapShaped(s, fs, size, width, maxLines)
+		var ok bool
+		lines, ok = wrapShaped(s, fs, size, width, maxLines)
 		if ok || size == min {
 			if !ok {
 				words := strings.Fields(s)
@@ -123,7 +124,7 @@ func fit(s string, fs fontSet, max, min float64, width, maxLines int) ([]shaped,
 					}
 				}
 			}
-			return lines, size
+			return lines, size, !ok
 		}
 	}
 }
@@ -177,14 +178,21 @@ func wrapShaped(s string, fs fontSet, size float64, width, maxLines int) ([]shap
 	return lines, ok
 }
 
-// drawLines draws shaped lines centered in [x, x+width) from top y with the
-// given line height (in multiples of size) and returns the y below them.
-func drawLines(img *image.RGBA, lines []shaped, size float64, col color.Color, x, y, width int, lineHeight float64) int {
+// drawAligned draws shaped lines in [x, x+width) from top y, aligned left,
+// center (the default) or right, with the given line height (in multiples
+// of size), and returns the y below them.
+func drawAligned(img *image.RGBA, lines []shaped, size float64, col color.Color, x, y, width int, lineHeight float64, align string) int {
 	r := &render.Renderer{FontSize: float32(size), PixScale: 1, Color: col}
 	step := int(size * lineHeight)
 	ascent := int(size * 0.92)
 	for i, l := range lines {
 		lx := x + (width-l.width)/2
+		switch align {
+		case "left":
+			lx = x
+		case "right":
+			lx = x + width - l.width
+		}
 		base := y + ascent + i*step
 		for _, run := range l.runs {
 			lx = r.DrawShapedRunAt(run, img, lx, base)

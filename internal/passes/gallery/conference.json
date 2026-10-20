@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "size": { "preset": "badge", "width": 1200, "height": 900 },
+  "background": "token:surface",
+  "elements": [
+    { "id": "band", "type": "statusBand", "x": 0, "y": 0, "w": 1200, "h": 120, "font": { "size": 52, "weight": 700 } },
+    { "id": "event", "type": "text", "text": "{{event.name}}", "x": 60, "y": 160, "w": 680, "h": 60,
+      "font": { "size": 40, "weight": 700 }, "color": "token:muted", "align": "left", "shrinkToFit": { "min": 28 } },
+    { "id": "name", "type": "text", "text": "{{participant.fullName}}", "x": 60, "y": 250, "w": 680, "h": 260,
+      "font": { "size": 96, "weight": 700 }, "color": "token:ink", "align": "left", "maxLines": 2, "shrinkToFit": { "min": 48 } },
+    { "id": "answers", "type": "answers", "x": 60, "y": 540, "w": 680, "h": 160,
+      "font": { "size": 40, "weight": 400 }, "color": "token:muted", "align": "left", "shrinkToFit": { "min": 30 } },
+    { "id": "qr", "type": "qr", "x": 790, "y": 170, "size": 370, "fg": "#15202B", "bg": "#FFFFFF", "quietZone": 4, "ecc": "M" },
+    { "id": "passId", "type": "text", "text": "{{pass.id}}", "x": 760, "y": 560, "w": 420, "h": 60,
+      "font": { "size": 40, "weight": 700 }, "color": "token:ink", "align": "center", "shrinkToFit": { "min": 28 } },
+    { "id": "when", "type": "text", "text": "{{event.when}}", "x": 60, "y": 800, "w": 1080, "h": 60,
+      "font": { "size": 34, "weight": 400 }, "color": "token:muted", "align": "left", "shrinkToFit": { "min": 26 } }
+  ]
+}

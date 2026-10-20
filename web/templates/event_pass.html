@@ -1,0 +1,51 @@
+{{define "content"}}
+{{template "eventhead" .}}
+{{$d := .Data}}{{$csrf := .CSRF}}
+<div class="pass-layout">
+  <figure class="pass-figure">
+    <img src="{{$d.Base}}/pass/preview.png{{with $d.PreviewWith}}?participant={{.}}{{end}}" alt="Preview of this event's pass">
+    <figcaption class="hint">{{if $d.PreviewWith}}A real participant's pass.{{else}}With a sample name.{{end}}</figcaption>
+  </figure>
+  <div>
+    <section class="card" aria-labelledby="design-title">
+      <h2 id="design-title">Design</h2>
+      <p>{{if $d.Current}}<b>{{$d.Current.Name}}</b>, version {{$d.Event.PassTemplateVersion}}{{if lt (deref $d.Event.PassTemplateVersion) $d.Current.CurrentVersion}} <span class="chip">Version {{$d.Current.CurrentVersion}} available</span>{{end}}{{else}}<b>Classic status band</b> (the default){{end}}</p>
+      <form method="post" action="{{$d.Base}}/pass">
+        <input type="hidden" name="csrf" value="{{$csrf}}">
+        <div class="field">
+          <label for="tpl">Template</label>
+          <select id="tpl" name="template_id">
+            <option value="">Classic status band (default)</option>
+            {{range $d.Templates}}{{if not .ArchivedAt}}<option value="{{.ID}}"{{if and $d.Current (eq .ID $d.Current.ID)}} selected{{end}}>{{.Name}} (latest: version {{.CurrentVersion}})</option>{{end}}{{end}}
+          </select>
+          <p class="hint">Uses the template's latest version. Passes already sent keep their design until you re-send.</p>
+        </div>
+        <button class="btn" type="submit">Use this design</button>
+        {{if $d.CanDesign}}<a class="btn btn-line" href="/o/{{$d.Org.Slug}}/pass-templates">Edit designs</a>{{end}}
+      </form>
+    </section>
+    {{if $d.Participants}}
+    <section class="card" aria-labelledby="real-title">
+      <h2 id="real-title">Preview with a real participant</h2>
+      <form method="get" action="{{$d.Base}}/pass" class="row">
+        <select name="participant" aria-label="Participant">
+          <option value="">Sample name</option>
+          {{range $d.Participants}}<option value="{{.ID}}"{{if eq .ID $d.PreviewWith}} selected{{end}}>{{.FullName}} ({{.PassID}})</option>{{end}}
+        </select>
+        <button class="btn btn-quiet" type="submit">Preview</button>
+      </form>
+    </section>
+    {{end}}
+    {{if $d.CanEmail}}
+    <section class="card" aria-labelledby="resend-title">
+      <h2 id="resend-title">Re-send passes</h2>
+      <p class="muted">Email the current design to {{plural $d.Registered "registered participant" "registered participants"}}. Their QR codes stay the same.</p>
+      <form method="post" action="{{$d.Base}}/pass/resend">
+        <input type="hidden" name="csrf" value="{{$csrf}}">
+        <button class="btn btn-line" type="submit"{{if eq $d.Registered 0}} disabled{{end}}>Re-send {{plural $d.Registered "pass" "passes"}}</button>
+      </form>
+    </section>
+    {{end}}
+  </div>
+</div>
+{{end}}

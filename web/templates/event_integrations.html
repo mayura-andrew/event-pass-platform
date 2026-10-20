@@ -1,0 +1,95 @@
+{{define "content"}}
+{{template "eventhead" .}}
+{{$d := .Data}}{{$csrf := .CSRF}}{{$tz := $d.Event.TimeZone}}
+{{if not $d.Configured}}
+<p class="alert alert-info" role="status">Google isn't set up on this server yet. An administrator adds GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET, with the Sheets and Forms APIs turned on.</p>
+{{end}}
+<div class="integrations">
+  <section class="card" aria-labelledby="sheets-title">
+    <h2 id="sheets-title">Google Sheets</h2>
+    <p class="muted">A spreadsheet with tabs for participants, check-ins and workshops, updated within a minute of changes. It is one-way: edits in the sheet don't come back.</p>
+    {{with $d.Sheets}}
+      {{template "integrationstatus" (dict "I" . "TZ" $tz)}}
+      {{with $d.SheetsCfg.URL}}<p><a class="btn" href="{{.}}" target="_blank" rel="noopener">Open the spreadsheet</a></p>{{end}}
+      <div class="row">
+        <form method="post" action="{{$d.Base}}/integrations/sheets/sync"><input type="hidden" name="csrf" value="{{$csrf}}"><button class="btn btn-line" type="submit">Sync now</button></form>
+        {{if eq .Status "error"}}<a class="btn btn-line" href="{{$d.Base}}/integrations/sheets/connect">Connect again</a>{{end}}
+        <form method="post" action="{{$d.Base}}/integrations/sheets/disconnect"><input type="hidden" name="csrf" value="{{$csrf}}"><button class="btn btn-quiet" type="submit">Disconnect</button></form>
+      </div>
+    {{else}}
+      <a class="btn" href="{{$d.Base}}/integrations/sheets/connect"{{if not $d.Configured}} aria-disabled="true"{{end}}>Connect Google Sheets</a>
+      <p class="hint">Google asks to let this site create and edit only the spreadsheets it makes, not the rest of your Drive.</p>
+    {{end}}
+  </section>
+
+  <section class="card" aria-labelledby="form-title">
+    <h2 id="form-title">Google Form import</h2>
+    <p class="muted">Responses to a Google Form become participants and get their passes. Each response is imported once; people already registered with the same email are skipped.</p>
+    {{with $d.Form}}
+      {{template "integrationstatus" (dict "I" . "TZ" $tz)}}
+      {{if $d.FormCfg.FormID}}<p>Form: <b>{{$d.FormCfg.Title}}</b>{{if $d.FormCfg.Ready}} · {{plural .Imported "participant imported" "participants imported"}}{{end}}</p>{{end}}
+      <form method="post" action="{{$d.Base}}/integrations/form/link" class="field">
+        <input type="hidden" name="csrf" value="{{$csrf}}">
+        <label for="form-link">{{if $d.FormCfg.FormID}}Use a different form{{else}}The form's link{{end}}</label>
+        <div class="row">
+          <input id="form-link" name="form" type="url" required placeholder="https://docs.google.com/forms/d/…/edit">
+          <button class="btn btn-line" type="submit">Link form</button>
+        </div>
+        <p class="hint">Copy it from the form editor's address bar. The form must belong to {{.GoogleEmail}} or be shared with them.</p>
+      </form>
+      {{if $d.FormCfg.Questions}}
+      <form method="post" action="{{$d.Base}}/integrations/form/map">
+        <input type="hidden" name="csrf" value="{{$csrf}}">
+        <h3>Match the questions</h3>
+        <div class="field">
+          <label for="map-name">Full name</label>
+          <select id="map-name" name="name" required>
+            <option value="">Choose a question</option>
+            {{range $d.FormCfg.Questions}}<option value="{{.ID}}"{{if eq .ID $d.FormCfg.NameQuestion}} selected{{end}}>{{.Title}}</option>{{end}}
+          </select>
+        </div>
+        <div class="field">
+          <label for="map-email">Email</label>
+          <select id="map-email" name="email">
+            <option value="">The respondent's email (the form collects it)</option>
+            {{range $d.FormCfg.Questions}}<option value="{{.ID}}"{{if eq .ID $d.FormCfg.EmailQuestion}} selected{{end}}>{{.Title}}</option>{{end}}
+          </select>
+        </div>
+        {{if $d.Fields}}
+        <table class="table map-table">
+          <thead><tr><th scope="col">Form question</th><th scope="col">Saves as</th></tr></thead>
+          <tbody>
+          {{range $q := $d.FormCfg.Questions}}{{if and (ne $q.ID $d.FormCfg.NameQuestion) (ne $q.ID $d.FormCfg.EmailQuestion)}}
+            <tr><td>{{$q.Title}}</td><td>
+              <select name="q.{{$q.ID}}" aria-label="Where to save {{$q.Title}}">
+                <option value="">Don't import</option>
+                {{range $d.Fields}}<option value="{{.Key}}"{{if eq (index $d.FormCfg.Map $q.ID) .Key}} selected{{end}}>{{.Label}}</option>{{end}}
+              </select>
+            </td></tr>
+          {{end}}{{end}}
+          </tbody>
+        </table>
+        {{else}}<p class="hint">Add questions on the Registration tab to import other answers too.</p>{{end}}
+        <button class="btn" type="submit">{{if $d.FormCfg.Ready}}Save{{else}}Start importing{{end}}</button>
+      </form>
+      {{end}}
+      <div class="row">
+        {{if $d.FormCfg.Ready}}<form method="post" action="{{$d.Base}}/integrations/form/sync"><input type="hidden" name="csrf" value="{{$csrf}}"><button class="btn btn-line" type="submit">Import now</button></form>{{end}}
+        {{if eq .Status "error"}}<a class="btn btn-line" href="{{$d.Base}}/integrations/form/connect">Connect again</a>{{end}}
+        <form method="post" action="{{$d.Base}}/integrations/form/disconnect"><input type="hidden" name="csrf" value="{{$csrf}}"><button class="btn btn-quiet" type="submit">Disconnect</button></form>
+      </div>
+    {{else}}
+      <a class="btn" href="{{$d.Base}}/integrations/form/connect"{{if not $d.Configured}} aria-disabled="true"{{end}}>Connect a Google Form</a>
+      <p class="hint">Google asks to read your forms and their responses. Nothing is changed in Google.</p>
+    {{end}}
+  </section>
+</div>
+{{end}}
+
+{{define "integrationstatus"}}
+<p class="integration-status">
+  {{if eq .I.Status "error"}}<span class="chip chip-danger">Needs reconnecting</span>{{else if .I.LastError}}<span class="chip chip-warning">Last run failed</span>{{else}}<span class="chip chip-success">Connected</span>{{end}}
+  {{with .I.GoogleEmail}}as {{.}}{{end}}{{with .I.LastSyncedAt}} · last run {{whenLocal . $.TZ}}{{end}}
+</p>
+{{with .I.LastError}}<p class="alert alert-danger" role="alert">{{.}}</p>{{end}}
+{{end}}

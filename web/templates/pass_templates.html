@@ -1,0 +1,49 @@
+{{define "content"}}
+{{template "orgtabs" .}}
+{{$d := .Data}}{{$csrf := .CSRF}}
+<p class="lede">Pass designs for your events. Each event uses one version of a template, so editing a design never changes passes already sent.</p>
+
+{{if $d.Templates}}
+<section class="card" aria-labelledby="mine">
+  <h2 id="mine">Your templates</h2>
+  <ul class="people">
+    {{range $d.Templates}}
+    <li>
+      <div class="who"><b><a href="/o/{{$d.Org.Slug}}/pass-templates/{{.ID}}">{{.Name}}</a>{{if .ArchivedAt}} <span class="chip">Archived</span>{{end}}</b>
+        <span>Version {{.CurrentVersion}} · used by {{plural .UsedBy "event" "events"}} · saved {{when .UpdatedAt}}</span></div>
+      <div class="actions">
+        <a class="btn btn-quiet" href="/o/{{$d.Org.Slug}}/pass-templates/{{.ID}}">{{if $d.CanManage}}Edit{{else}}View{{end}}</a>
+        {{if $d.CanManage}}
+        <form method="post" action="/o/{{$d.Org.Slug}}/pass-templates" class="inline"><input type="hidden" name="csrf" value="{{$csrf}}"><input type="hidden" name="from" value="{{.ID}}"><button class="btn btn-quiet" type="submit">Duplicate</button></form>
+        {{if .ArchivedAt}}
+        <form method="post" action="/o/{{$d.Org.Slug}}/pass-templates/{{.ID}}/restore" class="inline"><input type="hidden" name="csrf" value="{{$csrf}}"><button class="btn btn-quiet" type="submit">Restore</button></form>
+        {{else}}
+        <form method="post" action="/o/{{$d.Org.Slug}}/pass-templates/{{.ID}}/archive" class="inline"><input type="hidden" name="csrf" value="{{$csrf}}"><button class="btn btn-danger" type="submit">Archive</button></form>
+        {{end}}
+        {{end}}
+      </div>
+    </li>
+    {{end}}
+  </ul>
+</section>
+{{end}}
+
+<section class="card" aria-labelledby="gallery">
+  <h2 id="gallery">Start from the gallery</h2>
+  <ul class="cards grid gallery">
+    {{range $d.Gallery}}
+    <li class="card event-card">
+      <h3>{{.Name}}</h3>
+      <p class="muted">{{.Description}}</p>
+      <p class="hint">{{if eq .Design.Size.Preset "badge"}}4 × 3 inch badge{{else}}Phone screen, prints on A6{{end}}</p>
+      {{if $d.CanManage}}
+      <form method="post" action="/o/{{$d.Org.Slug}}/pass-templates" class="ec-foot">
+        <input type="hidden" name="csrf" value="{{$csrf}}"><input type="hidden" name="from" value="{{.Key}}">
+        <button class="btn btn-line" type="submit">Use this design</button>
+      </form>
+      {{end}}
+    </li>
+    {{end}}
+  </ul>
+</section>
+{{end}}

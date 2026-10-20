@@ -31,6 +31,7 @@ import (
 	"github.com/nasa-spaceapps/nsac-qr/internal/domain"
 	"github.com/nasa-spaceapps/nsac-qr/internal/passes"
 	"github.com/nasa-spaceapps/nsac-qr/internal/repository/postgres"
+	"github.com/nasa-spaceapps/nsac-qr/internal/secrets"
 	"github.com/nasa-spaceapps/nsac-qr/internal/service"
 )
 
@@ -67,6 +68,7 @@ func (m *captureMailer) lastToken(t *testing.T, addr string) string {
 
 type saasEnv struct {
 	srv    *httptest.Server
+	h      *Handler
 	mail   *captureMailer
 	db     *sql.DB
 	prefix string // it-<tag>- on every email and slug
@@ -101,13 +103,18 @@ func newSaaSEnvWith(t *testing.T, google *service.GoogleOAuth) *saasEnv {
 		Registrations: service.NewRegistrationService(postgres.NewRegistrationRepo(db), postgres.NewEventRepo(db), postgres.NewOutboxRepo(db)),
 		Passes:        service.NewPassService(passes.DerivedKeyRing([]byte("test-pass-key"))),
 		Portal:        service.NewPortalService(postgres.NewPortalRepo(db)),
-		Checker:       postgres.NewRegistrationRepo(db),
-		LiveFeed:      service.NewEventFeed(postgres.NewCheckinRepo(db)),
-		BaseURL:       base,
-		Product:       "Event Pass",
-		CookieKey:     []byte("test-cookie-key-0123456789abcdef"),
+		Templates: service.NewPassTemplateService(postgres.NewPassTemplateRepo(db),
+			service.NewPassService(passes.DerivedKeyRing([]byte("test-pass-key")))),
+		Checker:   postgres.NewRegistrationRepo(db),
+		LiveFeed:  service.NewEventFeed(postgres.NewCheckinRepo(db)),
+		BaseURL:   base,
+		Product:   "Event Pass",
+		CookieKey: []byte("test-cookie-key-0123456789abcdef"),
 	}
 	regRepo := postgres.NewRegistrationRepo(db)
+	h.Integrations = service.NewIntegrationService(postgres.NewIntegrationRepo(db), regRepo, nil, service.NewGoogleAPI(),
+		secrets.Derived([]byte("test-integrations-key")), base+"/auth/google/integration/callback")
+	env.h = h
 	h.Checkins = service.NewCheckinService(postgres.NewCheckinRepo(db), postgres.NewWorkshopRepo(db), h.Registrations, regRepo,
 		h.Passes, regRepo)
 	feedCtx, stopFeed := context.WithCancel(ctx)
@@ -369,6 +376,13 @@ func TestTenantIsolation(t *testing.T) {
 	orgB := bob.createOrg("b")
 	invA := ann.invite(orgA.Slug, env.prefix+"guest-a@test.local", "member")
 	invB := bob.invite(orgB.Slug, env.prefix+"guest-b@test.local", "member")
+	template := func(u *user, slug string) string {
+		_, b := u.api("POST", "/api/v1/orgs/"+slug+"/pass-templates", map[string]string{"from": "classic"})
+		var t domain.PassTemplate
+		json.Unmarshal(b, &t)
+		return t.ID
+	}
+	tplA, tplB := template(ann, orgA.Slug), template(bob, orgB.Slug)
 
 	payload := map[string]any{"role": "member", "email": env.prefix + "x@test.local", "name": "Isolation", "external_sharing": true}
 	// call returns the status, and for pages the path the browser ended on.
@@ -393,7 +407,7 @@ func TestTenantIsolation(t *testing.T) {
 
 	anon := env.newBrowser(t, "anon")
 	for _, rt := range orgRoutes {
-		pathB := fill(rt.pattern, map[string]string{"org": orgB.Slug, "account": bob.id, "id": invB.ID})
+		pathB := fill(rt.pattern, map[string]string{"org": orgB.Slug, "account": bob.id, "id": invB.ID, "template": tplB})
 		if got, _ := call(ann, rt, pathB); got != http.StatusNotFound {
 			t.Errorf("%s %s as a member of another org: HTTP %d, want 404", rt.method, pathB, got)
 		}
@@ -410,7 +424,7 @@ func TestTenantIsolation(t *testing.T) {
 		if rt.method != "GET" {
 			continue
 		}
-		pathA := fill(rt.pattern, map[string]string{"org": orgA.Slug, "account": ann.id, "id": invA.ID})
+		pathA := fill(rt.pattern, map[string]string{"org": orgA.Slug, "account": ann.id, "id": invA.ID, "template": tplA})
 		if got, _ := call(ann, rt, pathA); got != http.StatusOK {
 			t.Errorf("%s %s in own org: HTTP %d, want 200", rt.method, pathA, got)
 		}

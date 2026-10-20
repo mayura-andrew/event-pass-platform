@@ -1,0 +1,62 @@
+{{define "content"}}
+{{$d := .Data}}
+<p class="crumb"><a href="/o/{{$d.Org.Slug}}/pass-templates">Pass templates</a></p>
+<div id="designer" class="designer" data-api="{{$d.APIBase}}" data-csrf="{{.CSRF}}" data-design="{{$d.DesignJSON}}"
+     data-editable="{{$d.CanManage}}" data-variables="{{jsonText $d.Variables}}">
+  <div class="designer-bar">
+    <label for="tpl-name" class="sr-only">Template name</label>
+    <input id="tpl-name" type="text" maxlength="100" value="{{$d.Template.Name}}"{{if not $d.CanManage}} readonly{{end}}>
+    <label for="sample" class="sr-only">Preview as</label>
+    <select id="sample">
+      <option value="short">Preview: short name</option>
+      <option value="long">Preview: very long name</option>
+      <option value="nonlatin">Preview: Sinhala name</option>
+      <option value="cancelled">Preview: cancelled</option>
+    </select>
+    <button id="undo" class="btn btn-quiet" type="button" title="Undo (Ctrl+Z)">Undo</button>
+    <button id="redo" class="btn btn-quiet" type="button" title="Redo (Ctrl+Shift+Z)">Redo</button>
+    {{if $d.CanManage}}<button id="save" class="btn" type="button">Save version {{add $d.Template.CurrentVersion 1}}</button>{{end}}
+  </div>
+  <p id="status" class="hint" role="status" aria-live="polite">Version {{$d.Template.CurrentVersion}} saved.</p>
+  <ul id="problems" class="problems" aria-live="polite"></ul>
+
+  <div class="designer-grid">
+    <aside class="card layers" aria-labelledby="layers-title">
+      <h2 id="layers-title">Elements</h2>
+      <ol id="layers" class="layer-list"></ol>
+      {{if $d.CanManage}}
+      <div class="add-row">
+        <button class="btn btn-quiet" type="button" data-add="text">+ Text</button>
+        <button class="btn btn-quiet" type="button" data-add="answers">+ Answers</button>
+        <button class="btn btn-quiet" type="button" data-add="rect">+ Box</button>
+        <button class="btn btn-quiet" type="button" data-add="line">+ Line</button>
+        <button class="btn btn-quiet" type="button" data-add="statusBand">+ Status band</button>
+      </div>
+      {{end}}
+    </aside>
+
+    <div class="stage-wrap">
+      <div id="stage" class="stage" tabindex="0" aria-label="Pass canvas: arrow keys move the selected element">
+        <img id="preview" alt="Live preview of the pass">
+        <div id="overlay" class="overlay"></div>
+      </div>
+      <p class="hint">Drag to move, drag the corner to resize, arrow keys nudge (Shift for 10 px). The preview is rendered by the same code as the passes people get.</p>
+    </div>
+
+    <aside class="card props" aria-labelledby="props-title">
+      <h2 id="props-title">Properties</h2>
+      <form id="props" autocomplete="off"><p class="muted">Select an element.</p></form>
+      <details class="vars"><summary>Variables</summary>
+        <ul>{{range $d.Variables}}<li><code>{{"{{"}}{{.}}{{"}}"}}</code></li>{{end}}<li><code>{{"{{"}}answers.your_question_key{{"}}"}}</code> (questions printed on the pass)</li></ul>
+      </details>
+    </aside>
+  </div>
+
+  <section class="card" aria-labelledby="versions-title">
+    <h2 id="versions-title">Versions</h2>
+    <ul class="recent">{{range $d.Template.Versions}}<li><b>Version {{.Version}}</b> <span class="muted">{{when .CreatedAt}}{{with .CreatedBy}} · {{.}}{{end}}</span></li>{{end}}</ul>
+    <p class="hint">Events keep the version they use until an editor updates them on the event's Pass tab.</p>
+  </section>
+</div>
+<script type="module" src="/static/js/designer.js"></script>
+{{end}}

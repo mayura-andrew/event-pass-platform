@@ -223,11 +223,18 @@ emailed sign-in links use it.
   doesn't use them, so it can go in any time before the SaaS pages are used.
   `008_events_sharing.sql` (events, sharing, audit log), `009_registration.sql`
   (publishing, forms, event participants), `010_outbox.sql` (participant
-  emails) and `011_checkin_workshops.sql` (workshops, checkpoints, check-ins)
-  likewise.
+  emails), `011_checkin_workshops.sql` (workshops, checkpoints, check-ins),
+  `012_pass_templates.sql` (pass designs) and `013_integrations.sql` (Google
+  Sheets and Forms) likewise.
 - Before taking registrations, set `PASS_SIGNING_KEYS` (see `.env.example`).
   Without it pass QR codes are signed with a key derived from `JWT_SECRET`,
   so rotating that secret would invalidate every pass.
+- Before anyone connects Google Sheets or a Google Form, set
+  `INTEGRATIONS_KEY` (`openssl rand -base64 32`), enable the Google Sheets
+  API and Google Forms API in the OAuth client's project, and add
+  `APP_BASE_URL/auth/google/integration/callback` as an authorized redirect
+  URI. Without the key, tokens are encrypted with a key derived from
+  `JWT_SECRET`; changing either key later means reconnecting.
 - Moving the current event into an organization:
   `DATABASE_URL=... go run ./cmd/legacy-import -org <slug> -owner <email> -event "<name>"`.
   It copies confirmed delegates with their membership IDs and QR signatures

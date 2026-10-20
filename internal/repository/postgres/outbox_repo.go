@@ -96,7 +96,16 @@ func passContext(ctx context.Context, db *sql.DB, orgID, participantID string) (
 	pc.LegacySig = legacy.String
 	err = withTenant(ctx, db, orgID, "", func(tx *sql.Tx) error {
 		var err error
-		pc.Fields, err = listFormFields(ctx, tx, orgID, pc.Event.ID)
+		if pc.Fields, err = listFormFields(ctx, tx, orgID, pc.Event.ID); err != nil {
+			return err
+		}
+		if pc.Event.PassTemplateID == nil {
+			return nil
+		}
+		var design []byte
+		err = tx.QueryRowContext(ctx, `SELECT design FROM pass_template_versions WHERE template_id = $1 AND version = $2`,
+			*pc.Event.PassTemplateID, *pc.Event.PassTemplateVersion).Scan(&design)
+		pc.Design = design
 		return err
 	})
 	return pc, err

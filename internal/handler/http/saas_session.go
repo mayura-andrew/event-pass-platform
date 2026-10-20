@@ -259,7 +259,8 @@ func nextQuery(next string) string {
 var pageNames = []string{"login", "login_sent", "verify", "app", "members", "invite", "error",
 	"events", "event_new", "event", "event_share", "event_settings", "activity", "link",
 	"event_registration", "event_participants", "public_event", "public_registered", "my_passes", "my_pass",
-	"scanner", "event_dashboard", "event_checkin", "event_workshops"}
+	"scanner", "event_dashboard", "event_checkin", "event_workshops",
+	"pass_templates", "designer", "event_pass", "event_integrations"}
 
 type pageSet map[string]*template.Template
 

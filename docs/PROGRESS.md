@@ -86,7 +86,28 @@ updates live. The nightly load test meets p95 under 300 ms.
 | Tests: the gate itself (3 phones x 60 people, 2 workshops), rules/undo/lookup, live stream, portal sign-ups, once under 20 concurrent phones, RLS and append-only; matrix covers 70 routes | Done |
 | Load test: `scripts/loadtest` + nightly workflow | Done; local p95 165 ms |
 
-## Next: M5 Designer and integrations
+## M5 Designer and integrations: built, gate not yet shown on staging
+
+Gate: an admin builds a custom pass in the designer; snapshot tests confirm
+the downloaded PNG and PDF match the preview. Sheets sync keeps a connected
+spreadsheet up to date within about one minute; Google Form import creates
+no duplicates.
+
+| Part | State |
+| --- | --- |
+| Pass design format (JSON, absolute elements, `{{variables}}`), one renderer for preview, PNG and PDF | Done |
+| Scan checks: one QR, dark on light, contrast 7:1, quiet zone 4, 30 mm printed, 40% of a phone, nothing over the code, sample names fit | Done |
+| Gallery: Classic (the current pass), Conference badge (4 x 3 in), Minimal; snapshot tests per sample | Done |
+| Migration 012: templates with append-only versions; events pin a version; Classic when none | Done |
+| Designer page: drag, resize, snap, layers, properties, undo/redo, live checks and preview, save as a new version | Done |
+| Event Pass tab: choose the design, preview with a real participant, re-send passes | Done |
+| Migration 013: integrations, refresh tokens sealed with AES-256-GCM (`INTEGRATIONS_KEY`), unreadable by the tenant role | Done |
+| Google Sheets: connect, the platform creates the sheet (drive.file scope), Participants / Check-ins / Workshops tabs rewritten within ~40 s of a change | Done |
+| Google Form import: link, match questions, poll every minute, each response once (`external_ref`), existing emails skipped, passes emailed | Done |
+| Revoked Google access shows "Needs reconnecting"; failures retried every minute | Done |
+| Tests: designer gate (preview = PNG = PDF), integrations gate against a fake Google, forged callback; matrix covers the new routes | Done |
+
+## Next: M6
 
 ## Open questions (need a decision)
 

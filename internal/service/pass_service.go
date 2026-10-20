@@ -34,14 +34,25 @@ func (s *PassService) Card(pc *domain.PassContext) (passes.Card, error) {
 		return passes.Card{}, err
 	}
 	c := passes.Card{OrgName: pc.OrgName, EventName: pc.Event.Name, When: pc.Event.DateRange(), Where: pc.Event.Where(),
-		FullName: pc.Participant.FullName, PassID: pc.Participant.PassID, Status: pc.Participant.Status, Token: tok}
+		FullName: pc.Participant.FullName, PassID: pc.Participant.PassID, Status: pc.Participant.Status, Token: tok,
+		Answers: map[string]string{}}
+	// Only answers to questions marked "printed on the pass" reach the card,
+	// whether as the answer list or as {{answers.key}} in a design.
 	for _, f := range pc.Fields {
 		if f.Visibility != "pass" {
 			continue
 		}
 		if v := answerText(pc.Participant.Answers[f.Key]); v != "" {
 			c.Lines = append(c.Lines, passes.Line{Label: f.Label, Value: v})
+			c.Answers[f.Key] = v
 		}
+	}
+	if len(pc.Design) > 0 {
+		var d passes.Design
+		if err := json.Unmarshal(pc.Design, &d); err != nil {
+			return passes.Card{}, fmt.Errorf("event pass design: %w", err)
+		}
+		c.Design = &d
 	}
 	return c, nil
 }

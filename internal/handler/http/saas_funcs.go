@@ -51,7 +51,15 @@ var pageFuncs = template.FuncMap{
 		}
 		return t.Format("Mon 2 Jan, 15:04")
 	},
-	"list": func(items ...string) []string { return items },
+	"list":     func(items ...string) []string { return items },
+	"add":      func(a, b int) int { return a + b },
+	"jsonText": jsonText,
+	"deref": func(p *int) int {
+		if p == nil {
+			return 0
+		}
+		return *p
+	},
 	// dots joins the non-empty parts with " · ".
 	"dots": func(parts ...string) string {
 		var out []string

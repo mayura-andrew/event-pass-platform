@@ -80,6 +80,10 @@ type Event struct {
 	RegClosesAt *time.Time `json:"reg_closes_at,omitempty"`
 	Waitlist    bool       `json:"waitlist"`
 	PassPrefix  string     `json:"pass_prefix"`
+
+	// Pass template (M5): the pinned version, or nil for Classic.
+	PassTemplateID      *string `json:"pass_template_id"`
+	PassTemplateVersion *int    `json:"pass_template_version"`
 }
 
 // Public reports whether the event has a public page: published, not

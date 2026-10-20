@@ -60,6 +60,8 @@ migrations/008_events_sharing.sql   SaaS: events, sharing (people and links), st
 migrations/009_registration.sql     SaaS: publishing, registration forms, event participants
 migrations/010_outbox.sql           SaaS: participant email outbox (pass issued, approval, waitlist, cancelled)
 migrations/011_checkin_workshops.sql SaaS: workshops, sign-ups, checkpoints, append-only check-ins
+migrations/012_pass_templates.sql   SaaS: pass templates and their versions, pinned per event
+migrations/013_integrations.sql     SaaS: Google Sheets sync and Form import (encrypted tokens)
 scripts/seed                        CSV import + HMAC signing
 scripts/create-admin                create scanner / dashboard logins
 scripts/sample                      example participants.csv and venues.csv

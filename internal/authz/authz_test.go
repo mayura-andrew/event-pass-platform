@@ -11,11 +11,11 @@ import (
 // matrix has to change this test too.
 func TestOrgMatrix(t *testing.T) {
 	all := []Action{ViewOrg, ViewMembers, ManageMembers, ViewInvites, GrantOwner, UpdateOrg, DeleteOrg,
-		CreateEvent, ViewAudit, AllEvents}
+		CreateEvent, ViewAudit, AllEvents, ManageTemplates}
 	want := map[string][]Action{
 		domain.OrgRoleOwner:  all,
-		domain.OrgRoleAdmin:  {ViewOrg, ViewMembers, ManageMembers, ViewInvites, UpdateOrg, CreateEvent, ViewAudit, AllEvents},
-		domain.OrgRoleMember: {ViewOrg, ViewMembers, CreateEvent},
+		domain.OrgRoleAdmin:  {ViewOrg, ViewMembers, ManageMembers, ViewInvites, UpdateOrg, CreateEvent, ViewAudit, AllEvents, ManageTemplates},
+		domain.OrgRoleMember: {ViewOrg, ViewMembers, CreateEvent, ManageTemplates},
 		domain.OrgRoleGuest:  {ViewOrg}, // shared one event: sees the org's name, nothing else
 		"":                   nil,
 		"stranger":           nil,

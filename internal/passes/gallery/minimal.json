@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "size": { "preset": "phone", "width": 1080, "height": 1920 },
+  "background": "token:surface",
+  "elements": [
+    { "id": "status", "type": "text", "text": "{{participant.statusLabel}}", "x": 72, "y": 150, "w": 936, "h": 50,
+      "font": { "size": 34, "weight": 700 }, "color": "token:primary", "align": "center" },
+    { "id": "name", "type": "text", "text": "{{participant.fullName}}", "x": 72, "y": 260, "w": 936, "h": 240,
+      "font": { "size": 100, "weight": 700 }, "color": "token:ink", "align": "center", "maxLines": 2, "shrinkToFit": { "min": 52 } },
+    { "id": "event", "type": "text", "text": "{{event.name}}", "x": 72, "y": 530, "w": 936, "h": 60,
+      "font": { "size": 40, "weight": 400 }, "color": "token:muted", "align": "center", "shrinkToFit": { "min": 30 } },
+    { "id": "qr", "type": "qr", "x": 190, "y": 700, "size": 700, "fg": "#000000", "bg": "#FFFFFF", "quietZone": 4, "ecc": "M" },
+    { "id": "passId", "type": "text", "text": "{{pass.id}}", "x": 72, "y": 1450, "w": 936, "h": 80,
+      "font": { "size": 60, "weight": 700 }, "color": "token:ink", "align": "center", "shrinkToFit": { "min": 40 } },
+    { "id": "when", "type": "text", "text": "{{event.when}}", "x": 72, "y": 1560, "w": 936, "h": 110,
+      "font": { "size": 38, "weight": 400 }, "color": "token:muted", "align": "center", "maxLines": 2, "shrinkToFit": { "min": 30 } }
+  ]
+}

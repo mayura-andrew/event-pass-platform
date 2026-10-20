@@ -255,9 +255,12 @@ func (r *RegistrationRepo) Register(ctx context.Context, ev *domain.Event, p dom
 			}
 			id := newID()
 			if _, err := tx.ExecContext(ctx, `
-				INSERT INTO event_participants (id, org_id, event_id, email, full_name, status, pass_id, answers, source)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-				id, ev.OrgID, ev.ID, p.Email, p.FullName, status, pid, answers, orDefault(p.Source, "form")); err != nil {
+				INSERT INTO event_participants (id, org_id, event_id, email, full_name, status, pass_id, answers, source, external_ref)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULLIF($10, ''))`,
+				id, ev.OrgID, ev.ID, p.Email, p.FullName, status, pid, answers, orDefault(p.Source, "form"), p.ExternalRef); err != nil {
+				if pgCode(err) == pgUniqueViolation && strings.Contains(pgConstraint(err), "external") {
+					return ErrAlreadyImported
+				}
 				return err
 			}
 			if out, err = scanParticipant(tx.QueryRowContext(ctx, `SELECT `+participantCols+` FROM event_participants p WHERE p.id = $1`, id)); err != nil {
@@ -406,3 +409,7 @@ func (r *RegistrationRepo) ResendPass(ctx context.Context, p *domain.EventPartic
 	})
 	return queued, err
 }
+
+// ErrAlreadyImported: a participant with this external reference (form
+// response) already exists in the event.
+var ErrAlreadyImported = fmt.Errorf("%w: already imported", domain.ErrConflict)

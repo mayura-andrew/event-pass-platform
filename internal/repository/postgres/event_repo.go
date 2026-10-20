@@ -24,7 +24,8 @@ const eventCols = `e.id, e.org_id, e.slug, e.name, e.type, e.status, e.descripti
 	e.time_zone, e.venue, e.online_url, e.capacity, e.visibility, e.language, e.tags, e.settings,
 	e.owner_id, COALESCE(oa.name, ''), COALESCE(oa.email, ''), COALESCE(oa.avatar_url, ''),
 	e.created_at, e.updated_at, e.archived_at, e.deleted_at,
-	e.published_at, e.reg_mode, e.reg_opens_at, e.reg_closes_at, e.waitlist, e.pass_prefix`
+	e.published_at, e.reg_mode, e.reg_opens_at, e.reg_closes_at, e.waitlist, e.pass_prefix,
+	e.pass_template_id, e.pass_template_version`
 
 // eventFrom joins the owner's account; it can be missing from view when the
 // owner has left the org, hence the LEFT JOIN and COALESCEs above.
@@ -37,7 +38,8 @@ func eventDest(e *domain.Event, venue, settings *[]byte) []any {
 		&e.TimeZone, venue, &e.OnlineURL, &e.Capacity, &e.Visibility, &e.Language, textArray{&e.Tags}, settings,
 		&e.OwnerID, &e.OwnerName, &e.OwnerEmail, &e.OwnerAvatar,
 		&e.CreatedAt, &e.UpdatedAt, &e.ArchivedAt, &e.DeletedAt,
-		&e.PublishedAt, &e.RegMode, &e.RegOpensAt, &e.RegClosesAt, &e.Waitlist, &e.PassPrefix}
+		&e.PublishedAt, &e.RegMode, &e.RegOpensAt, &e.RegClosesAt, &e.Waitlist, &e.PassPrefix,
+		&e.PassTemplateID, &e.PassTemplateVersion}
 }
 
 func decodeEvent(e *domain.Event, venue, settings []byte) error {

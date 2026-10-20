@@ -65,6 +65,7 @@ func (h *Handler) registerSaaS(mux *http.ServeMux, signInLimit *rateLimiter) {
 	mux.HandleFunc("POST /auth/email/verify", h.verifyPost)
 	mux.HandleFunc("GET /auth/google/start", h.googleStart)
 	mux.HandleFunc("GET /auth/google/callback", h.googleCallback)
+	mux.HandleFunc("GET /auth/google/integration/callback", h.integrationCallback)
 	mux.HandleFunc("POST /logout", h.logoutPost)
 	mux.Handle("GET /app", h.pageAuthed((*Handler).appPage))
 	mux.Handle("POST /app/orgs", h.pageAuthed((*Handler).createOrgPost))
@@ -483,6 +484,7 @@ func (d orgData) CanEditOrg() bool     { return d.sc.Can(authz.UpdateOrg) }
 func (d orgData) OrgTab() string       { return d.Tab }
 func (d orgData) CanSeeMembers() bool  { return d.sc.Can(authz.ViewMembers) }
 func (d orgData) CanSeeActivity() bool { return d.sc.Can(authz.ViewAudit) }
+func (d orgData) CanCreate() bool      { return d.sc.Can(authz.CreateEvent) }
 
 func (d orgData) CanManage() bool     { return d.sc.Can(authz.ManageMembers) }
 func (d orgData) CanGrantOwner() bool { return d.sc.Can(authz.GrantOwner) }

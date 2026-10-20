@@ -20,7 +20,10 @@ const (
 	UpdateOrg     Action = "org.update"      // name, branding, sharing switches
 	DeleteOrg     Action = "org.delete"
 	CreateEvent   Action = "org.events.create"
-	ViewAudit     Action = "org.audit.view"
+	// ManageTemplates: create and edit the org's pass templates. Members
+	// create events, so they design their passes too.
+	ManageTemplates Action = "org.templates.manage"
+	ViewAudit       Action = "org.audit.view"
 	// AllEvents: implicit access to every event in the org (owner: as owner,
 	// admin: as editor). See ImplicitEventRole.
 	AllEvents Action = "org.events.all"
@@ -31,13 +34,14 @@ var orgMatrix = map[string]map[Action]bool{
 	domain.OrgRoleOwner: {
 		ViewOrg: true, ViewMembers: true, ManageMembers: true, ViewInvites: true,
 		GrantOwner: true, UpdateOrg: true, DeleteOrg: true, CreateEvent: true, ViewAudit: true, AllEvents: true,
+		ManageTemplates: true,
 	},
 	domain.OrgRoleAdmin: {
 		ViewOrg: true, ViewMembers: true, ManageMembers: true, ViewInvites: true,
-		UpdateOrg: true, CreateEvent: true, ViewAudit: true, AllEvents: true,
+		UpdateOrg: true, CreateEvent: true, ViewAudit: true, AllEvents: true, ManageTemplates: true,
 	},
 	domain.OrgRoleMember: {
-		ViewOrg: true, ViewMembers: true, CreateEvent: true,
+		ViewOrg: true, ViewMembers: true, CreateEvent: true, ManageTemplates: true,
 	},
 	// Someone outside the org who was shared an event: sees the org's name
 	// and those events, nothing else.
