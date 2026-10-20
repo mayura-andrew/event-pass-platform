@@ -69,12 +69,13 @@ func (r *ParticipantRepo) GetPass(ctx context.Context, membershipID, email strin
 	)
 	err := r.db.QueryRowContext(ctx, `
 		SELECT p.id, p.membership_id, p.full_name, COALESCE(p.team_name, ''), p.qr_signature,
+		       COALESCE(p.custom_attributes->>$3, ''),
 		       v.id, v.name, v.hall_section, v.latitude::float8, v.longitude::float8, v.description
 		FROM participants p
 		LEFT JOIN venues v ON v.id = p.assigned_venue_id
 		WHERE p.membership_id = $1 AND p.email = $2 AND p.is_confirmed`,
-		membershipID, email,
-	).Scan(&p.ID, &p.MembershipID, &p.FullName, &p.TeamName, &p.QRSignature,
+		membershipID, email, domain.FoodPreferenceKey,
+	).Scan(&p.ID, &p.MembershipID, &p.FullName, &p.TeamName, &p.QRSignature, &p.FoodPreference,
 		&venueID, &vName, &vHall, &vLat, &vLng, &vDesc)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, domain.ErrNotFound
@@ -89,4 +90,29 @@ func (r *ParticipantRepo) GetPass(ctx context.Context, membershipID, email strin
 		}
 	}
 	return &p, nil
+}
+
+// UpdateFoodPreference sets the food_preference custom attribute for the
+// delegate matching membership ID AND email. The field definition is
+// re-created if an organizer deleted it, so the value stays visible on the
+// dashboard and scanners.
+func (r *ParticipantRepo) UpdateFoodPreference(ctx context.Context, membershipID, email, value string) (string, error) {
+	var saved string
+	err := r.db.QueryRowContext(ctx, `
+		WITH field AS (
+			INSERT INTO participant_field_definitions
+			    (field_key, field_label, data_type, show_in_scanner_popup, show_in_dashboard_filter, sort_order, source)
+			VALUES ($3, 'Food Preference', 'text', true, true, 10, 'seed')
+			ON CONFLICT (field_key) DO NOTHING
+		)
+		UPDATE participants
+		SET custom_attributes = custom_attributes || jsonb_build_object($3::text, $4::text)
+		WHERE membership_id = $1 AND email = $2 AND is_confirmed
+		RETURNING custom_attributes->>$3`,
+		membershipID, email, domain.FoodPreferenceKey, value,
+	).Scan(&saved)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", domain.ErrNotFound
+	}
+	return saved, err
 }

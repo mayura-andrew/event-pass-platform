@@ -2,7 +2,7 @@
 //
 // Bump CACHE_VERSION on every deploy that changes a file below, otherwise
 // devices keep the previous shell until it is revalidated in the background.
-const CACHE_VERSION = 'nsac-shell-v7';
+const CACHE_VERSION = 'nsac-shell-v8';
 const FONT_CACHE = 'nsac-fonts-v1';
 
 const SHELL = [

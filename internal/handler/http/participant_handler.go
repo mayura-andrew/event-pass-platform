@@ -125,6 +125,28 @@ func (h *Handler) pass(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, p)
 }
 
+// PUT /api/v1/participants/pass/food-preference
+//
+// Public endpoint, authorized like GET /pass: the membership ID and email
+// together prove it is the delegate's own record. Unknown pairs get a 404.
+func (h *Handler) updateFoodPreference(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ID             string `json:"id"`
+		Email          string `json:"email"`
+		FoodPreference string `json:"food_preference"`
+	}
+	if !decodeJSON(w, r, 4<<10, &req) {
+		return
+	}
+	saved, err := h.Participants.UpdateFoodPreference(r.Context(), req.ID, req.Email, req.FoodPreference)
+	if err != nil {
+		writeDomainError(w, r, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]string{"food_preference": saved})
+}
+
 // GET /api/v1/config/public: browser-safe settings for the portal.
 func (h *Handler) publicConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{

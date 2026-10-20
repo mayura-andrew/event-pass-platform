@@ -34,6 +34,7 @@ func NewRouter(h *Handler, publicDir, allowedOrigin string) http.Handler {
 	// it also checks a password.
 	mux.Handle("POST /api/v1/auth/change-password", loginLimit.wrap(h.authenticate(http.HandlerFunc(h.changePassword), true)))
 	mux.Handle("GET /api/v1/participants/pass", passLimit.wrap(http.HandlerFunc(h.pass)))
+	mux.Handle("PUT /api/v1/participants/pass/food-preference", passLimit.wrap(http.HandlerFunc(h.updateFoodPreference)))
 	mux.HandleFunc("GET /api/v1/config/public", h.publicConfig)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)

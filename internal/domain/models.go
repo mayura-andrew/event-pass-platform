@@ -68,7 +68,19 @@ type ParticipantPass struct {
 	TeamName     string `json:"team_name"`
 	QRSignature  string `json:"qr_signature"`
 	Venue        *Venue `json:"venue"` // nil when unassigned
+
+	// The delegate may change this themselves from the pass page. It is the
+	// food_preference custom attribute, so scanners and filters see it too.
+	FoodPreference string   `json:"food_preference"`
+	FoodOptions    []string `json:"food_options"`
 }
+
+// FoodPreferenceKey is the custom attribute the pass page edits.
+const FoodPreferenceKey = "food_preference"
+
+// FoodPreferenceOptions are the choices offered on the pass page. A fixed
+// list keeps the dashboard filter to a handful of values.
+var FoodPreferenceOptions = []string{"Non-vegetarian", "Vegetarian", "Vegan", "Halal", "No beef"}
 
 type Scenario struct {
 	ID              string    `json:"id"`

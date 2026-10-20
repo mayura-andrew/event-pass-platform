@@ -22,6 +22,7 @@ func IsUUID(s string) bool { return uuidRe.MatchString(s) }
 type ParticipantStore interface {
 	ListConfirmedManifest(ctx context.Context) ([]domain.ParticipantManifest, error)
 	GetPass(ctx context.Context, membershipID, email string) (*domain.ParticipantPass, error)
+	UpdateFoodPreference(ctx context.Context, membershipID, email, value string) (string, error)
 }
 
 type ScanStore interface {
