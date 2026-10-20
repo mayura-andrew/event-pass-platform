@@ -1,0 +1,64 @@
+{{define "content"}}
+{{template "eventhead" .}}
+{{$d := .Data}}{{$csrf := .CSRF}}{{$edit := $d.Can "event.edit"}}
+{{if $d.Workshops}}
+{{range $w := $d.Workshops}}
+<section class="card" aria-labelledby="w-{{$w.ID}}">
+  <div class="field-row">
+    <div class="who"><h2 id="w-{{$w.ID}}">{{$w.Title}}</h2>
+      <span>{{dots (whenLocal $w.StartsAt $d.Event.TimeZone) $w.Room $w.Speakers}}</span></div>
+    <div class="actions"><span class="chip">{{if eq $w.SignupMode "everyone"}}Open to everyone{{else if eq $w.SignupMode "invite"}}By invitation{{else}}Sign up{{end}}</span></div>
+  </div>
+  <p class="muted">{{$w.SignedUp}}{{with $w.Capacity}} of {{.}}{{end}} signed up · {{$w.Waitlisted}} waiting · {{$w.Attended}} attended</p>
+  {{with index $d.Signups $w.ID}}
+  <details><summary>People ({{len .}})</summary>
+    <ul class="people">{{range .}}<li><div class="who"><b>{{.FullName}}</b><span>{{.Email}} · <code>{{.PassID}}</code></span></div><div class="actions"><span class="chip">{{if eq .Status "waitlisted"}}Waitlist{{else}}Signed up{{end}}</span></div></li>{{end}}</ul>
+  </details>
+  {{end}}
+  {{if $edit}}
+  <details><summary>Edit</summary>
+    <form method="post" action="{{$d.Base}}/workshops/{{$w.ID}}">
+      <input type="hidden" name="csrf" value="{{$csrf}}">
+      {{template "wsform" (dict "F" (index $d.Forms $w.ID) "Prefix" $w.ID)}}
+      <button class="btn" type="submit">Save workshop</button>
+    </form>
+    <form method="post" action="{{$d.Base}}/workshops/{{$w.ID}}/remove" class="mt-20"><input type="hidden" name="csrf" value="{{$csrf}}"><button class="btn btn-danger" type="submit">Remove workshop</button></form>
+  </details>
+  {{end}}
+</section>
+{{end}}
+{{else}}
+<div class="card empty">No workshops yet.{{if $edit}} Add sessions with their own sign-up, capacity and attendance checkpoint.{{end}}</div>
+{{end}}
+{{if $edit}}
+<section class="card" aria-labelledby="add-ws">
+  <h2 id="add-ws">Add a workshop</h2>
+  <form method="post" action="{{$d.Base}}/workshops">
+    <input type="hidden" name="csrf" value="{{$csrf}}">
+    {{template "wsform" (dict "F" (index $d.Forms "") "Prefix" "new")}}
+    <button class="btn" type="submit">Add workshop</button>
+  </form>
+</section>
+{{end}}
+{{end}}
+
+{{define "wsform"}}{{$f := .F}}{{$p := .Prefix}}
+<div class="field"><label for="{{$p}}-title">Title</label><input id="{{$p}}-title" name="title" type="text" maxlength="150" required value="{{$f.Title}}" placeholder="Intro to satellite data"></div>
+<div class="row cols">
+  <div class="field grow"><label for="{{$p}}-starts">Starts</label><input id="{{$p}}-starts" name="starts" type="datetime-local" value="{{$f.Starts}}"></div>
+  <div class="field grow"><label for="{{$p}}-ends">Ends</label><input id="{{$p}}-ends" name="ends" type="datetime-local" value="{{$f.Ends}}"></div>
+</div>
+<div class="row cols">
+  <div class="field grow"><label for="{{$p}}-room">Room</label><input id="{{$p}}-room" name="room" type="text" maxlength="100" value="{{$f.Room}}"></div>
+  <div class="field grow"><label for="{{$p}}-cap">Capacity</label><input id="{{$p}}-cap" name="capacity" type="text" inputmode="numeric" value="{{$f.Capacity}}" placeholder="No limit"></div>
+</div>
+<div class="field"><label for="{{$p}}-speakers">Speakers</label><input id="{{$p}}-speakers" name="speakers" type="text" maxlength="300" value="{{$f.Speakers}}"></div>
+<div class="field"><label for="{{$p}}-mode">Who can attend</label>
+  <select id="{{$p}}-mode" name="signup_mode">
+    <option value="opt_in"{{if eq $f.SignupMode "opt_in"}} selected{{end}}>Participants sign up</option>
+    <option value="everyone"{{if eq $f.SignupMode "everyone"}} selected{{end}}>Everyone at the event</option>
+    <option value="invite"{{if eq $f.SignupMode "invite"}} selected{{end}}>Only people organizers add</option>
+  </select></div>
+<label class="check"><input type="checkbox" name="waitlist"{{if $f.Waitlist}} checked{{end}}> When full, put new sign-ups on a waitlist</label>
+<div class="field"><label for="{{$p}}-desc">Description</label><textarea id="{{$p}}-desc" name="description" rows="3" maxlength="5000">{{$f.Description}}</textarea></div>
+{{end}}

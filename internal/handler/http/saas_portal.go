@@ -16,6 +16,8 @@ func (h *Handler) registerPortal(mux *http.ServeMux) {
 	mux.Handle("GET /me/passes/{participant}", h.pageAuthed((*Handler).myPassPage))
 	mux.Handle("GET /me/passes/{participant}/pass.png", h.pageAuthed((*Handler).myPassPNG))
 	mux.Handle("GET /me/passes/{participant}/pass.pdf", h.pageAuthed((*Handler).myPassPDF))
+	mux.Handle("POST /me/passes/{participant}/workshops/{workshop}/signup", h.pageAuthed((*Handler).myWorkshopSignUp))
+	mux.Handle("POST /me/passes/{participant}/workshops/{workshop}/cancel", h.pageAuthed((*Handler).myWorkshopCancel))
 	mux.Handle("GET /api/v1/me/passes", h.apiAuthed((*Handler).apiMyPasses))
 }
 
@@ -39,8 +41,15 @@ func (h *Handler) myPassesPage(w http.ResponseWriter, r *http.Request, p *princi
 }
 
 type myPassData struct {
-	Pass    *domain.PassContext
-	Answers []passes.Line
+	Pass      *domain.PassContext
+	Answers   []passes.Line
+	Workshops []domain.Workshop
+}
+
+var myPassNotices = map[string]string{
+	domain.SignupSignedUp:   "You're signed up.",
+	domain.SignupWaitlisted: "That workshop is full, so you're on its waitlist.",
+	"cancelled":             "Sign-up cancelled.",
 }
 
 func (h *Handler) myPassPage(w http.ResponseWriter, r *http.Request, p *principal) {
@@ -49,7 +58,30 @@ func (h *Handler) myPassPage(w http.ResponseWriter, r *http.Request, p *principa
 		h.renderError(w, r, p, err)
 		return
 	}
-	h.render(w, http.StatusOK, "my_pass", p, view{Title: pc.Event.Name, Data: myPassData{Pass: pc, Answers: service.ParticipantAnswers(pc)}})
+	h.renderMyPass(w, r, p, pc, nil)
+}
+
+// renderMyPass shows a pass with its event's workshops; actionErr is a
+// failed sign-up shown on the page.
+func (h *Handler) renderMyPass(w http.ResponseWriter, r *http.Request, p *principal, pc *domain.PassContext, actionErr error) {
+	d := myPassData{Pass: pc, Answers: service.ParticipantAnswers(pc)}
+	if h.Checkins != nil {
+		ws, err := h.Checkins.MyWorkshops(r.Context(), p.scope(), pc)
+		if err != nil {
+			h.renderError(w, r, p, err)
+			return
+		}
+		d.Workshops = ws
+	}
+	status, msg := http.StatusOK, ""
+	if actionErr != nil {
+		if status, msg = pageErrorStatus(actionErr); status == http.StatusInternalServerError {
+			h.renderError(w, r, p, actionErr)
+			return
+		}
+	}
+	h.render(w, status, "my_pass", p, view{Title: pc.Event.Name, Error: msg,
+		Notice: myPassNotices[r.URL.Query().Get("notice")], Data: d})
 }
 
 func (h *Handler) myPassPNG(w http.ResponseWriter, r *http.Request, p *principal) {

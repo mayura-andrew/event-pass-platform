@@ -41,9 +41,12 @@ type Handler struct {
 	Passes        *service.PassService
 	Portal        *service.PortalService
 	Checker       service.ParticipantChecker // pass checks (the registration repo)
-	BaseURL       string                     // APP_BASE_URL; https enables Secure cookies
-	Product       string                     // platform name on pages
-	CookieKey     []byte                     // signs the Google sign-in state cookie
+	// Check-in, workshops and live updates (M4).
+	Checkins  *service.CheckinService
+	LiveFeed  *service.EventFeed
+	BaseURL   string // APP_BASE_URL; https enables Secure cookies
+	Product   string // platform name on pages
+	CookieKey []byte // signs the Google sign-in state cookie
 
 	pages         pageSet      // set by NewRouter
 	signInLimit   *rateLimiter // set by NewRouter

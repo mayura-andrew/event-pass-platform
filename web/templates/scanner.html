@@ -1,0 +1,64 @@
+{{define "content"}}
+{{$d := .Data}}
+<div id="scanner" class="scanner" data-api="{{$d.APIBase}}" data-csrf="{{.CSRF}}" data-event="{{$d.Event.ID}}">
+  <p class="crumb"><a href="{{$d.Base}}">{{$d.Event.Name}}</a> · Scan</p>
+  <div class="scan-controls">
+    <div class="field grow">
+      <label for="cp">Checkpoint</label>
+      <select id="cp">
+        {{range $d.Checkpoints}}<option value="{{.ID}}" data-kind="{{.Kind}}">{{.Name}}</option>{{end}}
+      </select>
+    </div>
+    <label class="check fast"><input type="checkbox" id="fast" checked> Fast lane: record on scan</label>
+  </div>
+  {{if not $d.Checkpoints}}<p class="alert alert-danger" role="alert">This event has no open checkpoints. Add one under Check-in.</p>{{end}}
+
+  <div class="scan-grid">
+    <div class="camera card">
+      <div id="reader" class="reader" aria-label="Camera"></div>
+      <button id="cam" class="btn btn-block" type="button">Start camera</button>
+      <p id="cam-error" class="hint" hidden></p>
+      <details class="paste">
+        <summary>Type or paste a code</summary>
+        <form id="paste-form" class="row">
+          <input id="paste" type="text" autocomplete="off" aria-label="QR code text">
+          <button class="btn btn-quiet" type="submit">Check</button>
+        </form>
+      </details>
+    </div>
+
+    <section id="result" class="result card" aria-live="assertive" hidden>
+      <div id="r-band" class="band"><span id="r-icon" aria-hidden="true"></span> <span id="r-message"></span></div>
+      <div class="result-body">
+        <p id="r-detail" class="detail" hidden></p>
+        <h2 id="r-name"></h2>
+        <p id="r-pass" class="muted"></p>
+        <dl id="r-answers" class="facts"></dl>
+        <div class="row" id="r-actions">
+          <button id="r-record" class="btn" type="button" hidden>Record</button>
+          <button id="r-add" class="btn btn-line" type="button" hidden>Add to workshop</button>
+          <button id="r-undo" class="btn btn-danger" type="button" hidden>Undo</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <p id="queue-note" class="alert alert-info" role="status" hidden></p>
+
+  <section class="card" aria-labelledby="lookup-title">
+    <h2 id="lookup-title">Find someone</h2>
+    <form id="lookup-form" class="row" role="search">
+      <input id="lookup-q" type="search" placeholder="Name, email or pass ID" autocomplete="off" aria-label="Name, email or pass ID">
+      <button class="btn btn-quiet" type="submit">Search</button>
+    </form>
+    <ul id="lookup-results" class="people"></ul>
+  </section>
+
+  <section class="card" aria-labelledby="recent-title">
+    <h2 id="recent-title">Recent scans</h2>
+    <ul id="recent" class="recent"></ul>
+  </section>
+</div>
+<script src="/vendor/html5-qrcode-2.3.8.min.js"></script>
+<script type="module" src="/static/js/checkin-scanner.js"></script>
+{{end}}

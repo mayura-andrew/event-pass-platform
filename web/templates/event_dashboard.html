@@ -1,0 +1,46 @@
+{{define "content"}}
+{{template "eventhead" .}}
+{{$d := .Data}}{{$st := $d.Stats}}
+<div id="dashboard" data-api="{{$d.APIBase}}">
+  <p class="hint live"><span class="dot" aria-hidden="true"></span> <span id="live-state">Live</span> · updated <time id="updated">{{when $st.At}}</time></p>
+  <div class="tiles" data-registered="{{index $st.Participants "registered"}}">
+    <div class="tile"><span class="tile-n" data-stat="registered">{{index $st.Participants "registered"}}</span><span class="tile-l">Registered</span></div>
+    <div class="tile tile-ok"><span class="tile-n" data-stat="checked_in">{{$st.CheckedIn}}</span><span class="tile-l">Checked in</span></div>
+    <div class="tile"><span class="tile-n" data-stat="pending">{{index $st.Participants "pending"}}</span><span class="tile-l">Waiting for approval</span></div>
+    <div class="tile"><span class="tile-n" data-stat="waitlisted">{{index $st.Participants "waitlisted"}}</span><span class="tile-l">Waitlist</span></div>
+  </div>
+
+  <section class="card" aria-labelledby="cp-title">
+    <h2 id="cp-title">Checkpoints</h2>
+    <ul class="bars" id="checkpoint-bars">
+      {{range $st.Checkpoints}}<li><span class="bar-label">{{.Name}}</span><span class="bar"><span class="bar-fill" data-n="{{.Recorded}}"></span></span><span class="bar-n">{{.Recorded}}</span></li>{{end}}
+    </ul>
+  </section>
+
+  <section class="card" aria-labelledby="ten-title">
+    <h2 id="ten-title">Check-ins per 10 minutes</h2>
+    <div class="spark" id="per-ten" role="img" aria-label="Check-ins per 10 minutes over the last 12 hours"></div>
+    <p class="hint">Last 12 hours.</p>
+  </section>
+
+  {{if $st.Workshops}}
+  <section class="card" aria-labelledby="ws-title">
+    <h2 id="ws-title">Workshops</h2>
+    <table class="table">
+      <thead><tr><th scope="col">Workshop</th><th scope="col">Signed up</th><th scope="col">Waitlist</th><th scope="col">Attended</th></tr></thead>
+      <tbody id="workshop-rows">
+        {{range $st.Workshops}}<tr><td>{{.Title}}</td><td>{{.SignedUp}}{{with .Capacity}} / {{.}}{{end}}</td><td>{{.Waitlisted}}</td><td>{{.Attended}}</td></tr>{{end}}
+      </tbody>
+    </table>
+  </section>
+  {{end}}
+
+  <section class="card" aria-labelledby="recent-title">
+    <h2 id="recent-title">Recent scans</h2>
+    <ul id="recent" class="recent">
+      {{range $d.Recent}}<li{{if .UndoneAt}} class="undone"{{end}}><b>{{.FullName}}</b> <span class="muted">{{.Checkpoint}} · {{.StaffName}} · {{when .CreatedAt}}{{if .UndoneAt}} · undone{{end}}</span></li>{{else}}<li class="muted">No scans yet.</li>{{end}}
+    </ul>
+  </section>
+</div>
+<script type="module" src="/static/js/dashboard.js"></script>
+{{end}}

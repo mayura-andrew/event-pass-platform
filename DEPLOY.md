@@ -222,8 +222,9 @@ emailed sign-in links use it.
   the SaaS tables and creates the `nsac_tenant` role; the current build
   doesn't use them, so it can go in any time before the SaaS pages are used.
   `008_events_sharing.sql` (events, sharing, audit log), `009_registration.sql`
-  (publishing, forms, event participants) and `010_outbox.sql` (participant
-  emails) likewise.
+  (publishing, forms, event participants), `010_outbox.sql` (participant
+  emails) and `011_checkin_workshops.sql` (workshops, checkpoints, check-ins)
+  likewise.
 - Before taking registrations, set `PASS_SIGNING_KEYS` (see `.env.example`).
   Without it pass QR codes are signed with a key derived from `JWT_SECRET`,
   so rotating that secret would invalidate every pass.

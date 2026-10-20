@@ -225,7 +225,8 @@ func deadlines(next http.Handler) http.Handler {
 		p := r.URL.Path
 		var d time.Duration
 		switch {
-		case !strings.HasPrefix(p, "/api/"), p == "/api/v1/admin/scans/stream":
+		case !strings.HasPrefix(p, "/api/"), p == "/api/v1/admin/scans/stream",
+			strings.HasPrefix(p, "/api/v1/orgs/") && strings.HasSuffix(p, "/stream"):
 			next.ServeHTTP(w, r) // static files; the live stream is long-lived by design
 			return
 		case p == "/api/v1/scans/sync":

@@ -322,3 +322,123 @@ func TestParticipantRowsRLS(t *testing.T) {
 		t.Fatal("a participant's tenant transaction deleted an event")
 	}
 }
+
+func TestCheckinTablesRLSAndAppendOnly(t *testing.T) {
+	f := newTenancyFixture(t)
+	ctx := context.Background()
+	a, b := f.account(t, "a"), f.account(t, "b")
+	scA, orgA := f.org(t, a, "a")
+	scB, _ := f.org(t, b, "b")
+	esA, esB := f.event(t, scA, "A"), f.event(t, scB, "B")
+	regs, checkins, workshops := NewRegistrationRepo(f.db), NewCheckinRepo(f.db), NewWorkshopRepo(f.db)
+	acc, _ := NewEventRepo(f.db).EventAccess(ctx, scA, esA.EventID())
+	p, err := regs.Register(ctx, acc.Event, domain.EventParticipant{Email: "it-" + f.tag + "-p@test.local", FullName: "P", Answers: map[string]any{}},
+		func() string { return "C-" + f.tag })
+	if err != nil {
+		t.Fatal(err)
+	}
+	cps, _ := checkins.Checkpoints(ctx, esA, false)
+	if len(cps) != 3 {
+		t.Fatalf("new event has %d checkpoints, want the 3 defaults", len(cps))
+	}
+	if _, err := workshops.Save(ctx, esB, domain.Workshop{Title: "B's", SignupMode: "opt_in"}); err != nil {
+		t.Fatal(err)
+	}
+	rec, _, _, err := checkins.Record(ctx, esA, domain.RecordInput{ParticipantID: p.ID, CheckpointID: cps[1].ID, IdempotencyKey: "k1", Once: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = withTenant(ctx, f.db, "", "", func(tx *sql.Tx) error {
+		for _, table := range []string{"workshops", "workshop_signups", "checkpoints", "checkins"} {
+			if n := count(t, tx, "SELECT count(*) FROM "+table); n != 0 {
+				t.Errorf("%s: %d rows visible with no tenant set", table, n)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, q := range map[string]string{
+		"delete a check-in":       `DELETE FROM checkins`,
+		"rewrite a check-in time": `UPDATE checkins SET created_at = NOW() - INTERVAL '1 day'`,
+	} {
+		err := withTenant(ctx, f.db, orgA.ID, a.ID, func(tx *sql.Tx) error { _, err := tx.ExecContext(ctx, q); return err })
+		if pgCode(err) != "42501" {
+			t.Errorf("%s: %v, want permission denied", name, err)
+		}
+	}
+	// Recorded as someone else: refused by RLS.
+	err = withTenant(ctx, f.db, orgA.ID, a.ID, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `INSERT INTO checkins (id, org_id, event_id, participant_id, checkpoint_id, idempotency_key, staff_account_id)
+			VALUES ($1, $2, $3, $4, $5, 'forged', $6)`, newID(), orgA.ID, esA.EventID(), p.ID, cps[2].ID, b.ID)
+		return err
+	})
+	if pgCode(err) != "42501" {
+		t.Errorf("check-in recorded as another account: %v, want an RLS violation", err)
+	}
+	if err := checkins.Undo(ctx, esA, rec.ID); err != nil {
+		t.Fatalf("undo through the tenant role: %v", err)
+	}
+	// Wall 3: a sign-up can't point at another org's workshop.
+	wsB, _ := workshops.List(ctx, esB)
+	err = withTenant(ctx, f.db, orgA.ID, a.ID, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `INSERT INTO workshop_signups (org_id, workshop_id, participant_id) VALUES ($1, $2, $3)`,
+			orgA.ID, wsB[0].ID, p.ID)
+		return err
+	})
+	if pgCode(err) != pgForeignKeyViolation {
+		t.Errorf("sign-up to another org's workshop: %v, want a foreign key violation", err)
+	}
+}
+
+// Twenty phones scan the same person at once: one check-in, nineteen
+// duplicates pointing at it.
+func TestOnceCheckpointUnderConcurrency(t *testing.T) {
+	f := newTenancyFixture(t)
+	ctx := context.Background()
+	a := f.account(t, "a")
+	sc, _ := f.org(t, a, "a")
+	es := f.event(t, sc, "Gate")
+	acc, _ := NewEventRepo(f.db).EventAccess(ctx, sc, es.EventID())
+	p, err := NewRegistrationRepo(f.db).Register(ctx, acc.Event, domain.EventParticipant{Email: "it-" + f.tag + "-x@test.local",
+		FullName: "X", Answers: map[string]any{}}, func() string { return "O-" + f.tag })
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkins := NewCheckinRepo(f.db)
+	cps, _ := checkins.Checkpoints(ctx, es, false)
+	var wg sync.WaitGroup
+	recs := make([]*domain.Checkin, 20)
+	dups := make([]*domain.Checkin, 20)
+	errs := make([]error, 20)
+	for i := range recs {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			recs[i], dups[i], _, errs[i] = checkins.Record(ctx, es, domain.RecordInput{ParticipantID: p.ID, CheckpointID: cps[1].ID,
+				IdempotencyKey: fmt.Sprintf("phone-%d", i), Once: true})
+		}(i)
+	}
+	wg.Wait()
+	var recorded int
+	var winner string
+	for i := range recs {
+		if errs[i] != nil {
+			t.Fatalf("record %d: %v", i, errs[i])
+		}
+		if recs[i] != nil {
+			recorded++
+			winner = recs[i].ID
+		}
+	}
+	if recorded != 1 {
+		t.Fatalf("%d check-ins recorded, want 1", recorded)
+	}
+	for i := range dups {
+		if recs[i] == nil && (dups[i] == nil || dups[i].ID != winner) {
+			t.Fatalf("scan %d: duplicate %+v doesn't point at the recorded check-in %s", i, dups[i], winner)
+		}
+	}
+}

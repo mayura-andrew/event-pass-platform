@@ -77,6 +77,8 @@ func newMatrixFixture(t *testing.T) *matrixFixture {
 // roles, plus one pending invite: the IDs routes need.
 type testEvent struct {
 	id, editorShare, invite, field, participant string
+	checkpoint, workshop, checkin               string
+	ev                                          *domain.Event
 	es                                          authz.EventScope
 }
 
@@ -122,7 +124,23 @@ func (f *matrixFixture) newEvent(t *testing.T) testEvent {
 	if err != nil {
 		t.Fatal(err)
 	}
-	te.participant = p.ID
+	te.participant, te.ev = p.ID, e
+	cps, err := postgres.NewCheckinRepo(f.env.db).Checkpoints(ctx, es, false)
+	if err != nil || len(cps) == 0 {
+		t.Fatalf("default checkpoints: %v %v", cps, err)
+	}
+	for _, c := range cps {
+		if c.Kind == domain.KindCheckIn {
+			te.checkpoint = c.ID
+		}
+	}
+	capacity := 10
+	ws, err := postgres.NewWorkshopRepo(f.env.db).Save(ctx, es, domain.Workshop{Title: "Matrix workshop",
+		SignupMode: domain.SignupOptIn, Capacity: &capacity, Waitlist: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	te.workshop = ws.ID
 	return te
 }
 
@@ -144,7 +162,7 @@ func (f *matrixFixture) expected(p persona, rt eventRoute) string {
 	switch {
 	case !ok:
 		return "hidden"
-	case rt.action == authz.EventDelete && strings.HasSuffix(rt.pattern, "/restore") && !es.Can(authz.EventDelete):
+	case rt.action == authz.EventDelete && strings.HasSuffix(rt.pattern, "{event}/restore") && !es.Can(authz.EventDelete):
 		return "hidden" // a trashed event only opens for those who can restore it
 	case !es.Can(rt.action):
 		return "forbidden"
@@ -156,7 +174,8 @@ func (f *matrixFixture) expected(p persona, rt eventRoute) string {
 
 func (f *matrixFixture) call(p persona, rt eventRoute, te testEvent) (int, string) {
 	path := fill(rt.pattern, map[string]string{"org": f.org.Slug, "event": te.id, "share": te.editorShare, "id": te.invite,
-		"field": te.field, "participant": te.participant})
+		"field": te.field, "participant": te.participant, "checkpoint": te.checkpoint, "workshop": te.workshop,
+		"checkin": te.checkin})
 	u := p.u
 	if u == nil {
 		u = f.env.newBrowser(f.t, "anon")
@@ -167,7 +186,9 @@ func (f *matrixFixture) call(p persona, rt eventRoute, te testEvent) (int, strin
 		case "POST", "PATCH", "PUT":
 			body = map[string]any{"name": "Matrix renamed", "role": "viewer", "email": f.env.prefix + "new-" + te.id[len(te.id)-6:] + "@test.local",
 				"account_id": f.member.id, "editors_can_share": true, "expires_in_days": 7,
-				"label": "Matrix question", "status": "cancelled"}
+				"label": "Matrix question", "status": "cancelled", "title": "Matrix workshop 2",
+				"payload": "not a pass", "checkpoint_id": te.checkpoint, "record": true,
+				"idempotency_key": "matrix-" + te.id, "participant_id": te.participant}
 			if strings.Contains(rt.pattern, "/fields") {
 				body.(map[string]any)["type"] = "text"
 			}
@@ -182,7 +203,8 @@ func (f *matrixFixture) call(p persona, rt eventRoute, te testEvent) (int, strin
 		form := url.Values{"name": {"Matrix renamed"}, "type": {"hackathon"}, "time_zone": {"UTC"},
 			"visibility": {"private"}, "role": {"viewer"}, "email": {f.env.prefix + "new-" + te.id[len(te.id)-6:] + "@test.local"},
 			"account_id": {f.member.id}, "editors_can_share": {"on"}, "expires_in_days": {"7"},
-			"label": {"Matrix question"}, "status": {"cancelled"}, "reg_mode": {"open"}, "pass_prefix": {"MTX"}}
+			"label": {"Matrix question"}, "status": {"cancelled"}, "reg_mode": {"open"}, "pass_prefix": {"MTX"},
+			"title": {"Matrix workshop 2"}, "signup_mode": {"opt_in"}}
 		if strings.Contains(rt.pattern, "/fields") {
 			form.Set("type", "text") // a question's answer type and audience, not the event's
 			form.Set("visibility", "admin")
@@ -197,15 +219,42 @@ func TestEventAuthorizationMatrix(t *testing.T) {
 	f := newMatrixFixture(t)
 	ctx := context.Background()
 	for _, rt := range eventRoutes {
+		if strings.HasSuffix(rt.pattern, "/stream") {
+			continue // never ends; TestLiveStream covers it
+		}
 		for _, p := range f.people {
 			te := f.newEvent(t)
 			switch {
-			case strings.HasSuffix(rt.pattern, "/restore"):
+			case strings.HasSuffix(rt.pattern, "{event}/restore"):
 				if err := f.events.SetDeleted(ctx, te.es, true); err != nil {
 					t.Fatal(err)
 				}
 			case strings.HasSuffix(rt.pattern, "/unarchive"):
 				if err := f.events.SetArchived(ctx, te.es, true); err != nil {
+					t.Fatal(err)
+				}
+			case strings.HasSuffix(rt.pattern, "/checkins/{checkin}/undo"):
+				// The caller's own scan, just now: what check-in staff may undo.
+				who := f.ownerSc
+				if p.u != nil && p.orgRole != "" {
+					who = authz.ForMember(authz.NewAccountScope(p.u.id), f.org.ID, p.orgRole)
+				}
+				wes, _ := authz.ForEvent(who, te.id, te.ev.OwnerID, p.share, te.ev.Settings)
+				if wes.EventID() == "" { // no access: record as the owner
+					wes = te.es
+				}
+				rec, _, _, err := postgres.NewCheckinRepo(f.env.db).Record(ctx, wes, domain.RecordInput{
+					ParticipantID: te.participant, CheckpointID: te.checkpoint, IdempotencyKey: "undo-" + te.id, Once: true})
+				if err != nil {
+					t.Fatal(err)
+				}
+				te.checkin = rec.ID
+			case rt.audit == "workshop.signup.cancel":
+				if _, err := postgres.NewWorkshopRepo(f.env.db).StaffSignUp(ctx, te.es, te.workshop, te.participant); err != nil {
+					t.Fatal(err)
+				}
+			case rt.audit == "checkpoint.restore":
+				if err := postgres.NewCheckinRepo(f.env.db).SetCheckpointArchived(ctx, te.es, te.checkpoint, true); err != nil {
 					t.Fatal(err)
 				}
 			case rt.audit == "event.unpublish":

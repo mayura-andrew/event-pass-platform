@@ -1,0 +1,64 @@
+{{define "content"}}
+{{template "eventhead" .}}
+{{$d := .Data}}{{$csrf := .CSRF}}
+<section class="card">
+  <h2>Scanning</h2>
+  <p class="muted">Open the scanner on each phone at the door. Choose the checkpoint there; every pass works at all of this event's checkpoints.</p>
+  <a class="btn" href="{{$d.ScanURL}}">Open scanner</a>
+</section>
+
+<section class="card" aria-labelledby="cps-title">
+  <h2 id="cps-title">Checkpoints</h2>
+  <ul class="fields">
+    {{range $c := $d.Checkpoints}}
+    <li>
+      <div class="field-row">
+        <div class="who"><b>{{$c.Name}}{{if $c.ArchivedAt}} <span class="chip">Closed</span>{{end}}</b>
+          <span>{{if eq $c.Kind "workshop"}}Workshop attendance{{else if $c.Rules.Repeatable}}Can be recorded again{{else}}Once per person{{end}}{{range $c.Rules.Requires}} · needs {{$d.Name .}}{{end}}{{with $c.Rules.Roles}} · only {{range $i, $r := .}}{{if $i}}, {{end}}{{roleLabel $r}}{{end}}{{end}} · {{$c.Recorded}} recorded</span></div>
+        <div class="actions">
+          {{if $c.ArchivedAt}}
+          <form method="post" action="{{$d.Base}}/checkpoints/{{$c.ID}}/restore" class="inline"><input type="hidden" name="csrf" value="{{$csrf}}"><button class="btn btn-quiet" type="submit">Reopen</button></form>
+          {{else}}
+          <form method="post" action="{{$d.Base}}/checkpoints/{{$c.ID}}/archive" class="inline"><input type="hidden" name="csrf" value="{{$csrf}}"><button class="btn btn-danger" type="submit">Close</button></form>
+          {{end}}
+        </div>
+      </div>
+      <details>
+        <summary>Edit</summary>
+        <form method="post" action="{{$d.Base}}/checkpoints/{{$c.ID}}">
+          <input type="hidden" name="csrf" value="{{$csrf}}">
+          {{template "cpform" (dict "C" $c "All" $d.Checkpoints "Prefix" $c.ID "TZ" $d.Event.TimeZone)}}
+          <button class="btn" type="submit">Save checkpoint</button>
+        </form>
+      </details>
+    </li>
+    {{end}}
+  </ul>
+  <details class="add-field">
+    <summary class="btn btn-line">Add a checkpoint</summary>
+    <form method="post" action="{{$d.Base}}/checkpoints">
+      <input type="hidden" name="csrf" value="{{$csrf}}">
+      {{template "cpform" (dict "C" nil "All" $d.Checkpoints "Prefix" "new" "TZ" $d.Event.TimeZone)}}
+      <button class="btn" type="submit">Add checkpoint</button>
+    </form>
+  </details>
+</section>
+{{end}}
+
+{{define "cpform"}}{{$c := .C}}{{$p := .Prefix}}
+<div class="field"><label for="{{$p}}-name">Name</label><input id="{{$p}}-name" name="name" type="text" maxlength="100" required value="{{if $c}}{{$c.Name}}{{end}}" placeholder="Lunch, day 1"></div>
+<label class="check"><input type="checkbox" name="repeatable"{{if and $c $c.Rules.Repeatable}} checked{{end}}> Can be recorded more than once per person (re-entry, meals)</label>
+{{if .All}}
+<fieldset class="group"><legend>Must be recorded first</legend>
+  {{range .All}}{{if and (ne .Kind "workshop") (or (not $c) (ne .ID $c.ID))}}{{$id := .ID}}<label class="check"><input type="checkbox" name="requires" value="{{.ID}}"{{if $c}}{{range $c.Rules.Requires}}{{if eq . $id}} checked{{end}}{{end}}{{end}}> {{.Name}}</label>{{end}}{{end}}
+</fieldset>
+{{end}}
+<fieldset class="group"><legend>Who can record it</legend>
+  {{range $r := (list "owner" "editor" "checkin")}}<label class="check"><input type="checkbox" name="roles" value="{{$r}}"{{if $c}}{{range $c.Rules.Roles}}{{if eq . $r}} checked{{end}}{{end}}{{end}}> {{roleLabel $r}}</label>{{end}}
+  <p class="hint">None ticked: anyone who can scan.</p>
+</fieldset>
+<div class="row cols">
+  <div class="field grow"><label for="{{$p}}-opens">Opens</label><input id="{{$p}}-opens" name="opens" type="datetime-local" value="{{if $c}}{{localTime $c.Rules.OpensAt .TZ}}{{end}}"></div>
+  <div class="field grow"><label for="{{$p}}-closes">Closes</label><input id="{{$p}}-closes" name="closes" type="datetime-local" value="{{if $c}}{{localTime $c.Rules.ClosesAt .TZ}}{{end}}"></div>
+</div>
+{{end}}

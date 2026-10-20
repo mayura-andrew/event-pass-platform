@@ -25,4 +25,27 @@
     <p class="hint">Print the PDF at actual size (100%).</p>
   </section>
 </div>
+{{if .Data.Workshops}}
+<section class="card mt-24" aria-labelledby="my-ws">
+  <h2 id="my-ws">Workshops</h2>
+  <ul class="people">
+    {{range .Data.Workshops}}
+    <li>
+      <div class="who"><b>{{.Title}}</b><span>{{dots (whenLocal .StartsAt $e.TimeZone) .Room}}{{if ge .PlacesLeft 0}} · {{plural .PlacesLeft "place" "places"}} left{{end}}</span></div>
+      <div class="actions">
+        {{if eq .SignupMode "everyone"}}<span class="chip">Open to everyone</span>
+        {{else if eq .MyStatus "signed_up"}}<span class="pstatus pstatus-registered">Signed up</span>
+          <form method="post" action="/me/passes/{{$p.ID}}/workshops/{{.ID}}/cancel" class="inline"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="btn btn-quiet" type="submit">Cancel</button></form>
+        {{else if eq .MyStatus "waitlisted"}}<span class="pstatus pstatus-waitlisted">Waitlist</span>
+          <form method="post" action="/me/passes/{{$p.ID}}/workshops/{{.ID}}/cancel" class="inline"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="btn btn-quiet" type="submit">Leave waitlist</button></form>
+        {{else if eq .SignupMode "invite"}}<span class="chip">By invitation</span>
+        {{else if eq $p.Status "registered"}}
+          <form method="post" action="/me/passes/{{$p.ID}}/workshops/{{.ID}}/signup" class="inline"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="btn" type="submit">{{if eq .PlacesLeft 0}}Join waitlist{{else}}Sign up{{end}}</button></form>
+        {{end}}
+      </div>
+    </li>
+    {{end}}
+  </ul>
+</section>
+{{end}}
 {{end}}

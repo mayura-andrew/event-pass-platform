@@ -59,6 +59,7 @@ migrations/007_tenancy.sql          SaaS: accounts, sessions, organizations, mem
 migrations/008_events_sharing.sql   SaaS: events, sharing (people and links), stars, recent, audit log
 migrations/009_registration.sql     SaaS: publishing, registration forms, event participants
 migrations/010_outbox.sql           SaaS: participant email outbox (pass issued, approval, waitlist, cancelled)
+migrations/011_checkin_workshops.sql SaaS: workshops, sign-ups, checkpoints, append-only check-ins
 scripts/seed                        CSV import + HMAC signing
 scripts/create-admin                create scanner / dashboard logins
 scripts/sample                      example participants.csv and venues.csv

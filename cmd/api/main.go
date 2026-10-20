@@ -65,6 +65,8 @@ func run() error {
 		return err
 	}
 	passService := service.NewPassService(passKeys)
+	checkinRepo := postgres.NewCheckinRepo(db)
+	liveFeed := service.NewEventFeed(checkinRepo)
 
 	mailer, err := newMailer(cfg)
 	if err != nil {
@@ -120,10 +122,14 @@ func run() error {
 		Passes:        passService,
 		Portal:        service.NewPortalService(postgres.NewPortalRepo(db)),
 		Checker:       registrationRepo,
+		LiveFeed:      liveFeed,
 		BaseURL:       cfg.AppBaseURL,
 		Product:       cfg.ProductName,
 		CookieKey:     cfg.JWTSecret,
 	}
+
+	h.Checkins = service.NewCheckinService(checkinRepo, postgres.NewWorkshopRepo(db), h.Registrations, registrationRepo,
+		passService, registrationRepo)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
@@ -139,6 +145,7 @@ func run() error {
 	feedCtx, stopFeed := context.WithCancel(ctx)
 	defer stopFeed()
 	go feed.Run(feedCtx)
+	go liveFeed.Run(feedCtx)
 	srv.RegisterOnShutdown(stopFeed)
 
 	// The email worker stops with ctx too, after recording any message it

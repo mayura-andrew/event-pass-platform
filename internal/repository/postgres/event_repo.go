@@ -215,6 +215,10 @@ func (r *EventRepo) CreateEvent(ctx context.Context, sc authz.OrgScope, e *domai
 				}
 			}
 		}
+		// Confirm participation -> Check in -> Kit, as in the current build.
+		if _, err := tx.ExecContext(ctx, `SELECT add_default_checkpoints($1, $2)`, sc.OrgID(), id); err != nil {
+			return err
+		}
 		a.EventID, a.TargetID = id, id
 		if err := insertAudit(ctx, tx, sc.OrgID(), sc.AccountID(), a); err != nil {
 			return err

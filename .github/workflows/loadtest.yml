@@ -1,0 +1,44 @@
+# Nightly load test (SaaS spec, M4 gate): 50 orgs with live events, 30
+# scanners at 20 scans a minute and 1,000 registrations in 10 minutes against
+# a fresh API and database. Fails if scan p95 is over 300 ms or any request
+# fails. Run it by hand from Actions -> Load test -> Run workflow.
+name: Load test
+
+on:
+  schedule:
+    - cron: '30 20 * * *'   # 02:00 in Colombo
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  load:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: nsac_load
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d nsac_load"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      DATABASE_URL: postgres://postgres:ci@localhost:5432/nsac_load?sslmode=disable
+      JWT_SECRET: nightly-load-test-secret-0123456789abcdef
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go run ./cmd/migrate up
+      - name: Start the API
+        run: |
+          go build -o api ./cmd/api
+          PORT=8080 APP_BASE_URL=http://localhost:8080 PASS_RATE_PER_MIN=100000 DB_MAX_CONNS=20 ./api > api.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf localhost:8080/healthz && break; sleep 1; done
+      - run: go run ./scripts/loadtest -base http://localhost:8080 -duration 10m
+      - if: failure()
+        run: tail -100 api.log

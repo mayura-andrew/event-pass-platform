@@ -102,10 +102,18 @@ func newSaaSEnvWith(t *testing.T, google *service.GoogleOAuth) *saasEnv {
 		Passes:        service.NewPassService(passes.DerivedKeyRing([]byte("test-pass-key"))),
 		Portal:        service.NewPortalService(postgres.NewPortalRepo(db)),
 		Checker:       postgres.NewRegistrationRepo(db),
+		LiveFeed:      service.NewEventFeed(postgres.NewCheckinRepo(db)),
 		BaseURL:       base,
 		Product:       "Event Pass",
 		CookieKey:     []byte("test-cookie-key-0123456789abcdef"),
 	}
+	regRepo := postgres.NewRegistrationRepo(db)
+	h.Checkins = service.NewCheckinService(postgres.NewCheckinRepo(db), postgres.NewWorkshopRepo(db), h.Registrations, regRepo,
+		h.Passes, regRepo)
+	feedCtx, stopFeed := context.WithCancel(ctx)
+	h.LiveFeed.Interval = 200 * time.Millisecond
+	go h.LiveFeed.Run(feedCtx)
+	t.Cleanup(stopFeed)
 	env.srv = httptest.NewServer(NewRouter(h, "../../../public", ""))
 	t.Cleanup(func() {
 		env.srv.Close()

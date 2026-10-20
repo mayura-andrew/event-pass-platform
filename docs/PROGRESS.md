@@ -67,7 +67,26 @@ current database keeps its old QR codes working.
 | `cmd/legacy-import`: current delegates into an event, old QR codes valid | Done; checked on local data (NSAC-1092) |
 | Tests: registration journey, capacity with 10 concurrent registrations, RLS for participants, pass emails, portal, import and old QR codes; matrix covers the new routes | Done |
 
-## Next: M4 Check-in and workshops
+## M4 Check-in and workshops: built, gate not yet shown on staging
+
+Gate: three phones check in 60 people and record attendance at two
+workshops; duplicates show amber with time and staff name; the dashboard
+updates live. The nightly load test meets p95 under 300 ms.
+
+| Part | State |
+| --- | --- |
+| Migration 011: workshops, sign-ups, checkpoints with rules, append-only check-ins; default Confirm, Check in, Kit | Done |
+| Scan API: pass check, window, workshop sign-up, prerequisites, once/repeatable, roles; idempotent; duplicates with time and staff | Done |
+| Undo (editors any, check-in staff own within 30 s), lookup, record from lookup, check-only mode | Done |
+| Workshops: everyone / opt-in / invite, capacity, waitlist with promotion, time clashes, add at the door | Done |
+| Scanner page: camera, paste box (also the e2e hook), status band, Record / Undo / Add, lookup, recent scans live, retry queue | Done |
+| Check-in tab (checkpoints and rules), Workshops tab, Dashboard tab (tiles, bars, check-ins per 10 minutes, workshops, recent; live) | Done |
+| Portal: workshop sign-up and cancel on the pass page | Done |
+| Live feed: polled, Server-Sent Events | Done |
+| Tests: the gate itself (3 phones x 60 people, 2 workshops), rules/undo/lookup, live stream, portal sign-ups, once under 20 concurrent phones, RLS and append-only; matrix covers 70 routes | Done |
+| Load test: `scripts/loadtest` + nightly workflow | Done; local p95 165 ms |
+
+## Next: M5 Designer and integrations
 
 ## Open questions (need a decision)
 

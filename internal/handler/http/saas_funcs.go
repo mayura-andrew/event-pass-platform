@@ -41,6 +41,35 @@ var pageFuncs = template.FuncMap{
 		return m
 	},
 	"plural": plural,
+	// localTime formats a time as a datetime-local value in a time zone.
+	"localTime": func(t *time.Time, tz string) string { return localValue(t, tz) },
+	// humanTime shows a datetime-local value as "Sat 3 Oct, 14:00".
+	"humanTime": func(v string) string {
+		t, err := time.Parse("2006-01-02T15:04", v)
+		if err != nil {
+			return v
+		}
+		return t.Format("Mon 2 Jan, 15:04")
+	},
+	"list": func(items ...string) []string { return items },
+	// dots joins the non-empty parts with " · ".
+	"dots": func(parts ...string) string {
+		var out []string
+		for _, p := range parts {
+			if p = strings.TrimSpace(p); p != "" {
+				out = append(out, p)
+			}
+		}
+		return strings.Join(out, " · ")
+	},
+	// whenLocal is a time in a zone as "Mon 2 Jan, 15:04", or "".
+	"whenLocal": func(t *time.Time, tz string) string {
+		if t == nil {
+			return ""
+		}
+		v, _ := time.Parse("2006-01-02T15:04", localValue(t, tz))
+		return v.Format("Mon 2 Jan, 15:04")
+	},
 	// statusWord is a participant status as people say it.
 	"statusWord": func(s string) string {
 		return map[string]string{domain.PartPending: "Waiting for approval", domain.PartRegistered: "Registered",

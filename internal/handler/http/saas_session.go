@@ -258,7 +258,8 @@ func nextQuery(next string) string {
 
 var pageNames = []string{"login", "login_sent", "verify", "app", "members", "invite", "error",
 	"events", "event_new", "event", "event_share", "event_settings", "activity", "link",
-	"event_registration", "event_participants", "public_event", "public_registered", "my_passes", "my_pass"}
+	"event_registration", "event_participants", "public_event", "public_registered", "my_passes", "my_pass",
+	"scanner", "event_dashboard", "event_checkin", "event_workshops"}
 
 type pageSet map[string]*template.Template
 
@@ -292,6 +293,10 @@ const pageCSP = "default-src 'self'; script-src 'self'; style-src 'self' https:/
 	"font-src https://fonts.gstatic.com; img-src 'self' data: https://*.googleusercontent.com; " +
 	"form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'"
 
+// scannerCSP lets the camera library style its own preview; scripts stay
+// limited to this site.
+var scannerCSP = strings.Replace(pageCSP, "style-src 'self'", "style-src 'self' 'unsafe-inline'", 1)
+
 func (h *Handler) render(w http.ResponseWriter, status int, page string, p *principal, v view) {
 	v.Product = h.Product
 	if p != nil {
@@ -308,7 +313,11 @@ func (h *Handler) render(w http.ResponseWriter, status int, page string, p *prin
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Security-Policy", pageCSP)
+	csp := pageCSP
+	if page == "scanner" {
+		csp = scannerCSP
+	}
+	w.Header().Set("Content-Security-Policy", csp)
 	w.WriteHeader(status)
 	_, _ = buf.WriteTo(w)
 }
