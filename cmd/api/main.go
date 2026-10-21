@@ -141,6 +141,7 @@ func run() error {
 
 	h.StatusPageURL = cfg.StatusPageURL
 	h.Profiles = service.NewProfileService(postgres.NewPortalRepo(db), postgres.NewProfileRepo(db))
+	h.MapTileURL, h.MapTileAttribution = cfg.MapTileURL, cfg.MapTileAttribution
 	h.Health = service.NewHealth(postgres.NewHealthRepo(db), cfg.SMTPHost != "")
 
 	h.Checkins = service.NewCheckinService(checkinRepo, postgres.NewWorkshopRepo(db), h.Registrations, registrationRepo,

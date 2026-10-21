@@ -320,9 +320,34 @@ const pageCSP = "default-src 'self'; script-src 'self'; style-src 'self' https:/
 // limited to this site.
 var scannerCSP = strings.Replace(pageCSP, "style-src 'self'", "style-src 'self' 'unsafe-inline'", 1)
 
-// mapCSP adds OpenStreetMap's map tiles; Leaflet positions tiles and
+// mapCSP adds the map tile server's images; Leaflet positions tiles and
 // markers with inline styles. Scripts stay limited to this site.
-var mapCSP = strings.Replace(scannerCSP, "img-src 'self' data:", "img-src 'self' data: https://tile.openstreetmap.org", 1)
+func mapCSP(tileURL string) string {
+	return strings.Replace(scannerCSP, "img-src 'self' data:", "img-src 'self' data: "+tileOrigin(tileURL), 1)
+}
+
+// tileOrigin is the CSP source for a tile URL template: its scheme and
+// host, with a {s} subdomain placeholder widened to a wildcard.
+func tileOrigin(tileURL string) string {
+	const sub = "tile-subdomain" // stands in for {s}, which isn't valid in a host
+	u, err := url.Parse(strings.NewReplacer("{s}", sub, "{z}", "0", "{x}", "0", "{y}", "0", "{r}", "").Replace(tileURL))
+	if err != nil || u.Scheme != "https" || u.Host == "" {
+		return defaultTileOrigin
+	}
+	host := u.Host
+	if rest, ok := strings.CutPrefix(host, sub+"."); ok {
+		host = "*." + rest
+	} else if strings.Contains(host, sub) {
+		return defaultTileOrigin
+	}
+	return u.Scheme + "://" + host
+}
+
+const (
+	defaultTileURL         = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+	defaultTileOrigin      = "https://tile.openstreetmap.org"
+	defaultTileAttribution = `&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors`
+)
 
 func (h *Handler) render(w http.ResponseWriter, status int, page string, p *principal, v view) {
 	v.Product = h.Product
@@ -345,7 +370,7 @@ func (h *Handler) render(w http.ResponseWriter, status int, page string, p *prin
 	case "scanner":
 		csp = scannerCSP
 	case "participant_map":
-		csp = mapCSP
+		csp = mapCSP(h.tileURL())
 		// The one page that may ask for the phone's location (every other
 		// page keeps securityHeaders' geolocation=()).
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(self)")

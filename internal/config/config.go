@@ -64,6 +64,12 @@ type Config struct {
 
 	// Public status page (Better Stack, Instatus, ...), linked from help.
 	StatusPageURL string
+
+	// Map tiles for the participant map (beta): a {z}/{x}/{y} URL template
+	// and its attribution (HTML). Default: OpenStreetMap's own servers,
+	// which allow light use only; use a tile provider for real events.
+	MapTileURL         string
+	MapTileAttribution string
 }
 
 func Load() (*Config, error) {
@@ -89,10 +95,12 @@ func Load() (*Config, error) {
 		GoogleClientID:     os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
 		GoogleClientSecret: os.Getenv("GOOGLE_OAUTH_CLIENT_SECRET"),
 		// Neutral working title: "NASA" and "Space Apps" are NASA's marks.
-		ProductName:     getenv("PRODUCT_NAME", "Event Pass"),
-		PassSigningKeys: os.Getenv("PASS_SIGNING_KEYS"),
-		IntegrationsKey: os.Getenv("INTEGRATIONS_KEY"),
-		StatusPageURL:   os.Getenv("STATUS_PAGE_URL"),
+		ProductName:        getenv("PRODUCT_NAME", "Event Pass"),
+		PassSigningKeys:    os.Getenv("PASS_SIGNING_KEYS"),
+		IntegrationsKey:    os.Getenv("INTEGRATIONS_KEY"),
+		StatusPageURL:      os.Getenv("STATUS_PAGE_URL"),
+		MapTileURL:         os.Getenv("MAP_TILE_URL"),
+		MapTileAttribution: os.Getenv("MAP_TILE_ATTRIBUTION"),
 	}
 	c.ClientIPHeader = os.Getenv("CLIENT_IP_HEADER")
 	var err error

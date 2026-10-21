@@ -7,6 +7,7 @@ package httphandler
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/nasa-spaceapps/nsac-qr/internal/authz"
 	"github.com/nasa-spaceapps/nsac-qr/internal/domain"
@@ -80,8 +81,10 @@ func (h *Handler) profilePhoto(w http.ResponseWriter, r *http.Request, p *princi
 // ---- Map page and API -------------------------------------------------------------
 
 type participantMapData struct {
-	Pass  *domain.PassContext
-	Venue struct {
+	Pass            *domain.PassContext
+	Tiles           string
+	TileAttribution string
+	Venue           struct {
 		Lat, Lng float64
 		Has      bool
 	}
@@ -100,11 +103,23 @@ func (h *Handler) participantMapPage(w http.ResponseWriter, r *http.Request, p *
 		h.renderError(w, r, p, err)
 		return
 	}
-	d := participantMapData{Pass: pc, Public: v.Public}
+	d := participantMapData{Pass: pc, Public: v.Public, Tiles: h.tileURL(), TileAttribution: h.MapTileAttribution}
+	if d.TileAttribution == "" || h.MapTileURL == "" {
+		d.TileAttribution = defaultTileAttribution
+	}
 	if ven := pc.Event.Venue; ven.Lat != nil && ven.Lng != nil {
 		d.Venue.Lat, d.Venue.Lng, d.Venue.Has = *ven.Lat, *ven.Lng, true
 	}
 	h.render(w, http.StatusOK, "participant_map", p, view{Title: "Participant map · " + pc.Event.Name, Data: d})
+}
+
+// tileURL is the configured map tile server, or OpenStreetMap's (only
+// https URLs: the page is https in production and its CSP allows the host).
+func (h *Handler) tileURL() string {
+	if strings.HasPrefix(h.MapTileURL, "https://") {
+		return h.MapTileURL
+	}
+	return defaultTileURL
 }
 
 func (h *Handler) apiParticipantMap(w http.ResponseWriter, r *http.Request, p *principal) {

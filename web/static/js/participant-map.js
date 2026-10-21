@@ -10,9 +10,13 @@ const headers = { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf };
 // ---- Map ---------------------------------------------------------------------------
 const venue = root.dataset.venueLat ? [Number(root.dataset.venueLat), Number(root.dataset.venueLng)] : null;
 const map = L.map('map', { zoomControl: true }).setView(venue || [6.9271, 79.8612], venue ? 17 : 12);
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+// Tile servers need to know which site is asking (OpenStreetMap's policy
+// blocks tile requests without a Referer). The rest of the app sends no
+// Referer to other sites; tiles get our origin only, never the page path.
+L.tileLayer(root.dataset.tiles, {
   maxZoom: 19,
-  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  attribution: root.dataset.attribution,
+  referrerPolicy: 'strict-origin-when-cross-origin',
 }).addTo(map);
 if (venue) {
   L.circleMarker(venue, { radius: 8, color: '#2350C8', weight: 3, fillOpacity: 0.2 }).addTo(map)
