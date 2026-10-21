@@ -2,7 +2,8 @@
 {{$d := .Data}}
 <p class="crumb"><a href="/o/{{$d.Org.Slug}}/pass-templates">Pass templates</a></p>
 <div id="designer" class="designer" data-api="{{$d.APIBase}}" data-csrf="{{.CSRF}}" data-design="{{$d.DesignJSON}}"
-     data-editable="{{$d.CanManage}}" data-variables="{{jsonText $d.Variables}}">
+     data-editable="{{$d.CanManage}}" data-variables="{{jsonText $d.Variables}}"
+     data-assets="/api/v1/orgs/{{$d.Org.Slug}}/pass-assets">
   <div class="designer-bar">
     <label for="tpl-name" class="sr-only">Template name</label>
     <input id="tpl-name" type="text" maxlength="100" value="{{$d.Template.Name}}"{{if not $d.CanManage}} readonly{{end}}>
@@ -31,7 +32,10 @@
         <button class="btn btn-quiet" type="button" data-add="rect">+ Box</button>
         <button class="btn btn-quiet" type="button" data-add="line">+ Line</button>
         <button class="btn btn-quiet" type="button" data-add="statusBand">+ Status band</button>
+        <button id="add-image" class="btn btn-quiet" type="button">+ Image</button>
+        <input id="image-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
       </div>
+      <p class="hint">Images: PNG, JPEG or WebP up to 10 MB, such as a logo or your own artwork. Put full artwork first in the list so everything else sits on top.</p>
       {{end}}
     </aside>
 

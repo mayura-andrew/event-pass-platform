@@ -61,6 +61,9 @@ type Config struct {
 	// AES-256 key (base64) that encrypts Google refresh tokens for Sheets
 	// sync and Form import. Empty: derived from JWT_SECRET (development).
 	IntegrationsKey string
+
+	// Public status page (Better Stack, Instatus, ...), linked from help.
+	StatusPageURL string
 }
 
 func Load() (*Config, error) {
@@ -89,6 +92,7 @@ func Load() (*Config, error) {
 		ProductName:     getenv("PRODUCT_NAME", "Event Pass"),
 		PassSigningKeys: os.Getenv("PASS_SIGNING_KEYS"),
 		IntegrationsKey: os.Getenv("INTEGRATIONS_KEY"),
+		StatusPageURL:   os.Getenv("STATUS_PAGE_URL"),
 	}
 	c.ClientIPHeader = os.Getenv("CLIENT_IP_HEADER")
 	var err error

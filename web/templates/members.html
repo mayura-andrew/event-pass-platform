@@ -81,5 +81,15 @@
     <button class="btn btn-line" type="submit">Save</button>
   </form>
 </section>
+{{if .Data.Org.Settings.ChecklistHidden}}
+<section class="card" aria-labelledby="org-checklist">
+  <h2 id="org-checklist">Setup checklist</h2>
+  <p class="muted">The steps from a new organization to a first test scan, on the events home.</p>
+  <form method="post" action="/o/{{.Data.Org.Slug}}/checklist/show">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <button class="btn btn-line" type="submit">Show the checklist</button>
+  </form>
+</section>
+{{end}}
 {{end}}
 {{end}}

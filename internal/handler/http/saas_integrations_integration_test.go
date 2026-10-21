@@ -265,12 +265,9 @@ func TestIntegrationsGate(t *testing.T) {
 	}
 
 	// A check-in reaches the sheet on the next run after the debounce.
-	var cp string
-	for _, c := range f.cps {
-		cp = c.ID
-		break
+	if r := f.scan(t, owner, f.tokens[f.people[0].ID], f.cps["Check in"].ID, ""); r.Result != domain.ScanRecorded {
+		t.Fatalf("scan: %s %s", r.Result, r.Message)
 	}
-	f.scan(t, owner, f.tokens[f.people[0].ID], cp, "")
 	time.Sleep(1100 * time.Millisecond)
 	if run() != 1 {
 		t.Fatal("a check-in didn't make the sheet due")

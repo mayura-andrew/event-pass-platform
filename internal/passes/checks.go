@@ -64,6 +64,14 @@ func Check(d Design) []Problem {
 		}
 		ids[e.ID] = true
 		switch e.Type {
+		case "image":
+			if AssetID(e.Src) == "" {
+				add(e.ID, "%s has no uploaded image", e.ID)
+			}
+			if !isImageFit(e.Fit) {
+				add(e.ID, "%s: fit must be cover, contain or fill", e.ID)
+			}
+			fallthrough
 		case "statusBand", "text", "answers", "rect", "line":
 			if e.W <= 0 || (e.Type != "line" && e.H <= 0) {
 				add(e.ID, "%s has no size", e.ID)
@@ -174,7 +182,8 @@ func checkQR(d Design, e Element, add func(string, string, ...any)) {
 
 // checkQRClear refuses anything that covers the QR code or is hidden by it:
 // text over a code can make it unscannable. Boxes and lines drawn before
-// the code (underneath it) are allowed, as frames.
+// the code (underneath it) are allowed, as frames, and so are images such
+// as uploaded artwork: the code draws its own light square on top.
 func checkQRClear(d Design, add func(string, string, ...any)) {
 	var qr Element
 	qrAt := 0
@@ -188,7 +197,7 @@ func checkQRClear(d Design, add func(string, string, ...any)) {
 			continue
 		}
 		overlaps := e.X < qr.X+qr.Size && qr.X < e.X+e.W && e.Y < qr.Y+qr.Size && qr.Y < e.Y+max(e.H, 1)
-		if !overlaps || ((e.Type == "rect" || e.Type == "line") && i < qrAt) {
+		if !overlaps || ((e.Type == "rect" || e.Type == "line" || e.Type == "image") && i < qrAt) {
 			continue
 		}
 		add(e.ID, "%s overlaps the QR code: move it clear so the code scans and nothing is hidden", e.ID)

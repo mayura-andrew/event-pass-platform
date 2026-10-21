@@ -25,6 +25,58 @@
     <p class="hint">Print the PDF at actual size (100%).</p>
   </section>
 </div>
+{{with .Data.Profile}}{{$pr := .}}{{$f := $.Data.ProfileForm}}{{$errs := $.Data.ProfileErrors}}
+<section class="card mt-24 profile-card" id="profile" aria-labelledby="my-profile">
+  <div class="profile-head">
+    <h2 id="my-profile">Your profile <span class="chip chip-beta">Beta</span></h2>
+    {{if $.Data.MapOn}}<a class="btn" href="/me/passes/{{$p.ID}}/map">Find participants on the map</a>{{end}}
+  </div>
+  <p class="muted">Let other participants at {{$e.Name}} know who you are. Nothing here is shown to anyone until you make it public.</p>
+  <form method="post" action="/me/passes/{{$p.ID}}/profile#profile" enctype="multipart/form-data" class="profile-form">
+    <input type="hidden" name="csrf" value="{{$.CSRF}}">
+    <div class="profile-photo">
+      {{if $pr.HasPhoto}}<img src="/me/passes/{{$p.ID}}/photo/{{$p.ID}}?v={{$pr.PhotoUpdatedAt.Unix}}" alt="Your profile photo" width="120" height="120">
+      {{else}}<span class="avatar-empty" aria-hidden="true">{{initial $p.FullName $p.Email}}</span>{{end}}
+      <div class="field">
+        <label for="pf-photo">{{if $pr.HasPhoto}}Change photo{{else}}Photo{{end}}</label>
+        <input id="pf-photo" name="photo" type="file" accept="image/png,image/jpeg,image/webp"{{with index $errs "photo"}} aria-invalid="true" aria-describedby="pf-photo-err"{{end}}>
+        {{with index $errs "photo"}}<p class="field-error" id="pf-photo-err">{{.}}</p>{{end}}
+        <p class="hint">Cropped to a square. Re-saved before it's stored, so details like location are removed.</p>
+        {{if $pr.HasPhoto}}<label class="check"><input type="checkbox" name="remove_photo"> Remove my photo</label>{{end}}
+      </div>
+    </div>
+    <div class="field">
+      <label for="pf-headline">Headline</label>
+      <input id="pf-headline" name="headline" type="text" maxlength="100" value="{{if $f}}{{$f.Headline}}{{else}}{{$pr.Headline}}{{end}}" placeholder="Data science student, University of Colombo"{{with index $errs "headline"}} aria-invalid="true"{{end}}>
+      {{with index $errs "headline"}}<p class="field-error">{{.}}</p>{{end}}
+    </div>
+    <div class="row cols">
+      <div class="field grow">
+        <label for="pf-linkedin">LinkedIn</label>
+        <input id="pf-linkedin" name="linkedin" type="text" inputmode="url" value="{{if $f}}{{$f.LinkedIn}}{{else}}{{$pr.Links.LinkedIn}}{{end}}" placeholder="linkedin.com/in/your-name"{{with index $errs "linkedin"}} aria-invalid="true"{{end}}>
+        {{with index $errs "linkedin"}}<p class="field-error">{{.}}</p>{{end}}
+      </div>
+      <div class="field grow">
+        <label for="pf-github">GitHub</label>
+        <input id="pf-github" name="github" type="text" inputmode="url" value="{{if $f}}{{$f.GitHub}}{{else}}{{$pr.Links.GitHub}}{{end}}" placeholder="github.com/your-name"{{with index $errs "github"}} aria-invalid="true"{{end}}>
+        {{with index $errs "github"}}<p class="field-error">{{.}}</p>{{end}}
+      </div>
+    </div>
+    <div class="field">
+      <label for="pf-website">Website</label>
+      <input id="pf-website" name="website" type="text" inputmode="url" value="{{if $f}}{{$f.Website}}{{else}}{{$pr.Links.Website}}{{end}}" placeholder="example.com"{{with index $errs "website"}} aria-invalid="true"{{end}}>
+      {{with index $errs "website"}}<p class="field-error">{{.}}</p>{{end}}
+    </div>
+    {{$vis := $pr.Visibility}}{{if $f}}{{$vis = $f.Visibility}}{{end}}
+    <fieldset class="group">
+      <legend>Who can see it</legend>
+      <label class="check"><input type="radio" name="visibility" value="private"{{if ne $vis "public"}} checked{{end}}> <span><b>Only me</b>: not shown to anyone</span></label>
+      <label class="check"><input type="radio" name="visibility" value="public"{{if eq $vis "public"}} checked{{end}}> <span><b>Other participants of this event</b>: your name, photo, headline and links{{if $.Data.MapOn}}; you can then choose to appear on the participant map{{end}}</span></label>
+    </fieldset>
+    <button class="btn" type="submit">Save profile</button>
+  </form>
+</section>
+{{end}}
 {{if .Data.Workshops}}
 <section class="card mt-24" aria-labelledby="my-ws">
   <h2 id="my-ws">Workshops</h2>

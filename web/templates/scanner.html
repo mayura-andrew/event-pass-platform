@@ -1,7 +1,7 @@
 {{define "content"}}
 {{$d := .Data}}
 <div id="scanner" class="scanner" data-api="{{$d.APIBase}}" data-csrf="{{.CSRF}}" data-event="{{$d.Event.ID}}">
-  <p class="crumb"><a href="{{$d.Base}}">{{$d.Event.Name}}</a> · Scan</p>
+  <p class="crumb"><a href="{{$d.Base}}">{{$d.Event.Name}}</a> · Scan · <a href="/help/scanner">Help</a></p>
   <div class="scan-controls">
     <div class="field grow">
       <label for="cp">Checkpoint</label>

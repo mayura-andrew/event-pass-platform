@@ -28,6 +28,28 @@
 </section>
 {{end}}
 
+{{if $d.CanManage}}
+<section class="card" aria-labelledby="upload">
+  <h2 id="upload">Upload your own design</h2>
+  <p class="muted">Made your pass in Canva, Figma or Photoshop? Upload it and it becomes the background. Each person's name, QR code and pass ID are added on top; you place them in the next step.</p>
+  <form method="post" action="/o/{{$d.Org.Slug}}/pass-templates/upload" enctype="multipart/form-data">
+    <input type="hidden" name="csrf" value="{{$csrf}}">
+    <div class="row cols">
+      <div class="field grow">
+        <label for="up-name">Template name</label>
+        <input id="up-name" name="name" type="text" required minlength="2" maxlength="100" placeholder="Space Apps 2026 pass">
+      </div>
+      <div class="field grow">
+        <label for="up-file">Artwork</label>
+        <input id="up-file" name="file" type="file" required accept="image/png,image/jpeg,image/webp">
+      </div>
+    </div>
+    <p class="hint">PNG, JPEG or WebP, up to 10 MB. For a phone pass use 1080 × 1920 px (portrait); for a printed badge 1200 × 900 px (landscape). Leave a clear area for the QR code: about half the width on a phone pass. PDF or SVG? Export it as PNG first.</p>
+    <button class="btn" type="submit">Upload and place</button>
+  </form>
+</section>
+{{end}}
+
 <section class="card" aria-labelledby="gallery">
   <h2 id="gallery">Start from the gallery</h2>
   <ul class="cards grid gallery">

@@ -205,6 +205,47 @@ for (const b of root.querySelectorAll('[data-add]')) {
   }));
 }
 
+// ---- Images (uploaded to the org, used as "asset:<id>") ------------------------------
+let replacing = null; // element whose image is being replaced
+const addImage = $('add-image');
+if (addImage) {
+  addImage.addEventListener('click', () => { replacing = null; $('image-file').click(); });
+  $('image-file').addEventListener('change', async (ev) => {
+    const file = ev.target.files[0];
+    ev.target.value = '';
+    if (!file) return;
+    $('status').textContent = 'Uploading image…';
+    const body = new FormData();
+    body.append('file', file);
+    let res;
+    try {
+      res = await fetch(root.dataset.assets, { method: 'POST', headers: { 'X-CSRF-Token': csrf }, body });
+    } catch {
+      $('status').textContent = 'Upload failed: check your connection.';
+      return;
+    }
+    const a = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      $('status').textContent = a.error || `Upload failed (HTTP ${res.status}).`;
+      return;
+    }
+    change(() => {
+      if (replacing && el(replacing)) {
+        el(replacing).src = a.src;
+        selected = replacing;
+        return;
+      }
+      let n = 1;
+      while (el(`image${n}`)) n++;
+      // A logo-sized image to start, keeping its shape; resize from there.
+      const w = Math.round(design.size.width * 0.4);
+      const h = Math.max(1, Math.round((w * a.height) / a.width));
+      design.elements.push({ id: `image${n}`, type: 'image', src: a.src, fit: 'contain', x: 72, y: 72, w, h: Math.min(h, design.size.height - 72) });
+      selected = `image${n}`;
+    });
+  });
+}
+
 // ---- Properties --------------------------------------------------------------------
 const fieldsFor = {
   statusBand: ['x', 'y', 'w', 'h', 'fontSize', 'visibleFor'],
@@ -213,10 +254,11 @@ const fieldsFor = {
   qr: ['x', 'y', 'size', 'fg', 'bg', 'quietZone', 'ecc'],
   rect: ['x', 'y', 'w', 'h', 'color', 'visibleFor'],
   line: ['x', 'y', 'w', 'h', 'color', 'visibleFor'],
+  image: ['x', 'y', 'w', 'h', 'fit', 'replace', 'visibleFor'],
 };
 const labels = { text: 'Text', x: 'X', y: 'Y', w: 'Width', h: 'Height', size: 'Size', fontSize: 'Font size', weight: 'Weight',
   color: 'Color', align: 'Align', maxLines: 'Max lines', shrinkMin: 'Shrink to fit, down to', transform: 'Capitals',
-  hideIfEmpty: 'Hide when empty', visibleFor: 'Show for', fg: 'Dark color', bg: 'Light color', quietZone: 'Quiet zone (modules)', ecc: 'Error correction' };
+  hideIfEmpty: 'Hide when empty', visibleFor: 'Show for', fit: 'Fit', replace: 'Image', fg: 'Dark color', bg: 'Light color', quietZone: 'Quiet zone (modules)', ecc: 'Error correction' };
 const colorChoices = ['token:ink', 'token:muted', 'token:primary', 'token:surface', 'token:line', 'token:success', 'token:warning', 'token:danger'];
 const statuses = ['registered', 'pending', 'waitlisted', 'cancelled'];
 
@@ -264,6 +306,17 @@ function control(e, k) {
   else if (k === 'weight') options(['400', '700'], (x) => (x === '700' ? 'Bold' : 'Regular'));
   else if (k === 'align') options(['center', 'left', 'right']);
   else if (k === 'transform') options(['', 'upper'], (x) => (x ? 'ALL CAPITALS' : 'As typed'));
+  else if (k === 'fit') options(['cover', 'contain', 'fill'], (x) => ({ cover: 'Fill the box (crop)', contain: 'Fit inside the box', fill: 'Stretch' }[x]));
+  else if (k === 'replace') {
+    input = document.createElement('button');
+    input.type = 'button';
+    input.className = 'btn btn-line';
+    input.textContent = 'Replace image…';
+    input.disabled = !editable;
+    input.addEventListener('click', () => { replacing = e.id; $('image-file').click(); });
+    wrap.append(input);
+    return wrap;
+  }
   else if (k === 'ecc') options(['M', 'L', 'Q', 'H'], (x) => ({ L: 'Low (7%)', M: 'Medium (15%)', Q: 'Quartile (25%)', H: 'High (30%)' }[x]));
   else if (k === 'color') {
     input = document.createElement('input');

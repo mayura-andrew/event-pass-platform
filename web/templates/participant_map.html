@@ -1,0 +1,50 @@
+{{define "content"}}
+{{$d := .Data}}{{$p := $d.Pass.Participant}}{{$e := $d.Pass.Event}}
+<link rel="stylesheet" href="/static/vendor/leaflet-1.9.4/leaflet.css">
+<p class="crumb"><a href="/me">My passes</a> · <a href="/me/passes/{{$p.ID}}">{{$e.Name}}</a></p>
+<div class="event-head"><h1>Participant map</h1><span class="chip chip-beta">Beta</span></div>
+<p class="lede">See who's here and say hello. Only participants with a public profile who chose to share their location appear on the map.</p>
+
+<div id="pmap" class="pmap" data-api="/api/v1/me/passes/{{$p.ID}}" data-photo="/me/passes/{{$p.ID}}/photo/" data-csrf="{{.CSRF}}"
+     data-public="{{$d.Public}}"{{if $d.Venue.Has}} data-venue-lat="{{$d.Venue.Lat}}" data-venue-lng="{{$d.Venue.Lng}}" data-venue-name="{{$e.Venue.Name}}"{{end}}>
+  <section class="card share-card" aria-labelledby="share-title">
+    <h2 id="share-title" class="sr-only">Your location</h2>
+    {{if $d.Public}}
+    <div class="share-row">
+      <button id="share" class="btn" type="button" aria-pressed="false">Share my location</button>
+      <p id="share-status" class="hint" role="status" aria-live="polite">Not sharing. Other participants can see your profile in the list, but not where you are.</p>
+    </div>
+    <p class="hint">While you share, your position updates from this phone and is visible to this event's participants. It stops when you press Stop or leave this page, and disappears from the map within 3 minutes if your connection drops.</p>
+    {{else}}
+    <p>Your profile is private, so you don't appear here. <a href="/me/passes/{{$p.ID}}#profile">Make it public</a> to share your location and show up in the list.</p>
+    {{end}}
+  </section>
+
+  <div class="pmap-grid">
+    <div id="map" class="map" role="region" aria-label="Map of participants sharing their location"></div>
+    <section class="card people-card" aria-labelledby="people-title">
+      <h2 id="people-title">People <span id="people-count" class="muted"></span></h2>
+      <input id="people-search" type="search" placeholder="Search by name or headline" aria-label="Search people">
+      <ul id="people" class="map-people" aria-live="polite"></ul>
+      <p id="people-empty" class="muted" hidden>Nobody has a public profile yet. Be the first: it's on your pass page.</p>
+    </section>
+  </div>
+
+  <section class="card feedback-card" aria-labelledby="fb-title">
+    <h2 id="fb-title">Is the map useful?</h2>
+    <p class="muted">It's a beta: tell the organizers what works and what doesn't.</p>
+    <form id="feedback" class="feedback-form">
+      <div class="row" role="group" aria-label="Your rating">
+        <button class="btn btn-line" type="button" data-rating="1" aria-pressed="false">👍 Useful</button>
+        <button class="btn btn-line" type="button" data-rating="-1" aria-pressed="false">👎 Not useful</button>
+      </div>
+      <label for="fb-comment" class="sr-only">Comment</label>
+      <textarea id="fb-comment" rows="3" maxlength="1000" placeholder="What would make it better? (optional)"></textarea>
+      <button class="btn" type="submit" disabled>Send feedback</button>
+      <p id="fb-status" class="hint" role="status" aria-live="polite"></p>
+    </form>
+  </section>
+</div>
+<script src="/static/vendor/leaflet-1.9.4/leaflet.js"></script>
+<script type="module" src="/static/js/participant-map.js"></script>
+{{end}}

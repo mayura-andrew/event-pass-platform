@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"image/png"
+	"io"
 	"strings"
 	"unicode/utf8"
 
@@ -25,13 +27,21 @@ type PassTemplateStore interface {
 	QueuePasses(ctx context.Context, es authz.EventScope) (int, error)
 }
 
+// PassAssetStore keeps uploaded images (postgres.PassAssetRepo).
+type PassAssetStore interface {
+	Save(ctx context.Context, sc authz.OrgScope, a *passes.Asset) (*domain.PassAsset, error)
+	Get(ctx context.Context, sc authz.OrgScope, id string) (*domain.PassAsset, []byte, error)
+	LoadAssets(ctx context.Context, orgID string, ids []string) (map[string][]byte, error)
+}
+
 type PassTemplateService struct {
 	store  PassTemplateStore
+	assets PassAssetStore
 	passes *PassService
 }
 
-func NewPassTemplateService(store PassTemplateStore, passes *PassService) *PassTemplateService {
-	return &PassTemplateService{store: store, passes: passes}
+func NewPassTemplateService(store PassTemplateStore, assets PassAssetStore, passes *PassService) *PassTemplateService {
+	return &PassTemplateService{store: store, assets: assets, passes: passes}
 }
 
 // DesignProblems are failed scan checks; saving is refused (a validation
@@ -129,8 +139,11 @@ func (s *PassTemplateService) Save(ctx context.Context, sc authz.OrgScope, id, n
 	if err != nil {
 		return 0, err
 	}
-	_, clean, err := parseDesign(design)
+	d, clean, err := parseDesign(design)
 	if err != nil {
+		return 0, err
+	}
+	if err := s.checkAssets(ctx, sc, d); err != nil {
 		return 0, err
 	}
 	return s.store.SaveVersion(ctx, sc, id, name, clean)
@@ -155,13 +168,35 @@ func (s *PassTemplateService) Check(design json.RawMessage) []passes.Problem {
 	return nil
 }
 
+// checkAssets makes sure every image a design shows was uploaded to this
+// org: a design can't borrow another org's images by ID.
+func (s *PassTemplateService) checkAssets(ctx context.Context, sc authz.OrgScope, d passes.Design) error {
+	ids := passes.AssetIDs(d)
+	if len(ids) == 0 {
+		return nil
+	}
+	found, err := s.assets.LoadAssets(ctx, sc.OrgID(), ids)
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if _, ok := found[id]; !ok {
+			return DesignProblems{{Message: "an image in this design wasn't uploaded to this organization; upload it again"}}
+		}
+	}
+	return nil
+}
+
 // Preview renders an (unsaved) design as PNG for a sample participant, or
 // for a real participant's pass context. It uses the same renderer as the
 // passes people receive, so what the designer shows is what they get.
-func (s *PassTemplateService) Preview(design json.RawMessage, sample string, pc *domain.PassContext) ([]byte, error) {
+func (s *PassTemplateService) Preview(ctx context.Context, orgID string, design json.RawMessage, sample string, pc *domain.PassContext) ([]byte, error) {
 	var d passes.Design
 	if err := json.Unmarshal(design, &d); err != nil {
 		return nil, invalid("the design isn't valid: %v", err)
+	}
+	if err := s.passes.LoadImages(ctx, orgID, &d); err != nil {
+		return nil, err
 	}
 	var v passes.Vars
 	if pc != nil {
@@ -193,6 +228,50 @@ func sampleToken() string {
 	tok, _ := passes.DerivedKeyRing([]byte("preview")).Issue("00000000-0000-7000-8000-000000000001",
 		"00000000-0000-7000-8000-000000000002", "00000000-0000-7000-8000-000000000003", "CSA-7KQ4-M2XD")
 	return tok
+}
+
+// ---- Uploaded images --------------------------------------------------------------
+
+// UploadAsset stores an image for designs (artwork, a logo).
+func (s *PassTemplateService) UploadAsset(ctx context.Context, sc authz.OrgScope, r io.Reader) (*domain.PassAsset, error) {
+	if err := sc.Require(authz.ManageTemplates); err != nil {
+		return nil, err
+	}
+	a, err := passes.PrepareUpload(r)
+	if errors.Is(err, passes.ErrNotImage) {
+		return nil, invalid("%s; export PDF or SVG artwork as PNG first", err)
+	}
+	if err != nil {
+		return nil, invalid("%v", err)
+	}
+	return s.assets.Save(ctx, sc, a)
+}
+
+// Asset returns an uploaded image, for anyone who can see the templates.
+func (s *PassTemplateService) Asset(ctx context.Context, sc authz.OrgScope, id string) (*domain.PassAsset, []byte, error) {
+	if _, err := s.List(ctx, sc); err != nil { // same access rule
+		return nil, nil, err
+	}
+	return s.assets.Get(ctx, sc, id)
+}
+
+// CreateFromArtwork makes a template from an uploaded design: the artwork
+// fills the pass and the name, QR code and pass ID go on top, ready to be
+// arranged in the designer.
+func (s *PassTemplateService) CreateFromArtwork(ctx context.Context, sc authz.OrgScope, name string, r io.Reader) (*domain.PassTemplate, error) {
+	name, err := templateName(name)
+	if err != nil {
+		return nil, err
+	}
+	a, err := s.UploadAsset(ctx, sc, r)
+	if err != nil {
+		return nil, err
+	}
+	design, _ := json.Marshal(passes.ArtworkDesign(a.ID, a.Width, a.Height))
+	if _, _, err := parseDesign(design); err != nil {
+		return nil, err
+	}
+	return s.store.Create(ctx, sc, name, design)
 }
 
 // ---- Events ----------------------------------------------------------------------

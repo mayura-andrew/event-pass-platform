@@ -5,6 +5,8 @@ package httphandler
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"mime/multipart"
 	"net/http"
 	"strconv"
 
@@ -27,9 +29,12 @@ func init() {
 		{"POST", tpl + "/{template}/restore", true, (*Handler).apiRestoreTemplate},
 		{"POST", tpl + "/{template}/preview", true, (*Handler).apiPreviewTemplate},
 		{"POST", tpl + "/{template}/check", true, (*Handler).apiCheckTemplate},
+		{"POST", "/api/v1/orgs/{org}/pass-assets", true, (*Handler).apiUploadAsset},
+		{"GET", "/api/v1/orgs/{org}/pass-assets/{asset}", true, (*Handler).apiAsset},
 
 		{"GET", "/o/{org}/pass-templates", false, (*Handler).templatesPage},
 		{"POST", "/o/{org}/pass-templates", false, (*Handler).createTemplatePost},
+		{"POST", "/o/{org}/pass-templates/upload", false, (*Handler).uploadTemplatePost},
 		{"GET", "/o/{org}/pass-templates/{template}", false, (*Handler).designerPage},
 		{"POST", "/o/{org}/pass-templates/{template}/archive", false, (*Handler).archiveTemplatePost},
 		{"POST", "/o/{org}/pass-templates/{template}/restore", false, (*Handler).restoreTemplatePost},
@@ -151,7 +156,7 @@ func (h *Handler) apiPreviewTemplate(w http.ResponseWriter, r *http.Request, o *
 	if !decodeJSON(w, r, 128<<10, &req) {
 		return
 	}
-	b, err := h.Templates.Preview(req.Design, r.URL.Query().Get("sample"), nil)
+	b, err := h.Templates.Preview(r.Context(), o.org.ID, req.Design, r.URL.Query().Get("sample"), nil)
 	if err != nil {
 		writeDomainError(w, r, err)
 		return
@@ -249,7 +254,54 @@ func (h *Handler) eventPreview(r *http.Request, e *eventReq, design json.RawMess
 			return nil, err
 		}
 	}
-	return h.Templates.Preview(design, sample, pc)
+	return h.Templates.Preview(r.Context(), e.event.OrgID, design, sample, pc)
+}
+
+// ---- Uploaded images -------------------------------------------------------------
+
+// uploadedFile opens the multipart "file" field, within the upload limit.
+func uploadedFile(w http.ResponseWriter, r *http.Request) (multipart.File, error) {
+	r.Body = http.MaxBytesReader(w, r.Body, passes.MaxUploadBytes+1<<20)
+	f, _, err := r.FormFile("file")
+	var tooBig *http.MaxBytesError
+	switch {
+	case errors.As(err, &tooBig):
+		return nil, fmt.Errorf("%w: the image is over %d MB", domain.ErrValidation, passes.MaxUploadBytes>>20)
+	case err != nil:
+		return nil, fmt.Errorf("%w: choose an image to upload", domain.ErrValidation)
+	}
+	return f, nil
+}
+
+// POST /api/v1/orgs/{org}/pass-assets (multipart "file"): stores an image
+// and returns its "asset:<id>" for an image element.
+func (h *Handler) apiUploadAsset(w http.ResponseWriter, r *http.Request, o *orgReq) {
+	f, err := uploadedFile(w, r)
+	if err != nil {
+		writeDomainError(w, r, err)
+		return
+	}
+	defer f.Close()
+	a, err := h.Templates.UploadAsset(r.Context(), o.sc, f)
+	if err != nil {
+		writeDomainError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, a)
+}
+
+// GET /api/v1/orgs/{org}/pass-assets/{asset}: the stored image. Assets
+// never change, so it may be cached (privately: it's the org's).
+func (h *Handler) apiAsset(w http.ResponseWriter, r *http.Request, o *orgReq) {
+	a, data, err := h.Templates.Asset(r.Context(), o.sc, r.PathValue("asset"))
+	if err != nil {
+		writeDomainError(w, r, err)
+		return
+	}
+	w.Header().Set("Content-Type", a.ContentType)
+	w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	_, _ = w.Write(data)
 }
 
 // =============================================================================
@@ -293,6 +345,27 @@ func (h *Handler) createTemplatePost(w http.ResponseWriter, r *http.Request, o *
 	http.Redirect(w, r, "/o/"+o.org.Slug+"/pass-templates/"+t.ID, http.StatusSeeOther)
 }
 
+// POST /o/{org}/pass-templates/upload (multipart: name, file): a template
+// from the organizer's own artwork, opened in the designer to place the
+// name and QR code.
+func (h *Handler) uploadTemplatePost(w http.ResponseWriter, r *http.Request, o *orgReq) {
+	f, err := uploadedFile(w, r)
+	if err == nil {
+		defer f.Close()
+		var t *domain.PassTemplate
+		if t, err = h.Templates.CreateFromArtwork(r.Context(), o.sc, r.PostFormValue("name"), f); err == nil {
+			http.Redirect(w, r, "/o/"+o.org.Slug+"/pass-templates/"+t.ID+"?notice=artwork", http.StatusSeeOther)
+			return
+		}
+	}
+	status, msg := pageErrorStatus(err)
+	if status == http.StatusInternalServerError || status == http.StatusNotFound {
+		h.renderError(w, r, o.principal, err)
+		return
+	}
+	h.renderTemplates(w, r, o, status, msg)
+}
+
 type designerData struct {
 	orgPageData
 	Template   *domain.PassTemplate
@@ -312,7 +385,9 @@ func (h *Handler) designerPage(w http.ResponseWriter, r *http.Request, o *orgReq
 	d := designerData{orgPageData: orgPageData{Org: o.org, Tab: "templates", sc: o.sc}, Template: t,
 		DesignJSON: string(t.Design), APIBase: "/api/v1/orgs/" + o.org.Slug + "/pass-templates/" + t.ID,
 		Samples: passes.SampleOrder, Variables: passes.Variables, CanManage: o.sc.Can(authz.ManageTemplates)}
-	h.render(w, http.StatusOK, "designer", o.principal, view{Title: t.Name + " · Designer", Data: d})
+	h.render(w, http.StatusOK, "designer", o.principal, view{Title: t.Name + " · Designer", Data: d,
+		Notice: map[string]string{"artwork": "Your artwork is in. Move the name, QR code and pass ID to where they belong, " +
+			"remove the white panels if your artwork leaves room, then save."}[r.URL.Query().Get("notice")]})
 }
 
 func (h *Handler) archiveTemplatePost(w http.ResponseWriter, r *http.Request, o *orgReq) {

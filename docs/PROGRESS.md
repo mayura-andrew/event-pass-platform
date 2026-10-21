@@ -107,7 +107,25 @@ no duplicates.
 | Revoked Google access shows "Needs reconnecting"; failures retried every minute | Done |
 | Tests: designer gate (preview = PNG = PDF), integrations gate against a fake Google, forged callback; matrix covers the new routes | Done |
 
-## Next: M6
+## M6 Billing and launch: in progress
+
+Gate: Free and Pro plans with limits enforced; Stripe checkout and customer
+portal work; onboarding checklist, help docs and status page are live; an
+external security review is done. A real pilot event runs on production
+with no lost check-ins.
+
+| Part | State |
+| --- | --- |
+| Setup checklist on the events home (owners and admins): six steps ticked off from what exists, hide and show again | Done |
+| Help pages at `/help` (10 topics, public), linked from the top bar, checklist, scanner, Check-in and Integrations tabs | Done |
+| Health check `/api/v1/health` (database, late emails) for an uptime monitor; `STATUS_PAGE_URL` linked from help | Done |
+| Status page itself (hosted service, see DEPLOY.md step 9) | To set up, outside the code |
+| Participant profiles (photo, headline, LinkedIn/GitHub/website, private or public to the event) and the participant map beta: per-event switch, opt-in live location (expires after 3 min, deleted on stop, going private or map off), feedback to organizers (migration 015) | Demo, for feedback |
+| Own artwork as a pass template: upload PNG/JPEG/WebP, re-encoded and stored per org (migration 014); name, QR and pass ID placed on top; `+ Image` in the designer for logos | Done |
+| Plans, usage and limits | Next |
+| Stripe checkout, customer portal, webhooks | Not started |
+| Gaps against the current admin dashboard; pilot rehearsal on staging | Not started |
+| Security self-review; external review booked | Not started |
 
 ## Open questions (need a decision)
 

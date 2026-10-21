@@ -1,0 +1,18 @@
+{{define "helpbody"}}
+<p class="lead">Already collecting sign-ups in a Google Form? Connect it and every response becomes a participant with a pass, checked about once a minute.</p>
+<ol class="help-steps">
+  <li>On the event's <b>Integrations</b> tab, choose <b>Connect a Google Form</b> and allow access with the Google account that owns the form. The app can read forms and responses; it changes nothing.</li>
+  <li>Paste the form's link from the form editor's address bar (it contains <code>/forms/d/</code>), then <b>Link form</b>. The public link that people fill in won't work here.</li>
+  <li>Match the questions: which one is the full name, which the email (or use the email Google collects), and where other answers go, for example <i>Dietary needs</i> into your event's food question.</li>
+  <li>Choose <b>Start importing</b>.</li>
+</ol>
+<h2>What happens to each response</h2>
+<ul>
+  <li>Each response is imported once, however often the form is checked.</li>
+  <li>Someone already registered with the same email is skipped, not added twice.</li>
+  <li>A response without a usable name or email isn't imported; the tab says how many.</li>
+  <li>Answers that don't match your question's options are left out; the person is still imported.</li>
+  <li>Imported people get their pass by email, the same as people who used your registration page. Capacity, approval and the waitlist apply too.</li>
+</ul>
+<p><b>Import now</b> checks for new responses immediately.</p>
+{{end}}

@@ -30,6 +30,7 @@ type OrgStore interface {
 	InviteByToken(ctx context.Context, tokenHash []byte) (*domain.InviteDetails, error)
 	AcceptInvite(ctx context.Context, as authz.AccountScope, inv *domain.InviteDetails) (*domain.OrgMembership, error)
 	UpdateSettings(ctx context.Context, sc authz.OrgScope, st domain.OrgSettings) error
+	Onboarding(ctx context.Context, sc authz.OrgScope) (*domain.Onboarding, error)
 	ListAudit(ctx context.Context, sc authz.OrgScope, eventID string, limit int) ([]domain.AuditEntry, error)
 }
 
@@ -270,6 +271,25 @@ func (s *OrgService) UpdateSettings(ctx context.Context, sc authz.OrgScope, org 
 	}
 	st := org.Settings
 	st.ExternalSharing = &externalSharing
+	return s.store.UpdateSettings(ctx, sc, st)
+}
+
+// Onboarding is the setup checklist's progress, for the owners and admins
+// who set the org up.
+func (s *OrgService) Onboarding(ctx context.Context, sc authz.OrgScope) (*domain.Onboarding, error) {
+	if err := sc.Require(authz.UpdateOrg); err != nil {
+		return nil, err
+	}
+	return s.store.Onboarding(ctx, sc)
+}
+
+// SetChecklistHidden hides or shows the setup checklist for the org.
+func (s *OrgService) SetChecklistHidden(ctx context.Context, sc authz.OrgScope, org *domain.OrgMembership, hidden bool) error {
+	if err := sc.Require(authz.UpdateOrg); err != nil {
+		return err
+	}
+	st := org.Settings
+	st.ChecklistHidden = hidden
 	return s.store.UpdateSettings(ctx, sc, st)
 }
 

@@ -2,6 +2,33 @@
 {{template "orgtabs" .}}
 {{$d := .Data}}{{$csrf := .CSRF}}
 
+{{with $d.Checklist}}{{$next := .Next}}
+<section class="card checklist" aria-labelledby="checklist-title">
+  <div class="checklist-head">
+    <div>
+      <h2 id="checklist-title">Set up your first event</h2>
+      <p class="muted">{{.Done}} of {{len .Steps}} done{{with $next}} · next: {{.Title}}{{end}}</p>
+    </div>
+    <form method="post" action="/o/{{$d.Org.Slug}}/checklist/hide">
+      <input type="hidden" name="csrf" value="{{$csrf}}">
+      <button class="btn btn-quiet" type="submit">Hide</button>
+    </form>
+  </div>
+  <progress max="{{len .Steps}}" value="{{.Done}}" aria-label="Setup progress">{{.Done}} of {{len .Steps}}</progress>
+  <ol class="steps">
+    {{range .Steps}}
+    <li class="{{if .Done}}done{{else if .IsNext}}next{{end}}">
+      <span class="step-mark" aria-hidden="true">{{if .Done}}✓{{end}}</span>
+      <div class="step-text">
+        {{if .Done}}<span class="step-title">{{.Title}}</span> <span class="sr-only">(done)</span>{{else}}<a class="step-title" href="{{.Href}}">{{.Title}}</a>{{end}}
+        <span class="hint">{{.Detail}} <a href="/help/{{.Help}}">How</a></span>
+      </div>
+    </li>
+    {{end}}
+  </ol>
+</section>
+{{end}}
+
 <div class="home">
   <nav class="views" aria-label="Event lists">
     {{if $d.CanCreate}}<a class="btn btn-block" href="/o/{{$d.Org.Slug}}/events/new">New event</a>{{end}}

@@ -1,0 +1,16 @@
+{{define "helpbody"}}
+<p class="lead">Events are shared like documents: add people by email on the event's <b>Share</b> tab and choose a role.</p>
+<table class="table">
+  <thead><tr><th scope="col">Role</th><th scope="col">Can</th></tr></thead>
+  <tbody>
+    <tr><th scope="row">Owner</th><td>Everything, including moving the event to Trash and handing ownership to someone else.</td></tr>
+    <tr><th scope="row">Editor</th><td>Change the event, its questions, pass, checkpoints and workshops; manage participants; share; scan and undo any scan.</td></tr>
+    <tr><th scope="row">Check-in staff</th><td>Scan passes and look people up, and undo their own scans within 30 seconds. They don't see the participant list or the dashboard.</td></tr>
+    <tr><th scope="row">Viewer</th><td>See the event, its participants and dashboard. No changes.</td></tr>
+  </tbody>
+</table>
+<p>Organization owners and admins can open every event in the organization. People with an account get access at once; anyone else gets an email invite to accept.</p>
+<h2>Link sharing</h2>
+<p>Under <b>Link sharing</b> you can turn on a view-only link for people without an account. The link is shown once; reset it to get a new one, or turn it off. Check-in access is never given by link.</p>
+<p>Your organization can turn off sharing outside the organization in <b>Members</b>.</p>
+{{end}}

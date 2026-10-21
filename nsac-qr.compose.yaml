@@ -20,6 +20,8 @@ services:
       - ./migrations/011_checkin_workshops.sql:/docker-entrypoint-initdb.d/011_checkin_workshops.sql:ro
       - ./migrations/012_pass_templates.sql:/docker-entrypoint-initdb.d/012_pass_templates.sql:ro
       - ./migrations/013_integrations.sql:/docker-entrypoint-initdb.d/013_integrations.sql:ro
+      - ./migrations/014_pass_assets.sql:/docker-entrypoint-initdb.d/014_pass_assets.sql:ro
+      - ./migrations/015_participant_profiles.sql:/docker-entrypoint-initdb.d/015_participant_profiles.sql:ro
     ports:
       - "127.0.0.1:5433:5432"
     healthcheck:

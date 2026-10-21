@@ -46,6 +46,7 @@
   {{if $d.Can "event.scan"}}<a class="tab-scan" href="{{$d.Base}}/scan"{{if eq $d.Tab "scan"}} aria-current="page"{{end}}>Scan</a>{{end}}
   {{if $d.CanSeeShare}}<a href="{{$d.Base}}/share"{{if eq $d.Tab "share"}} aria-current="page"{{end}}>Share</a>{{end}}
   {{if $d.Can "event.audit.view"}}<a href="{{$d.Base}}/activity"{{if eq $d.Tab "activity"}} aria-current="page"{{end}}>Activity</a>{{end}}
+  {{if $d.Can "event.edit"}}<a href="{{$d.Base}}/map"{{if eq $d.Tab "map"}} aria-current="page"{{end}}>Map <span class="chip chip-beta">Beta</span></a>{{end}}
   {{if $d.Can "event.edit"}}<a href="{{$d.Base}}/integrations"{{if eq $d.Tab "integrations"}} aria-current="page"{{end}}>Integrations</a>{{end}}
   {{if $d.Can "event.edit"}}<a href="{{$d.Base}}/settings"{{if eq $d.Tab "settings"}} aria-current="page"{{end}}>Settings</a>{{end}}
 </nav>

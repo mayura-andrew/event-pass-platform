@@ -1,0 +1,13 @@
+{{define "helpbody"}}{{$d := .Data}}
+<h1>Help</h1>
+<p class="lead">Short how-tos for organizers, the people at the door, and participants.</p>
+{{range $i, $g := $d.Groups}}
+<section class="help-group" aria-labelledby="help-group-{{$i}}">
+  <h2 id="help-group-{{$i}}">{{.Name}}</h2>
+  <ul class="help-cards">
+    {{range .Topics}}<li><a class="card help-card" href="/help/{{.Slug}}"><b>{{.Title}}</b><span class="muted">{{.Summary}}</span></a></li>{{end}}
+  </ul>
+</section>
+{{end}}
+{{with $d.Status}}<p class="hint">Something not working? Check the <a href="{{.}}" rel="noopener">system status page</a>.</p>{{end}}
+{{end}}

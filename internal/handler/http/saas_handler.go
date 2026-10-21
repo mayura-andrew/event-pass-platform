@@ -73,6 +73,9 @@ func (h *Handler) registerSaaS(mux *http.ServeMux, signInLimit *rateLimiter) {
 	mux.Handle("POST /invite/accept", h.pageAuthed((*Handler).acceptInvitePost))
 
 	mux.HandleFunc("GET /l/{token}", h.linkPage)
+	mux.HandleFunc("GET /help", h.helpIndex)
+	mux.HandleFunc("GET /api/v1/health", h.apiHealth)
+	mux.HandleFunc("GET /help/{topic}", h.helpPage)
 	// Public event pages and registration. Venue Wi-Fi puts many phones
 	// behind one address, so the limit is generous.
 	h.registerLimit = newRateLimiter(max(h.PassRatePerMin, 60), time.Minute, h.clientIP)
@@ -495,14 +498,15 @@ func (d orgData) Expired(i domain.Invite) bool { return time.Now().After(i.Expir
 
 // Fixed notices, chosen by key so the query string can't inject text.
 var orgNotices = map[string]string{
-	"created":  "Organization created. Create your first event, or invite your team from Members.",
-	"joined":   "You joined the organization.",
-	"invited":  "Invite sent.",
-	"revoked":  "Invite withdrawn.",
-	"role":     "Role updated.",
-	"removed":  "Member removed.",
-	"settings": "Organization settings saved.",
-	"trashed":  "Event moved to Trash. You can restore it for 30 days.",
+	"created":   "Organization created. Create your first event, or invite your team from Members.",
+	"joined":    "You joined the organization.",
+	"invited":   "Invite sent.",
+	"revoked":   "Invite withdrawn.",
+	"role":      "Role updated.",
+	"removed":   "Member removed.",
+	"settings":  "Organization settings saved.",
+	"trashed":   "Event moved to Trash. You can restore it for 30 days.",
+	"checklist": "Setup checklist hidden. You can bring it back from Members.",
 }
 
 func (h *Handler) membersPage(w http.ResponseWriter, r *http.Request, o *orgReq) {

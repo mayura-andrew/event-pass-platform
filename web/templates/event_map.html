@@ -1,0 +1,42 @@
+{{define "content"}}
+{{template "eventhead" .}}
+{{$d := .Data}}{{$s := $d.Stats}}
+<section class="card" aria-labelledby="map-title">
+  <h2 id="map-title">Participant map <span class="chip chip-beta">Beta</span></h2>
+  <p class="muted">Participants can add a photo, headline and links to their pass page and make them visible to each other. With the map on, registered participants can also see each other on a live map, if they choose to share their location.</p>
+  <ul class="map-rules">
+    <li>Profiles are private until each person makes theirs public, and public means this event's participants only.</li>
+    <li>Nobody is on the map unless they press <b>Share my location</b>. It stops when they leave the page, and a location disappears after 3 minutes without an update.</li>
+    <li>Only registered participants see the map; pending, waitlisted and cancelled people don't.</li>
+    <li>Turning the map off deletes every shared location at once.</li>
+  </ul>
+  <form method="post" action="{{$d.Base}}/map">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <label class="check"><input type="checkbox" name="enabled"{{if $s.Enabled}} checked{{end}}> Turn on the participant map for {{$d.Event.Name}}</label>
+    <p class="hint">Under-18 participants? Check this fits your safeguarding policy before turning it on.</p>
+    <button class="btn" type="submit">Save</button>
+  </form>
+</section>
+
+<section class="card" aria-labelledby="map-stats">
+  <h2 id="map-stats">Right now</h2>
+  <div class="tiles">
+    <div class="tile"><span class="tile-n">{{$s.PublicProfiles}}</span><span class="tile-l">public profiles</span></div>
+    <div class="tile"><span class="tile-n">{{$s.SharingNow}}</span><span class="tile-l">sharing their location</span></div>
+    <div class="tile"><span class="tile-n">{{$s.Up}}</span><span class="tile-l">👍 useful</span></div>
+    <div class="tile"><span class="tile-n">{{$s.Down}}</span><span class="tile-l">👎 not useful</span></div>
+  </div>
+</section>
+
+<section class="card" aria-labelledby="map-fb">
+  <h2 id="map-fb">Feedback</h2>
+  {{if $s.Feedback}}
+  <ul class="feedback-list">
+    {{range $s.Feedback}}
+    <li><span class="fb-rating" aria-label="{{if eq .Rating 1}}Useful{{else}}Not useful{{end}}">{{if eq .Rating 1}}👍{{else}}👎{{end}}</span>
+      <div>{{with .Comment}}<p>{{.}}</p>{{end}}<span class="hint">{{with .FullName}}{{.}} · {{end}}{{when .CreatedAt}}</span></div></li>
+    {{end}}
+  </ul>
+  {{else}}<p class="muted">No feedback yet. Participants can send it from the bottom of the map.</p>{{end}}
+</section>
+{{end}}

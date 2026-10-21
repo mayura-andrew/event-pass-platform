@@ -1,19 +1,68 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"image"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/nasa-spaceapps/nsac-qr/internal/domain"
 	"github.com/nasa-spaceapps/nsac-qr/internal/passes"
 )
 
 // PassService turns a participant into their pass: QR token and card.
-type PassService struct{ keys *passes.KeyRing }
+type PassService struct {
+	keys *passes.KeyRing
+	// Assets loads uploaded images for designs that show them (nil: they
+	// draw as placeholders).
+	Assets AssetLoader
+	images *passes.ImageCache
+}
 
-func NewPassService(keys *passes.KeyRing) *PassService { return &PassService{keys: keys} }
+// AssetLoader reads an org's pass images (postgres.PassAssetRepo).
+type AssetLoader interface {
+	LoadAssets(ctx context.Context, orgID string, ids []string) (map[string][]byte, error)
+}
+
+func NewPassService(keys *passes.KeyRing) *PassService {
+	return &PassService{keys: keys, images: passes.NewImageCache(64)}
+}
+
+// LoadImages fills in the images a design shows. Decoded images are cached:
+// assets never change.
+func (s *PassService) LoadImages(ctx context.Context, orgID string, d *passes.Design) error {
+	ids := passes.AssetIDs(*d)
+	if len(ids) == 0 || s.Assets == nil {
+		return nil
+	}
+	d.Images = map[string]image.Image{}
+	var missing []string
+	for _, id := range ids {
+		if img, ok := s.images.Get(orgID + "/" + id); ok {
+			d.Images[id] = img
+		} else {
+			missing = append(missing, id)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	data, err := s.Assets.LoadAssets(ctx, orgID, missing)
+	if err != nil {
+		return fmt.Errorf("pass images: %w", err)
+	}
+	for id, b := range data {
+		img, err := s.images.Add(orgID+"/"+id, b)
+		if err != nil {
+			return fmt.Errorf("pass image %s: %w", id, err)
+		}
+		d.Images[id] = img
+	}
+	return nil
+}
 
 // Token is what the pass's QR code holds. A delegate imported from the
 // current build keeps their old payload, so the pass already in their
@@ -51,6 +100,11 @@ func (s *PassService) Card(pc *domain.PassContext) (passes.Card, error) {
 		var d passes.Design
 		if err := json.Unmarshal(pc.Design, &d); err != nil {
 			return passes.Card{}, fmt.Errorf("event pass design: %w", err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := s.LoadImages(ctx, pc.Event.OrgID, &d); err != nil {
+			return passes.Card{}, err
 		}
 		c.Design = &d
 	}

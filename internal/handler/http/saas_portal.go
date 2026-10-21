@@ -19,6 +19,7 @@ func (h *Handler) registerPortal(mux *http.ServeMux) {
 	mux.Handle("POST /me/passes/{participant}/workshops/{workshop}/signup", h.pageAuthed((*Handler).myWorkshopSignUp))
 	mux.Handle("POST /me/passes/{participant}/workshops/{workshop}/cancel", h.pageAuthed((*Handler).myWorkshopCancel))
 	mux.Handle("GET /api/v1/me/passes", h.apiAuthed((*Handler).apiMyPasses))
+	h.registerProfiles(mux)
 }
 
 type portalPass struct {
@@ -44,12 +45,19 @@ type myPassData struct {
 	Pass      *domain.PassContext
 	Answers   []passes.Line
 	Workshops []domain.Workshop
+	// Profile (beta): the saved one, or the form as posted when it had
+	// mistakes, with the mistakes by field.
+	Profile       *domain.ParticipantProfile
+	ProfileForm   *service.ProfileInput
+	ProfileErrors service.FieldErrors
+	MapOn         bool
 }
 
 var myPassNotices = map[string]string{
 	domain.SignupSignedUp:   "You're signed up.",
 	domain.SignupWaitlisted: "That workshop is full, so you're on its waitlist.",
 	"cancelled":             "Sign-up cancelled.",
+	"profile":               "Profile saved.",
 }
 
 func (h *Handler) myPassPage(w http.ResponseWriter, r *http.Request, p *principal) {
@@ -64,7 +72,23 @@ func (h *Handler) myPassPage(w http.ResponseWriter, r *http.Request, p *principa
 // renderMyPass shows a pass with its event's workshops; actionErr is a
 // failed sign-up shown on the page.
 func (h *Handler) renderMyPass(w http.ResponseWriter, r *http.Request, p *principal, pc *domain.PassContext, actionErr error) {
-	d := myPassData{Pass: pc, Answers: service.ParticipantAnswers(pc)}
+	h.renderMyPassWith(w, r, p, pc, actionErr, nil, nil)
+}
+
+func (h *Handler) renderMyPassWith(w http.ResponseWriter, r *http.Request, p *principal, pc *domain.PassContext, actionErr error,
+	profileErrs service.FieldErrors, posted *service.ProfileInput) {
+	d := myPassData{Pass: pc, Answers: service.ParticipantAnswers(pc), ProfileErrors: profileErrs, ProfileForm: posted}
+	if h.Profiles != nil {
+		prof, on, err := h.Profiles.Profile(r.Context(), p.scope(), pc.Participant.ID)
+		if err != nil {
+			h.renderError(w, r, p, err)
+			return
+		}
+		d.Profile, d.MapOn = prof, on && pc.Participant.Status == domain.PartRegistered
+	}
+	if len(profileErrs) > 0 && actionErr == nil {
+		actionErr = profileErrs
+	}
 	if h.Checkins != nil {
 		ws, err := h.Checkins.MyWorkshops(r.Context(), p.scope(), pc)
 		if err != nil {

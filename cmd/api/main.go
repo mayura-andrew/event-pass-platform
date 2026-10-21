@@ -66,6 +66,8 @@ func run() error {
 		return err
 	}
 	passService := service.NewPassService(passKeys)
+	passAssets := postgres.NewPassAssetRepo(db)
+	passService.Assets = passAssets
 	checkinRepo := postgres.NewCheckinRepo(db)
 	liveFeed := service.NewEventFeed(checkinRepo)
 
@@ -121,7 +123,7 @@ func run() error {
 		Events:        service.NewEventService(eventRepo, accountRepo, orgRepo, mailer, cfg.AppBaseURL, cfg.ProductName),
 		Registrations: service.NewRegistrationService(registrationRepo, eventRepo, outboxRepo),
 		Passes:        passService,
-		Templates:     service.NewPassTemplateService(postgres.NewPassTemplateRepo(db), passService),
+		Templates:     service.NewPassTemplateService(postgres.NewPassTemplateRepo(db), passAssets, passService),
 		Portal:        service.NewPortalService(postgres.NewPortalRepo(db)),
 		Checker:       registrationRepo,
 		LiveFeed:      liveFeed,
@@ -136,6 +138,10 @@ func run() error {
 	}
 	h.Integrations = service.NewIntegrationService(postgres.NewIntegrationRepo(db), registrationRepo, newGoogle(cfg),
 		service.NewGoogleAPI(), box, cfg.AppBaseURL+"/auth/google/integration/callback")
+
+	h.StatusPageURL = cfg.StatusPageURL
+	h.Profiles = service.NewProfileService(postgres.NewPortalRepo(db), postgres.NewProfileRepo(db))
+	h.Health = service.NewHealth(postgres.NewHealthRepo(db), cfg.SMTPHost != "")
 
 	h.Checkins = service.NewCheckinService(checkinRepo, postgres.NewWorkshopRepo(db), h.Registrations, registrationRepo,
 		passService, registrationRepo)

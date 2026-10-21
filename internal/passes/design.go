@@ -24,6 +24,11 @@ type Design struct {
 	Size       Size      `json:"size"`
 	Background string    `json:"background"` // a color, see parseColor
 	Elements   []Element `json:"elements"`
+
+	// Images are the decoded assets image elements show, keyed by asset
+	// ID, filled in by the caller before rendering. A missing one draws as
+	// a placeholder.
+	Images map[string]image.Image `json:"-"`
 }
 
 // Size presets: a phone screen and a 4 x 3 inch badge.
@@ -42,7 +47,7 @@ var Presets = map[string]Size{
 // left of the design.
 type Element struct {
 	ID   string `json:"id"`
-	Type string `json:"type"` // statusBand | text | answers | qr | rect | line
+	Type string `json:"type"` // statusBand | text | answers | qr | rect | line | image
 	X    int    `json:"x"`
 	Y    int    `json:"y"`
 	W    int    `json:"w"`
@@ -64,6 +69,10 @@ type Element struct {
 	BG        string `json:"bg,omitempty"`
 	QuietZone int    `json:"quietZone,omitempty"` // modules
 	ECC       string `json:"ecc,omitempty"`       // L | M | Q | H
+
+	// Images.
+	Src string `json:"src,omitempty"` // "asset:<id>"
+	Fit string `json:"fit,omitempty"` // cover (default) | contain | fill
 }
 
 type Font struct {
@@ -244,6 +253,12 @@ func RenderDesign(d Design, v Vars) (*image.RGBA, *RenderReport, error) {
 			c.qrCode(v.Token, e.X, e.Y, e.Size, fg, qbg, max(e.QuietZone, 4), e.ECC)
 		case "rect", "line":
 			c.rect(e.X, e.Y, e.X+e.W, e.Y+max(e.H, 1), col)
+		case "image":
+			if img := d.Images[AssetID(e.Src)]; img != nil {
+				c.drawImage(img, e.X, e.Y, e.W, e.H, e.Fit)
+			} else {
+				c.missingImage(e.X, e.Y, e.W, e.H)
+			}
 		default:
 			return nil, nil, fmt.Errorf("unknown element type %q", e.Type)
 		}
@@ -353,3 +368,40 @@ func Gallery() []GalleryTemplate {
 
 // Classic is the default design for events without a template.
 func Classic() Design { return Gallery()[0].Design }
+
+// ArtworkDesign starts a design from uploaded artwork: the image fills the
+// pass, with a light panel for the name, the QR code and the pass ID on
+// top, ready to be moved in the designer. Wide artwork makes a badge, tall
+// artwork a phone pass. The status shows only when it isn't "registered",
+// so a valid pass is the artwork as designed.
+func ArtworkDesign(assetID string, width, height int) Design {
+	src := "asset:" + assetID
+	status := func(x, y, w int, align string) Element {
+		return Element{ID: "status", Type: "text", Text: "{{participant.statusLabel}}", X: x, Y: y, W: w, H: 50,
+			Font: Font{Size: 36, Weight: 700}, Color: "token:danger", Align: align,
+			VisibleFor: []string{"pending", "waitlisted", "cancelled"}}
+	}
+	if width > height {
+		return Design{Schema: 1, Size: Presets["badge"], Background: "token:surface", Elements: []Element{
+			{ID: "artwork", Type: "image", Src: src, X: 0, Y: 0, W: 1200, H: 900, Fit: "cover"},
+			{ID: "panel", Type: "rect", X: 40, Y: 560, W: 700, H: 300, Color: "token:surface"},
+			{ID: "qrPanel", Type: "rect", X: 770, Y: 120, W: 400, H: 520, Color: "token:surface"},
+			status(70, 580, 640, "left"),
+			{ID: "name", Type: "text", Text: "{{participant.fullName}}", X: 70, Y: 635, W: 640, H: 200,
+				Font: Font{Size: 80, Weight: 700}, Color: "token:ink", Align: "left", MaxLines: 2, ShrinkToFit: &Shrink{Min: 40}},
+			{ID: "qr", Type: "qr", X: 785, Y: 135, Size: 370, FG: "#000000", BG: "#FFFFFF", QuietZone: 4, ECC: "M"},
+			{ID: "passId", Type: "text", Text: "{{pass.id}}", X: 780, Y: 545, W: 380, H: 60,
+				Font: Font{Size: 40, Weight: 700}, Color: "token:ink", Align: "center", ShrinkToFit: &Shrink{Min: 28}},
+		}}
+	}
+	return Design{Schema: 1, Size: Presets["phone"], Background: "token:surface", Elements: []Element{
+		{ID: "artwork", Type: "image", Src: src, X: 0, Y: 0, W: 1080, H: 1920, Fit: "cover"},
+		{ID: "panel", Type: "rect", X: 90, Y: 760, W: 900, H: 1010, Color: "token:surface"},
+		status(130, 790, 820, "center"),
+		{ID: "name", Type: "text", Text: "{{participant.fullName}}", X: 130, Y: 845, W: 820, H: 200,
+			Font: Font{Size: 84, Weight: 700}, Color: "token:ink", Align: "center", MaxLines: 2, ShrinkToFit: &Shrink{Min: 44}},
+		{ID: "qr", Type: "qr", X: 240, Y: 1060, Size: 600, FG: "#000000", BG: "#FFFFFF", QuietZone: 4, ECC: "M"},
+		{ID: "passId", Type: "text", Text: "{{pass.id}}", X: 130, Y: 1680, W: 820, H: 70,
+			Font: Font{Size: 52, Weight: 700}, Color: "token:ink", Align: "center", ShrinkToFit: &Shrink{Min: 36}},
+	}}
+}

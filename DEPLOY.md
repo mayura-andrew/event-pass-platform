@@ -206,6 +206,28 @@ Then create the DNS record shown under Apps → Settings → **Domains**. When
 it's active, set `APP_BASE_URL` in the spec to `https://pass.example.org` so
 emailed sign-in links use it.
 
+## 9. Status page
+
+Use a hosted status service (Better Stack, Instatus or similar) so that it
+stays up when the app is down. There's nothing to install.
+
+1. Create a monitor for `https://<your domain>/api/v1/health`, checked every
+   minute from more than one region. It answers:
+   - `200` with `"status":"ok"` when all is well;
+   - `200` with `"status":"degraded"` when participant emails are more than
+     10 minutes late;
+   - `503` with `"status":"down"` when the database can't be reached.
+
+   Alert on any non-200. If the service supports a keyword check, also alert
+   when the body doesn't contain `"status":"ok"`, which catches late emails.
+   The response holds no participant or organization data.
+2. Keep `/healthz` for the platform's own liveness check; it doesn't touch
+   the database, so a database outage doesn't restart the app.
+3. Publish the status page, for example on `status.<your domain>`, and set
+   `STATUS_PAGE_URL` in the app spec. The help pages link to it.
+4. During an incident, post updates on the status page. Organizers running
+   events will look there first.
+
 ## Updating
 
 - `git push` to `main` deploys automatically once the tests pass
@@ -224,8 +246,10 @@ emailed sign-in links use it.
   `008_events_sharing.sql` (events, sharing, audit log), `009_registration.sql`
   (publishing, forms, event participants), `010_outbox.sql` (participant
   emails), `011_checkin_workshops.sql` (workshops, checkpoints, check-ins),
-  `012_pass_templates.sql` (pass designs) and `013_integrations.sql` (Google
-  Sheets and Forms) likewise.
+  `012_pass_templates.sql` (pass designs), `013_integrations.sql` (Google
+  Sheets and Forms), `014_pass_assets.sql` (uploaded pass artwork) and
+  `015_participant_profiles.sql` (participant profiles and the map beta)
+  likewise.
 - Before taking registrations, set `PASS_SIGNING_KEYS` (see `.env.example`).
   Without it pass QR codes are signed with a key derived from `JWT_SECRET`,
   so rotating that secret would invalidate every pass.

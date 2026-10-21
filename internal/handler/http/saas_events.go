@@ -317,6 +317,7 @@ type eventsHomeData struct {
 	Views                 []viewLink
 	Sorts                 []viewLink
 	Events                []domain.EventCard
+	Checklist             *setupChecklist
 }
 
 var viewLabels = map[string]string{
@@ -380,6 +381,9 @@ func (h *Handler) eventsHomePage(w http.ResponseWriter, r *http.Request, o *orgR
 	}
 	for _, v := range views {
 		d.Views = append(d.Views, viewLink{v, viewLabels[v]})
+	}
+	if (q.View == domain.ViewMine || q.View == "all") && d.Q == "" {
+		d.Checklist = h.checklist(r, o)
 	}
 	d.Sorts = []viewLink{{"", "Last modified"}, {domain.SortOpened, "Last opened"}, {domain.SortDate, "Event date"}, {domain.SortName, "Name"}}
 	h.render(w, http.StatusOK, "events", o.principal, view{Title: o.org.Name, Data: d,

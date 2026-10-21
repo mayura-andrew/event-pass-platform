@@ -7,7 +7,7 @@
 <div class="integrations">
   <section class="card" aria-labelledby="sheets-title">
     <h2 id="sheets-title">Google Sheets</h2>
-    <p class="muted">A spreadsheet with tabs for participants, check-ins and workshops, updated within a minute of changes. It is one-way: edits in the sheet don't come back.</p>
+    <p class="muted">A spreadsheet with tabs for participants, check-ins and workshops, updated within a minute of changes. It is one-way: edits in the sheet don't come back. <a href="/help/google-sheets">How it works</a></p>
     {{with $d.Sheets}}
       {{template "integrationstatus" (dict "I" . "TZ" $tz)}}
       {{with $d.SheetsCfg.URL}}<p><a class="btn" href="{{.}}" target="_blank" rel="noopener">Open the spreadsheet</a></p>{{end}}
@@ -24,7 +24,7 @@
 
   <section class="card" aria-labelledby="form-title">
     <h2 id="form-title">Google Form import</h2>
-    <p class="muted">Responses to a Google Form become participants and get their passes. Each response is imported once; people already registered with the same email are skipped.</p>
+    <p class="muted">Responses to a Google Form become participants and get their passes. Each response is imported once; people already registered with the same email are skipped. <a href="/help/google-form">How it works</a></p>
     {{with $d.Form}}
       {{template "integrationstatus" (dict "I" . "TZ" $tz)}}
       {{if $d.FormCfg.FormID}}<p>Form: <b>{{$d.FormCfg.Title}}</b>{{if $d.FormCfg.Ready}} · {{plural .Imported "participant imported" "participants imported"}}{{end}}</p>{{end}}

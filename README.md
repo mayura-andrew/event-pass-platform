@@ -62,6 +62,8 @@ migrations/010_outbox.sql           SaaS: participant email outbox (pass issued,
 migrations/011_checkin_workshops.sql SaaS: workshops, sign-ups, checkpoints, append-only check-ins
 migrations/012_pass_templates.sql   SaaS: pass templates and their versions, pinned per event
 migrations/013_integrations.sql     SaaS: Google Sheets sync and Form import (encrypted tokens)
+migrations/014_pass_assets.sql      SaaS: uploaded pass images (own artwork, logos)
+migrations/015_participant_profiles.sql SaaS: participant profiles, live map locations (beta), beta feedback
 scripts/seed                        CSV import + HMAC signing
 scripts/create-admin                create scanner / dashboard logins
 scripts/sample                      example participants.csv and venues.csv

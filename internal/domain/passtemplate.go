@@ -25,3 +25,13 @@ type PassTemplateVersion struct {
 	CreatedAt time.Time `json:"created_at"`
 	CreatedBy string    `json:"created_by_name"`
 }
+
+// PassAsset is an uploaded image a design can show ("asset:<id>").
+type PassAsset struct {
+	ID          string    `json:"id"`
+	Src         string    `json:"src"` // what a design's image element uses
+	ContentType string    `json:"content_type"`
+	Width       int       `json:"width"`
+	Height      int       `json:"height"`
+	CreatedAt   time.Time `json:"created_at"`
+}

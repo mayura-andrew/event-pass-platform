@@ -1,0 +1,18 @@
+{{define "content"}}{{$d := .Data}}
+<div class="help">
+  <nav class="help-nav{{if not $d.Topic.Slug}} help-nav-index{{end}}" aria-label="Help topics">
+    <a class="help-home" href="/help"{{if not $d.Topic.Slug}} aria-current="page"{{end}}>All help</a>
+    {{range $d.Groups}}
+    <h2>{{.Name}}</h2>
+    <ul>
+      {{range .Topics}}<li><a href="/help/{{.Slug}}"{{if eq .Slug $d.Topic.Slug}} aria-current="page"{{end}}>{{.Title}}</a></li>{{end}}
+    </ul>
+    {{end}}
+  </nav>
+  <article class="help-article">
+    {{if $d.Topic.Slug}}<p class="crumb"><a href="/help">Help</a> · {{$d.Topic.Group}}</p>
+    <h1>{{$d.Topic.Title}}</h1>{{end}}
+    {{template "helpbody" .}}
+  </article>
+</div>
+{{end}}

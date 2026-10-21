@@ -16,6 +16,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"image/color"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -92,6 +93,8 @@ func newSaaSEnvWith(t *testing.T, google *service.GoogleOAuth) *saasEnv {
 	env := &saasEnv{mail: &captureMailer{}, db: db, prefix: "it-" + hex.EncodeToString(b) + "-"}
 
 	base := "http://pass.test"
+	passService := service.NewPassService(passes.DerivedKeyRing([]byte("test-pass-key")))
+	passService.Assets = postgres.NewPassAssetRepo(db)
 	h := &Handler{
 		LoginRatePerMin: 10_000, PassRatePerMin: 10_000,
 		SignIn: service.NewAccountService(postgres.NewAccountRepo(db), env.mail, google, service.AccountConfig{
@@ -101,19 +104,19 @@ func newSaaSEnvWith(t *testing.T, google *service.GoogleOAuth) *saasEnv {
 		Events: service.NewEventService(postgres.NewEventRepo(db), postgres.NewAccountRepo(db), postgres.NewOrgRepo(db),
 			env.mail, base, "Event Pass"),
 		Registrations: service.NewRegistrationService(postgres.NewRegistrationRepo(db), postgres.NewEventRepo(db), postgres.NewOutboxRepo(db)),
-		Passes:        service.NewPassService(passes.DerivedKeyRing([]byte("test-pass-key"))),
+		Passes:        passService,
 		Portal:        service.NewPortalService(postgres.NewPortalRepo(db)),
-		Templates: service.NewPassTemplateService(postgres.NewPassTemplateRepo(db),
-			service.NewPassService(passes.DerivedKeyRing([]byte("test-pass-key")))),
-		Checker:   postgres.NewRegistrationRepo(db),
-		LiveFeed:  service.NewEventFeed(postgres.NewCheckinRepo(db)),
-		BaseURL:   base,
-		Product:   "Event Pass",
-		CookieKey: []byte("test-cookie-key-0123456789abcdef"),
+		Templates:     service.NewPassTemplateService(postgres.NewPassTemplateRepo(db), postgres.NewPassAssetRepo(db), passService),
+		Checker:       postgres.NewRegistrationRepo(db),
+		LiveFeed:      service.NewEventFeed(postgres.NewCheckinRepo(db)),
+		BaseURL:       base,
+		Product:       "Event Pass",
+		CookieKey:     []byte("test-cookie-key-0123456789abcdef"),
 	}
 	regRepo := postgres.NewRegistrationRepo(db)
 	h.Integrations = service.NewIntegrationService(postgres.NewIntegrationRepo(db), regRepo, nil, service.NewGoogleAPI(),
 		secrets.Derived([]byte("test-integrations-key")), base+"/auth/google/integration/callback")
+	h.Profiles = service.NewProfileService(postgres.NewPortalRepo(db), postgres.NewProfileRepo(db))
 	env.h = h
 	h.Checkins = service.NewCheckinService(postgres.NewCheckinRepo(db), postgres.NewWorkshopRepo(db), h.Registrations, regRepo,
 		h.Passes, regRepo)
@@ -383,6 +386,13 @@ func TestTenantIsolation(t *testing.T) {
 		return t.ID
 	}
 	tplA, tplB := template(ann, orgA.Slug), template(bob, orgB.Slug)
+	asset := func(u *user, slug string) string {
+		_, b := postUpload(t, u, "/api/v1/orgs/"+slug+"/pass-assets", artworkPNG(40, 40, color.NRGBA{255, 0, 0, 255}))
+		var a domain.PassAsset
+		json.Unmarshal(b, &a)
+		return a.ID
+	}
+	assetA, assetB := asset(ann, orgA.Slug), asset(bob, orgB.Slug)
 
 	payload := map[string]any{"role": "member", "email": env.prefix + "x@test.local", "name": "Isolation", "external_sharing": true}
 	// call returns the status, and for pages the path the browser ended on.
@@ -407,7 +417,7 @@ func TestTenantIsolation(t *testing.T) {
 
 	anon := env.newBrowser(t, "anon")
 	for _, rt := range orgRoutes {
-		pathB := fill(rt.pattern, map[string]string{"org": orgB.Slug, "account": bob.id, "id": invB.ID, "template": tplB})
+		pathB := fill(rt.pattern, map[string]string{"org": orgB.Slug, "account": bob.id, "id": invB.ID, "template": tplB, "asset": assetB})
 		if got, _ := call(ann, rt, pathB); got != http.StatusNotFound {
 			t.Errorf("%s %s as a member of another org: HTTP %d, want 404", rt.method, pathB, got)
 		}
@@ -424,7 +434,7 @@ func TestTenantIsolation(t *testing.T) {
 		if rt.method != "GET" {
 			continue
 		}
-		pathA := fill(rt.pattern, map[string]string{"org": orgA.Slug, "account": ann.id, "id": invA.ID, "template": tplA})
+		pathA := fill(rt.pattern, map[string]string{"org": orgA.Slug, "account": ann.id, "id": invA.ID, "template": tplA, "asset": assetA})
 		if got, _ := call(ann, rt, pathA); got != http.StatusOK {
 			t.Errorf("%s %s in own org: HTTP %d, want 200", rt.method, pathA, got)
 		}

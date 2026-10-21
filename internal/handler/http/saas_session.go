@@ -22,6 +22,7 @@ import (
 
 	"github.com/nasa-spaceapps/nsac-qr/internal/authz"
 	"github.com/nasa-spaceapps/nsac-qr/internal/domain"
+	"github.com/nasa-spaceapps/nsac-qr/internal/passes"
 	"github.com/nasa-spaceapps/nsac-qr/web"
 )
 
@@ -30,6 +31,7 @@ const (
 	googleCookie  = "g_oauth"
 	csrfHeader    = "X-CSRF-Token"
 	csrfField     = "csrf"
+	maxPageUpload = passes.MaxUploadBytes + 1<<20 // the image and the other fields
 
 	// pageDeadline covers a page that sends an email (sign-in link, invite).
 	pageDeadline = emailDeadline
@@ -188,6 +190,17 @@ func (h *Handler) pageAuthed(fn authedFunc) http.Handler {
 			return
 		}
 		r = r.WithContext(domain.WithClientIP(r.Context(), h.clientIP(r)))
+		// File uploads (pass artwork) are read here, for the CSRF field, so
+		// the size limit applies here too.
+		if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/") {
+			r.Body = http.MaxBytesReader(w, r.Body, maxPageUpload)
+			var tooBig *http.MaxBytesError
+			if err := r.ParseMultipartForm(1 << 20); errors.As(err, &tooBig) {
+				h.renderStatus(w, r, p, http.StatusRequestEntityTooLarge, "File too large",
+					fmt.Sprintf("Upload an image of at most %d MB.", passes.MaxUploadBytes>>20))
+				return
+			}
+		}
 		if unsafeMethod(r.Method) && (!h.sameOrigin(r) || !csrfOK(p, r.PostFormValue(csrfField))) {
 			h.renderStatus(w, r, p, http.StatusForbidden, "Page expired",
 				"That form was out of date. Go back, reload the page and try again.")
@@ -260,7 +273,7 @@ var pageNames = []string{"login", "login_sent", "verify", "app", "members", "inv
 	"events", "event_new", "event", "event_share", "event_settings", "activity", "link",
 	"event_registration", "event_participants", "public_event", "public_registered", "my_passes", "my_pass",
 	"scanner", "event_dashboard", "event_checkin", "event_workshops",
-	"pass_templates", "designer", "event_pass", "event_integrations"}
+	"pass_templates", "designer", "event_pass", "event_integrations", "participant_map", "event_map"}
 
 type pageSet map[string]*template.Template
 
@@ -273,6 +286,15 @@ func loadPages() (pageSet, error) {
 			return nil, fmt.Errorf("page %s: %w", name, err)
 		}
 		ps[name] = t
+	}
+	// Help pages: one shared frame, each topic's text in help/<slug>.html.
+	for _, slug := range append([]string{"index"}, helpSlugs()...) {
+		t, err := template.New("help").Funcs(pageFuncs).ParseFS(web.FS,
+			"templates/layout.html", "templates/partials.html", "templates/help.html", "templates/help/"+slug+".html")
+		if err != nil {
+			return nil, fmt.Errorf("help page %s: %w", slug, err)
+		}
+		ps["help/"+slug] = t
 	}
 	return ps, nil
 }
@@ -298,6 +320,10 @@ const pageCSP = "default-src 'self'; script-src 'self'; style-src 'self' https:/
 // limited to this site.
 var scannerCSP = strings.Replace(pageCSP, "style-src 'self'", "style-src 'self' 'unsafe-inline'", 1)
 
+// mapCSP adds OpenStreetMap's map tiles; Leaflet positions tiles and
+// markers with inline styles. Scripts stay limited to this site.
+var mapCSP = strings.Replace(scannerCSP, "img-src 'self' data:", "img-src 'self' data: https://tile.openstreetmap.org", 1)
+
 func (h *Handler) render(w http.ResponseWriter, status int, page string, p *principal, v view) {
 	v.Product = h.Product
 	if p != nil {
@@ -315,8 +341,14 @@ func (h *Handler) render(w http.ResponseWriter, status int, page string, p *prin
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	csp := pageCSP
-	if page == "scanner" {
+	switch page {
+	case "scanner":
 		csp = scannerCSP
+	case "participant_map":
+		csp = mapCSP
+		// The one page that may ask for the phone's location (every other
+		// page keeps securityHeaders' geolocation=()).
+		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(self)")
 	}
 	w.Header().Set("Content-Security-Policy", csp)
 	w.WriteHeader(status)

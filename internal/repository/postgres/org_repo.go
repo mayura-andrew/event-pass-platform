@@ -139,9 +139,32 @@ func (r *OrgRepo) UpdateSettings(ctx context.Context, sc authz.OrgScope, st doma
 		}
 		return insertAudit(ctx, tx, sc.OrgID(), sc.AccountID(), domain.Audit{
 			Action: "org.settings", TargetType: "org", TargetID: sc.OrgID(),
-			Diff: map[string]any{"external_sharing": st.AllowsExternalSharing()},
+			Diff: map[string]any{"external_sharing": st.AllowsExternalSharing(), "checklist_hidden": st.ChecklistHidden},
 		})
 	})
+}
+
+// Onboarding reads the setup checklist's progress. Steps link to the
+// caller's most recent event, or else the org's.
+func (r *OrgRepo) Onboarding(ctx context.Context, sc authz.OrgScope) (*domain.Onboarding, error) {
+	var o domain.Onboarding
+	err := withTenant(ctx, r.db, sc.OrgID(), sc.AccountID(), func(tx *sql.Tx) error {
+		return tx.QueryRowContext(ctx, `
+			SELECT COALESCE((SELECT id::text FROM events WHERE org_id = $1 AND deleted_at IS NULL
+			                 ORDER BY (owner_id = $2) DESC, updated_at DESC LIMIT 1), ''),
+			       EXISTS (SELECT 1 FROM events WHERE org_id = $1 AND deleted_at IS NULL),
+			       EXISTS (SELECT 1 FROM form_fields WHERE org_id = $1),
+			       EXISTS (SELECT 1 FROM pass_templates WHERE org_id = $1)
+			         OR EXISTS (SELECT 1 FROM events WHERE org_id = $1 AND pass_template_id IS NOT NULL),
+			       EXISTS (SELECT 1 FROM events WHERE org_id = $1 AND status = 'published' AND deleted_at IS NULL),
+			       EXISTS (SELECT 1 FROM event_shares WHERE org_id = $1 AND role = 'checkin' AND account_id IS NOT NULL),
+			       EXISTS (SELECT 1 FROM checkins WHERE org_id = $1)`,
+			sc.OrgID(), sc.AccountID()).Scan(&o.EventID, &o.HasEvent, &o.HasQuestions, &o.HasDesign, &o.Published, &o.SharedCheckin, &o.Scanned)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &o, nil
 }
 
 // ---- Members -----------------------------------------------------------------

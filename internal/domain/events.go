@@ -273,6 +273,20 @@ type OrgSettings struct {
 	// ExternalSharing lets events be shared with people outside the org.
 	// Default on; stored as a pointer so "unset" reads as on.
 	ExternalSharing *bool `json:"external_sharing,omitempty"`
+	// ChecklistHidden hides the setup checklist on the events home.
+	ChecklistHidden bool `json:"checklist_hidden,omitempty"`
+}
+
+// Onboarding is how far an org has got with setting up its first event;
+// the setup checklist ticks each step off from what exists.
+type Onboarding struct {
+	EventID       string // the event the steps link to ("" before one exists)
+	HasEvent      bool
+	HasQuestions  bool
+	HasDesign     bool
+	Published     bool
+	SharedCheckin bool
+	Scanned       bool
 }
 
 func (s OrgSettings) AllowsExternalSharing() bool {
