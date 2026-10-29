@@ -122,7 +122,7 @@ func noCache(next http.Handler) http.Handler {
 // cached by the HTTP layer, or devices would keep running an old scanner.
 func staticFiles(dir string) http.Handler {
 	fs := http.FileServer(http.Dir(dir))
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {~
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/":
 			http.Redirect(w, r, "/pass.html", http.StatusFound)
