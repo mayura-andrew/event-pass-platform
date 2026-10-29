@@ -108,7 +108,7 @@ func NewRouter(h *Handler, publicDir, allowedOrigin string) http.Handler {
 	// Static PWA and portal
 	mux.Handle("/", staticFiles(publicDir))
 
-	return recoverer(logging(securityHeaders(cors(allowedOrigin, deadlines(mux)))))
+	return recoverer(logging(securityHeaders(h.secureCookies(), cors(allowedOrigin, deadlines(mux)))))
 }
 
 func noCache(next http.Handler) http.Handler {

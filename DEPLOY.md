@@ -228,6 +228,34 @@ stays up when the app is down. There's nothing to install.
 4. During an incident, post updates on the status page. Organizers running
    events will look there first.
 
+## Staging: the SaaS build for real testing
+
+A separate app, `nsac-qr-staging`, runs the `saas/m3-registration` branch
+with its own Supabase database, so testing never touches production. The
+spec is `.do/staging.yaml`. App Platform rebuilds on every push to the
+branch, and a pre-deploy job runs the migrations first.
+
+1. Supabase → **New project** (South Asia, Mumbai), for staging only. Copy
+   **Connect → Session pooler** (port 5432) and add `?sslmode=require`.
+2. A Gmail address with a 16-character app password (see step 4).
+3. Put them in `~/.config/nsac-qr/staging.env`, outside the repository:
+
+   ```
+   DATABASE_URL=postgres://postgres.<ref>:<password>@aws-0-ap-south-1.pooler.supabase.com:5432/postgres?sslmode=require
+   SMTP_USERNAME=you@gmail.com
+   SMTP_PASSWORD=abcdefghijklmnop
+   ```
+4. `scripts/staging-spec.sh` creates the app (or updates its settings). On
+   the first run it generates `JWT_SECRET`, `PASS_SIGNING_KEYS` and
+   `INTEGRATIONS_KEY` into the same file. Keep that file: new keys sign
+   everyone out and break every pass already sent.
+
+The app's address is shown in the DigitalOcean control panel (Apps →
+nsac-qr-staging); `APP_BASE_URL` follows it automatically. Optional extras
+(Google sign-in and integrations, `MAP_TILE_URL`, `STATUS_PAGE_URL`) are
+added the same way: a line in `.do/staging.yaml` and the value in the env
+file.
+
 ## Updating
 
 - `git push` to `main` deploys automatically once the tests pass

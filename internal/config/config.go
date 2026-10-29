@@ -126,6 +126,9 @@ func Load() (*Config, error) {
 		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
 			return nil, errors.New("APP_BASE_URL must be the site's public URL (e.g. https://pass.example.org) when SMTP_HOST is set")
 		}
+		if err := validateAppBaseURL(u); err != nil {
+			return nil, err
+		}
 	}
 
 	if c.EmailSendInterval, err = time.ParseDuration(getenv("EMAIL_SEND_INTERVAL", "2s")); err != nil || c.EmailSendInterval < time.Second {
@@ -159,6 +162,9 @@ func Load() (*Config, error) {
 		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
 			return nil, errors.New("APP_BASE_URL must be the site's public URL when Google sign-in is configured (the OAuth redirect URI is built from it)")
 		}
+		if err := validateAppBaseURL(u); err != nil {
+			return nil, err
+		}
 	}
 
 	if c.DatabaseURL == "" {
@@ -171,6 +177,13 @@ func Load() (*Config, error) {
 		return nil, errors.New("HMAC_SECRET_KEY must be at least 32 bytes (openssl rand -hex 32)")
 	}
 	return c, nil
+}
+
+func validateAppBaseURL(u *url.URL) error {
+	if u.Scheme == "http" && u.Hostname() != "localhost" && u.Hostname() != "127.0.0.1" && u.Hostname() != "::1" {
+		return errors.New("APP_BASE_URL must use HTTPS except for localhost when authentication or email links are enabled")
+	}
+	return nil
 }
 
 func getenv(key, fallback string) string {

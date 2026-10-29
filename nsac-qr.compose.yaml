@@ -56,7 +56,7 @@ services:
       mail:
         condition: service_started
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
 
   # Catches every email the API sends; read them at http://localhost:8025.
   mail:

@@ -1,0 +1,119 @@
+# DigitalOcean App Platform spec for STAGING: the SaaS build on the
+# saas/m3-registration branch, for real testing before it replaces the
+# current build. Production stays in .do/app.yaml.
+#
+# Unlike production, App Platform builds this itself on every push to the
+# branch (deploy_on_push), and a pre-deploy job applies the database
+# migrations first, so a push is all it takes.
+#
+# '${NAME}' values are secrets, filled in when the app is created or its spec
+# updated (scripts/staging-spec.sh reads them from a local file). Never put a
+# real secret in this file. ${APP_URL} is filled in by App Platform.
+name: nsac-qr-staging
+region: blr # Bangalore, next to the Supabase project in Mumbai
+
+jobs:
+  # Applies migrations/ before each deploy; the deploy stops if it fails.
+  - name: migrate
+    kind: PRE_DEPLOY
+    github:
+      repo: ai4all-learn/nsac-qr
+      branch: saas/m3-registration
+      deploy_on_push: true
+    dockerfile_path: Dockerfile
+    source_dir: /
+    run_command: /app/nsac-qr-migrate up
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    envs:
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        type: SECRET
+        value: '${DATABASE_URL}'
+
+services:
+  - name: api
+    github:
+      repo: ai4all-learn/nsac-qr
+      branch: saas/m3-registration
+      deploy_on_push: true
+    dockerfile_path: Dockerfile
+    source_dir: /
+    http_port: 8080
+    # One instance: rate limits, caches and the live feeds are in memory.
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    health_check:
+      http_path: /healthz
+      initial_delay_seconds: 5
+      period_seconds: 10
+    routes:
+      - path: /
+    envs:
+      # --- Secrets ---------------------------------------------------------------
+      # Supabase > Connect > Session pooler (port 5432), ?sslmode=require.
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        type: SECRET
+        value: '${DATABASE_URL}'
+      - key: JWT_SECRET
+        scope: RUN_TIME
+        type: SECRET
+        value: '${JWT_SECRET}'
+      # Pass QR signing key: keep it for as long as passes must scan.
+      - key: PASS_SIGNING_KEYS
+        scope: RUN_TIME
+        type: SECRET
+        value: '${PASS_SIGNING_KEYS}'
+      # Encrypts Google refresh tokens (Sheets sync, Form import).
+      - key: INTEGRATIONS_KEY
+        scope: RUN_TIME
+        type: SECRET
+        value: '${INTEGRATIONS_KEY}'
+
+      # --- Email: Gmail SMTP -----------------------------------------------------
+      - key: SMTP_HOST
+        scope: RUN_TIME
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        scope: RUN_TIME
+        value: "587"
+      - key: SMTP_SECURITY
+        scope: RUN_TIME
+        value: starttls
+      - key: SMTP_USERNAME
+        scope: RUN_TIME
+        type: SECRET
+        value: '${SMTP_USERNAME}'
+      # 16-character Google app password, not the account password.
+      - key: SMTP_PASSWORD
+        scope: RUN_TIME
+        type: SECRET
+        value: '${SMTP_PASSWORD}'
+      - key: SMTP_FROM
+        scope: RUN_TIME
+        type: SECRET
+        value: '${SMTP_FROM}'
+      - key: EMAIL_SEND_INTERVAL
+        scope: RUN_TIME
+        value: 2s
+      - key: EMAIL_DAILY_LIMIT
+        scope: RUN_TIME
+        value: "450"
+
+      # --- App -------------------------------------------------------------------
+      - key: APP_BASE_URL
+        scope: RUN_TIME
+        value: ${APP_URL}
+      - key: PRODUCT_NAME
+        scope: RUN_TIME
+        value: Event Pass (staging)
+      - key: EVENT_NAME
+        scope: RUN_TIME
+        value: NASA Space Apps Colombo
+      - key: CLIENT_IP_HEADER
+        scope: RUN_TIME
+        value: DO-Connecting-IP
+      - key: DB_MAX_CONNS
+        scope: RUN_TIME
+        value: "10"
