@@ -17,7 +17,7 @@ type PortalRepo struct{ db *sql.DB }
 
 func NewPortalRepo(db *sql.DB) *PortalRepo { return &PortalRepo{db: db} }
 
-const portalQuery = `SELECT ` + participantCols + `, ` + eventCols + `, o.name, o.slug
+var portalQuery = `SELECT ` + participantCols + `, ` + eventCols + `, o.name, o.slug
 	FROM event_participants p
 	JOIN events e ON e.id = p.event_id
 	LEFT JOIN accounts oa ON oa.id = e.owner_id
@@ -28,7 +28,7 @@ func scanPortal(row interface{ Scan(...any) error }) (domain.PassContext, error)
 	var answers, venue, settings []byte
 	p := &pc.Participant
 	dest := []any{&p.ID, &p.EventID, &p.AccountID, &p.Email, &p.FullName, &p.Status, &p.PassID, &answers, &p.Source,
-		&p.RegisteredAt, &p.UpdatedAt}
+		&p.RegisteredAt, &p.UpdatedAt, &p.BirthDate, &p.Age}
 	dest = append(dest, eventDest(&pc.Event, &venue, &settings)...)
 	dest = append(dest, &pc.OrgName, &pc.OrgSlug)
 	if err := row.Scan(dest...); err != nil {

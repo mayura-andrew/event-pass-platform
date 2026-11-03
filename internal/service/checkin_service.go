@@ -146,6 +146,9 @@ type ScanParticipant struct {
 	PassID   string        `json:"pass_id"`
 	Status   string        `json:"status"`
 	Answers  []passes.Line `json:"answers"` // questions visible to staff
+	// Minor: under 18 on the event's cut-off date, for safeguarding. The
+	// birth date itself shows only if its question is visible to staff.
+	Minor bool `json:"minor"`
 }
 
 // ScanResult is the scanner's result card.
@@ -357,7 +360,8 @@ func (s *CheckinService) staffView(ctx context.Context, es authz.EventScope, p *
 	if err != nil {
 		return nil, err
 	}
-	v := &ScanParticipant{ID: p.ID, FullName: p.FullName, PassID: p.PassID, Status: p.Status, Answers: []passes.Line{}}
+	v := &ScanParticipant{ID: p.ID, FullName: p.FullName, PassID: p.PassID, Status: p.Status, Answers: []passes.Line{},
+		Minor: p.Minor()}
 	for _, f := range fields {
 		if f.Visibility == "admin" {
 			continue

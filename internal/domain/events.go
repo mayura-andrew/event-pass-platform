@@ -84,6 +84,9 @@ type Event struct {
 	// Pass template (M5): the pinned version, or nil for Classic.
 	PassTemplateID      *string `json:"pass_template_id"`
 	PassTemplateVersion *int    `json:"pass_template_version"`
+	// AgeOn is the day ages are counted on for the under-18 check
+	// (e.g. 14 November); nil: the event's start date.
+	AgeOn *time.Time `json:"age_on,omitempty"`
 }
 
 // Public reports whether the event has a public page: published, not

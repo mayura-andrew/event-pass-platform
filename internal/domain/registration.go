@@ -26,12 +26,16 @@ var ParticipantStatuses = []string{PartPending, PartRegistered, PartWaitlisted, 
 
 // Form field types offered in the form builder. Photo and file uploads
 // arrive with file storage.
-var FieldTypes = []string{"text", "long_text", "email", "phone", "number", "date",
+var FieldTypes = []string{"text", "long_text", "email", "phone", "number", "date", "birth_date",
 	"select", "multi_select", "checkbox", "consent", "url"}
+
+// FieldBirthDate is the birth date question: at most one per event, its
+// answer decides who is under 18 on the event's cut-off date.
+const FieldBirthDate = "birth_date"
 
 var FieldTypeLabels = map[string]string{
 	"text": "Short text", "long_text": "Long text", "email": "Email", "phone": "Phone", "number": "Number",
-	"date": "Date", "select": "Choose one", "multi_select": "Choose several", "checkbox": "Yes / no",
+	"date": "Date", "birth_date": "Birth date (under-18 check)", "select": "Choose one", "multi_select": "Choose several", "checkbox": "Yes / no",
 	"consent": "Consent", "url": "Web address",
 }
 
@@ -63,18 +67,23 @@ type FieldConfig struct {
 
 // EventParticipant is one person's registration for one event.
 type EventParticipant struct {
-	ID           string         `json:"id"`
-	EventID      string         `json:"event_id"`
-	AccountID    string         `json:"account_id,omitempty"`
-	Email        string         `json:"email"`
-	FullName     string         `json:"full_name"`
-	Status       string         `json:"status"`
-	PassID       string         `json:"pass_id"`
-	Answers      map[string]any `json:"answers"`
-	Source       string         `json:"source"`
-	ExternalRef  string         `json:"-"` // e.g. a Google Form response ID, imported once
-	RegisteredAt time.Time      `json:"registered_at"`
-	UpdatedAt    time.Time      `json:"updated_at"`
+	ID          string         `json:"id"`
+	EventID     string         `json:"event_id"`
+	AccountID   string         `json:"account_id,omitempty"`
+	Email       string         `json:"email"`
+	FullName    string         `json:"full_name"`
+	Status      string         `json:"status"`
+	PassID      string         `json:"pass_id"`
+	Answers     map[string]any `json:"answers"`
+	Source      string         `json:"source"`
+	ExternalRef string         `json:"-"` // e.g. a Google Form response ID, imported once
+	// BirthDate is the answer to the event's birth date question
+	// (YYYY-MM-DD, "" when not asked or not given), and Age the person's age
+	// on the event's cut-off date (nil without a birth date).
+	BirthDate    string    `json:"birth_date,omitempty"`
+	Age          *int      `json:"age,omitempty"`
+	RegisteredAt time.Time `json:"registered_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // RegistrationSettings are the organizer's choices for an event's form.
@@ -84,6 +93,7 @@ type RegistrationSettings struct {
 	ClosesAt   *time.Time `json:"reg_closes_at"`
 	Waitlist   bool       `json:"waitlist"`
 	PassPrefix string     `json:"pass_prefix"`
+	AgeOn      *time.Time `json:"age_on"` // the under-18 cut-off; nil: the start date
 }
 
 // PublicEvent is what a public event page shows.
@@ -123,7 +133,15 @@ func (e *AlreadyRegisteredError) Unwrap() error { return ErrConflict }
 type ParticipantQuery struct {
 	Status string
 	Q      string // name, email or pass ID
+	Minors bool   // only people under 18 on the event's cut-off date
 }
+
+// CountMinors is the ParticipantCounts key for people under 18 on the
+// cut-off date (cancelled registrations not included).
+const CountMinors = "minors"
+
+// Minor says whether the person is under 18 on the event's cut-off date.
+func (p EventParticipant) Minor() bool { return p.Age != nil && *p.Age < 18 }
 
 // ParticipantCounts are the per-status totals for an event.
 type ParticipantCounts map[string]int

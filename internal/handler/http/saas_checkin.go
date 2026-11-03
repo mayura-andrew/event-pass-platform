@@ -334,6 +334,7 @@ type dashboardData struct {
 	APIBase string
 	// For the server-rendered bars (the page then updates live).
 	MaxBucket int
+	AgeOn     string // the under-18 cut-off, as shown
 }
 
 func (h *Handler) dashboardPage(w http.ResponseWriter, r *http.Request, e *eventReq) {
@@ -351,6 +352,9 @@ func (h *Handler) dashboardPage(w http.ResponseWriter, r *http.Request, e *event
 		APIBase: "/api/v1/orgs/" + e.org.Slug + "/events/" + e.event.ID}
 	for _, b := range st.PerTenMinutes {
 		d.MaxBucket = max(d.MaxBucket, b.Count)
+	}
+	if day := service.AgeOn(e.event); !day.IsZero() {
+		d.AgeOn = day.Format("2 Jan 2006")
 	}
 	h.render(w, http.StatusOK, "event_dashboard", e.principal, view{Title: "Dashboard · " + e.event.Name, Data: d})
 }

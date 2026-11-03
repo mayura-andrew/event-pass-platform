@@ -320,6 +320,12 @@ func (r *CheckinRepo) Stats(ctx context.Context, es authz.EventScope, now time.T
 			st.Participants[s] = n
 		}
 		rows.Close()
+		if err := tx.QueryRowContext(ctx, `SELECT
+			EXISTS (SELECT 1 FROM form_fields WHERE org_id = $1 AND event_id = $2 AND type = 'birth_date' AND workshop_id IS NULL),
+			(SELECT count(*) FROM event_participants p WHERE p.org_id = $1 AND p.event_id = $2 AND p.status = 'registered' AND `+participantIsMinor+`)`,
+			es.OrgID(), es.EventID()).Scan(&st.AsksBirthDate, &st.Minors); err != nil {
+			return err
+		}
 		if st.Checkpoints, err = listCheckpoints(ctx, tx, es.OrgID(), es.EventID(), false); err != nil {
 			return err
 		}

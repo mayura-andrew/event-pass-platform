@@ -40,7 +40,7 @@
           {{else if eq .Type "long_text"}}
             <textarea id="f-{{.Key}}" name="{{$name}}" rows="4" maxlength="5000">{{$d.Value $name}}</textarea>
           {{else}}
-            <input id="f-{{.Key}}" name="{{$name}}" value="{{$d.Value $name}}" type="{{inputType .Type}}"{{if eq .Type "phone"}} autocomplete="tel"{{end}}>
+            <input id="f-{{.Key}}" name="{{$name}}" value="{{$d.Value $name}}" type="{{inputType .Type}}"{{if eq .Type "phone"}} autocomplete="tel"{{end}}{{if eq .Type "birth_date"}} autocomplete="bday" min="1900-01-01" max="{{today}}"{{end}}>
           {{end}}
         {{end}}
         {{with .Help}}<p class="hint">{{.}}</p>{{end}}

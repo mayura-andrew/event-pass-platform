@@ -276,8 +276,8 @@ file.
   emails), `011_checkin_workshops.sql` (workshops, checkpoints, check-ins),
   `012_pass_templates.sql` (pass designs), `013_integrations.sql` (Google
   Sheets and Forms), `014_pass_assets.sql` (uploaded pass artwork) and
-  `015_participant_profiles.sql` (participant profiles and the map beta)
-  likewise.
+  `015_participant_profiles.sql` (participant profiles and the map beta) and
+  `016_birth_dates.sql` (birth dates and the under-18 cut-off) likewise.
 - Before taking registrations, set `PASS_SIGNING_KEYS` (see `.env.example`).
   Without it pass QR codes are signed with a key derived from `JWT_SECRET`,
   so rotating that secret would invalidate every pass.

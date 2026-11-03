@@ -64,6 +64,7 @@ migrations/012_pass_templates.sql   SaaS: pass templates and their versions, pin
 migrations/013_integrations.sql     SaaS: Google Sheets sync and Form import (encrypted tokens)
 migrations/014_pass_assets.sql      SaaS: uploaded pass images (own artwork, logos)
 migrations/015_participant_profiles.sql SaaS: participant profiles, live map locations (beta), beta feedback
+migrations/016_birth_dates.sql      SaaS: birth date question, under-18 cut-off date per event
 scripts/seed                        CSV import + HMAC signing
 scripts/create-admin                create scanner / dashboard logins
 scripts/sample                      example participants.csv and venues.csv

@@ -22,6 +22,7 @@ services:
       - ./migrations/013_integrations.sql:/docker-entrypoint-initdb.d/013_integrations.sql:ro
       - ./migrations/014_pass_assets.sql:/docker-entrypoint-initdb.d/014_pass_assets.sql:ro
       - ./migrations/015_participant_profiles.sql:/docker-entrypoint-initdb.d/015_participant_profiles.sql:ro
+      - ./migrations/016_birth_dates.sql:/docker-entrypoint-initdb.d/016_birth_dates.sql:ro
     ports:
       - "127.0.0.1:5433:5432"
     healthcheck:

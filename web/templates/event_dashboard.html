@@ -8,6 +8,7 @@
     <div class="tile tile-ok"><span class="tile-n" data-stat="checked_in">{{$st.CheckedIn}}</span><span class="tile-l">Checked in</span></div>
     <div class="tile"><span class="tile-n" data-stat="pending">{{index $st.Participants "pending"}}</span><span class="tile-l">Waiting for approval</span></div>
     <div class="tile"><span class="tile-n" data-stat="waitlisted">{{index $st.Participants "waitlisted"}}</span><span class="tile-l">Waitlist</span></div>
+    {{if $st.AsksBirthDate}}<a class="tile tile-minor" href="{{$d.Base}}/participants?status=minors"><span class="tile-n" data-stat="minors">{{$st.Minors}}</span><span class="tile-l">Under 18{{with $d.AgeOn}} on {{.}}{{end}}</span></a>{{end}}
   </div>
 
   <section class="card" aria-labelledby="cp-title">

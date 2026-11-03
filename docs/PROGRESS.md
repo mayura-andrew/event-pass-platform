@@ -120,6 +120,7 @@ with no lost check-ins.
 | Help pages at `/help` (10 topics, public), linked from the top bar, checklist, scanner, Check-in and Integrations tabs | Done |
 | Health check `/api/v1/health` (database, late emails) for an uptime monitor; `STATUS_PAGE_URL` linked from help | Done |
 | Status page itself (hosted service, see DEPLOY.md step 9) | To set up, outside the code |
+| Birth date question and under-18 check: per-event "age is counted on" date (default the start date), Under 18 filter and badge for organizers and door staff, dashboard tile, Sheet column; legacy import brings birth dates (migration 016) | Done |
 | Participant profiles (photo, headline, LinkedIn/GitHub/website, private or public to the event) and the participant map beta: per-event switch, opt-in live location (expires after 3 min, deleted on stop, going private or map off), feedback to organizers (migration 015) | Demo, for feedback |
 | Own artwork as a pass template: upload PNG/JPEG/WebP, re-encoded and stored per org (migration 014); name, QR and pass ID placed on top; `+ Image` in the designer for logos | Done |
 | Plans, usage and limits | Next |

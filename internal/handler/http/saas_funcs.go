@@ -54,6 +54,7 @@ var pageFuncs = template.FuncMap{
 	"list":     func(items ...string) []string { return items },
 	"add":      func(a, b int) int { return a + b },
 	"jsonText": jsonText,
+	"today":    func() string { return time.Now().Format("2006-01-02") },
 	"deref": func(p *int) int {
 		if p == nil {
 			return 0
@@ -85,7 +86,7 @@ var pageFuncs = template.FuncMap{
 	},
 	// inputType is the HTML input type for a form field type.
 	"inputType": func(t string) string {
-		if it, ok := map[string]string{"email": "email", "phone": "tel", "number": "number", "date": "date", "url": "url"}[t]; ok {
+		if it, ok := map[string]string{"email": "email", "phone": "tel", "number": "number", "date": "date", "birth_date": "date", "url": "url"}[t]; ok {
 			return it
 		}
 		return "text"

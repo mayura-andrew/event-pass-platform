@@ -215,6 +215,8 @@ func (s *RegistrationService) UpdateSettings(ctx context.Context, es authz.Event
 		return invalid("the pass ID prefix must be 2 to 6 letters or digits")
 	case st.OpensAt != nil && st.ClosesAt != nil && !st.ClosesAt.After(*st.OpensAt):
 		return invalid("registration closes before it opens")
+	case st.AgeOn != nil && (st.AgeOn.Year() < 2000 || st.AgeOn.Year() > 2100):
+		return invalid("the date ages are counted on must be a real date, such as 14 November of the event's year")
 	}
 	return s.events.UpdateRegistration(ctx, es, st)
 }
@@ -298,7 +300,7 @@ func (s *RegistrationService) Register(ctx context.Context, orgSlug, eventSlug s
 		return nil, errs
 	}
 	p, err := s.store.Register(ctx, pe.Event, domain.EventParticipant{
-		Email: email, FullName: name, Answers: answers, Source: "form",
+		Email: email, FullName: name, Answers: answers, Source: "form", BirthDate: BirthDate(pe.Fields, answers),
 	}, func() string { return NewPassID(pe.Event.PassPrefix) })
 	var already *domain.AlreadyRegisteredError
 	if errors.As(err, &already) {
@@ -378,6 +380,13 @@ func CheckAnswers(fields []domain.FormField, in map[string][]string, errs FieldE
 				continue
 			}
 			out[f.Key] = v
+		case domain.FieldBirthDate:
+			d, err := time.Parse("2006-01-02", v)
+			if err != nil || d.Year() < 1900 || d.After(time.Now()) {
+				errs[f.Key] = "Enter your date of birth."
+				continue
+			}
+			out[f.Key] = v
 		case "select":
 			if !slices.Contains(f.Options, v) {
 				errs[f.Key] = "Choose one of the options."
@@ -408,6 +417,33 @@ func CheckAnswers(fields []domain.FormField, in map[string][]string, errs FieldE
 		}
 	}
 	return out
+}
+
+// BirthDate is the answer to the form's birth date question, if any, as
+// checked by CheckAnswers (YYYY-MM-DD).
+func BirthDate(fields []domain.FormField, answers map[string]any) string {
+	for _, f := range fields {
+		if f.Type == domain.FieldBirthDate {
+			v, _ := answers[f.Key].(string)
+			return v
+		}
+	}
+	return ""
+}
+
+// AgeOn is the date an event counts ages on for the under-18 check: its
+// own setting, else its start date in its time zone; zero when neither.
+func AgeOn(ev *domain.Event) time.Time {
+	if ev.AgeOn != nil {
+		return *ev.AgeOn
+	}
+	if ev.StartsAt != nil {
+		if loc, err := time.LoadLocation(ev.TimeZone); err == nil {
+			y, m, d := ev.StartsAt.In(loc).Date()
+			return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+		}
+	}
+	return time.Time{}
 }
 
 // ---- Organizer: participants ----------------------------------------------------

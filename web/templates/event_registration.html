@@ -43,6 +43,11 @@
       <div class="field grow"><label for="reg-closes">Closes</label><input id="reg-closes" name="reg_closes" type="datetime-local" value="{{$d.ClosesAt}}"><p class="hint">Times in {{$ev.TimeZone}}.</p></div>
     </div>
     <label class="check"><input type="checkbox" name="waitlist"{{if $ev.Waitlist}} checked{{end}}> When full{{with $ev.Capacity}} ({{.}} places){{end}}, put new registrations on a waitlist</label>
+    <div class="field">
+      <label for="age-on">Age is counted on</label>
+      <input id="age-on" name="age_on" type="date" value="{{$d.AgeOn}}">
+      <p class="hint">For the under-18 check: anyone who hasn't turned 18 by this day is marked <b>Under 18</b> for organizers and door staff. {{if $d.AgeDefault}}Empty: the event's start date ({{$d.AgeDefault}}).{{else}}Empty: the event's start date.{{end}}{{if not $d.HasBirthDay}} Add a <b>Birth date</b> question below to use it.{{end}}</p>
+    </div>
     <button class="btn" type="submit">Save</button>
   </form>
 </section>

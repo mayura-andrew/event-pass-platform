@@ -5,6 +5,7 @@ package httphandler
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -101,7 +102,7 @@ func (h *Handler) apiRegistrationSettings(w http.ResponseWriter, r *http.Request
 
 func registrationSettings(ev *domain.Event) domain.RegistrationSettings {
 	return domain.RegistrationSettings{Mode: ev.RegMode, OpensAt: ev.RegOpensAt, ClosesAt: ev.RegClosesAt,
-		Waitlist: ev.Waitlist, PassPrefix: ev.PassPrefix}
+		Waitlist: ev.Waitlist, PassPrefix: ev.PassPrefix, AgeOn: ev.AgeOn}
 }
 
 func (h *Handler) apiPublish(w http.ResponseWriter, r *http.Request, e *eventReq) {
@@ -112,8 +113,14 @@ func (h *Handler) apiUnpublish(w http.ResponseWriter, r *http.Request, e *eventR
 	noContent(w, r, h.Registrations.SetPublished(r.Context(), e.es, e.event, false))
 }
 
+// participantQuery reads ?status= (a status, or "minors" for people under
+// 18 on the event's cut-off date) and ?q=.
 func participantQuery(r *http.Request) domain.ParticipantQuery {
-	return domain.ParticipantQuery{Status: r.URL.Query().Get("status"), Q: r.URL.Query().Get("q")}
+	q := domain.ParticipantQuery{Status: r.URL.Query().Get("status"), Q: r.URL.Query().Get("q")}
+	if q.Status == domain.CountMinors {
+		q.Status, q.Minors = "", true
+	}
+	return q
 }
 
 func (h *Handler) apiListParticipants(w http.ResponseWriter, r *http.Request, e *eventReq) {
@@ -147,6 +154,10 @@ type registrationData struct {
 	PublicURL  string
 	OpensAt    string // datetime-local in the event's zone
 	ClosesAt   string
+	AgeOn      string // YYYY-MM-DD, "" for the start date
+	// AgeDefault is the start date used when AgeOn is empty ("" without dates).
+	AgeDefault  string
+	HasBirthDay bool // the form asks for a birth date
 }
 
 func localValue(t *time.Time, tz string) string {
@@ -181,6 +192,15 @@ func (h *Handler) renderRegistration(w http.ResponseWriter, r *http.Request, e *
 	}
 	d := registrationData{eventPageData: h.eventData(e, "registration"), Fields: fields, TypeLabels: domain.FieldTypeLabels,
 		OpensAt: localValue(e.event.RegOpensAt, e.event.TimeZone), ClosesAt: localValue(e.event.RegClosesAt, e.event.TimeZone)}
+	if e.event.AgeOn != nil {
+		d.AgeOn = e.event.AgeOn.Format("2006-01-02")
+	}
+	if e.event.StartsAt != nil {
+		d.AgeDefault = service.AgeOn(&domain.Event{StartsAt: e.event.StartsAt, TimeZone: e.event.TimeZone}).Format("2 Jan 2006")
+	}
+	for _, f := range fields {
+		d.HasBirthDay = d.HasBirthDay || f.Type == domain.FieldBirthDate
+	}
 	for _, t := range domain.FieldTypes {
 		d.FieldTypes = append(d.FieldTypes, viewLink{t, domain.FieldTypeLabels[t]})
 	}
@@ -212,10 +232,18 @@ func (h *Handler) registrationPost(w http.ResponseWriter, r *http.Request, e *ev
 	if err == nil {
 		closes, err = service.ParseLocalTime(r.PostFormValue("reg_closes"), e.event.TimeZone)
 	}
+	var ageOn *time.Time
+	if v := strings.TrimSpace(r.PostFormValue("age_on")); v != "" && err == nil {
+		d, perr := time.Parse("2006-01-02", v)
+		if perr != nil {
+			err = fmt.Errorf("%w: enter the date ages are counted on, such as 14 November", domain.ErrValidation)
+		}
+		ageOn = &d
+	}
 	if err == nil {
 		err = h.Registrations.UpdateSettings(r.Context(), e.es, domain.RegistrationSettings{
 			Mode: r.PostFormValue("reg_mode"), OpensAt: opens, ClosesAt: closes,
-			Waitlist: r.PostFormValue("waitlist") == "on", PassPrefix: r.PostFormValue("pass_prefix"),
+			Waitlist: r.PostFormValue("waitlist") == "on", PassPrefix: r.PostFormValue("pass_prefix"), AgeOn: ageOn,
 		})
 	}
 	h.registrationResult(w, r, e, "saved", err)
@@ -266,8 +294,9 @@ type participantsData struct {
 	Participants []domain.EventParticipant
 	Counts       domain.ParticipantCounts
 	Total        int
-	Filter, Q    string // Filter: the status shown ("" = all); Status is the event's
+	Filter, Q    string // Filter: the status shown ("" = all, "minors"); Status is the event's
 	Statuses     []viewLink
+	AgeOn        string // the under-18 cut-off, as shown
 }
 
 var statusFilterLabels = []viewLink{{"", "All"}, {domain.PartRegistered, "Registered"}, {domain.PartPending, "Waiting for approval"},
@@ -306,8 +335,19 @@ func (h *Handler) participantsPage(w http.ResponseWriter, r *http.Request, e *ev
 	}
 	d := participantsData{eventPageData: h.eventData(e, "participants"), Participants: list, Counts: counts,
 		Filter: q.Status, Q: strings.TrimSpace(q.Q), Statuses: statusFilterLabels}
-	for _, n := range counts {
-		d.Total += n
+	if q.Minors {
+		d.Filter = domain.CountMinors
+	}
+	for status, n := range counts {
+		if status != domain.CountMinors { // minors are also counted under their status
+			d.Total += n
+		}
+	}
+	if counts[domain.CountMinors] > 0 || q.Minors {
+		d.Statuses = append(append([]viewLink{}, statusFilterLabels...), viewLink{domain.CountMinors, "Under 18"})
+	}
+	if e.event.StartsAt != nil || e.event.AgeOn != nil {
+		d.AgeOn = service.AgeOn(e.event).Format("2 Jan 2006")
 	}
 	h.render(w, http.StatusOK, "event_participants", e.principal, view{Title: "Participants · " + e.event.Name,
 		Notice: participantNotices[r.URL.Query().Get("notice")], Data: d})

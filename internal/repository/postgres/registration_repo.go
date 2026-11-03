@@ -75,6 +75,9 @@ func (r *RegistrationRepo) SaveField(ctx context.Context, es authz.EventScope, f
 				VALUES ($1, $2, $3, $4, $5, $6,
 				        (SELECT COALESCE(MAX(position), 0) + 1 FROM form_fields WHERE event_id = $3 AND workshop_id IS NULL))`,
 				f.ID, es.OrgID(), es.EventID(), f.Key, f.Type, fieldConfig(f)); err != nil {
+				if pgCode(err) == pgUniqueViolation && strings.Contains(pgConstraint(err), "birth_date") {
+					return errOneBirthDate
+				}
 				if pgCode(err) == pgUniqueViolation {
 					return fmt.Errorf("%w: another question already uses the key %q", domain.ErrConflict, f.Key)
 				}
@@ -88,12 +91,18 @@ func (r *RegistrationRepo) SaveField(ctx context.Context, es authz.EventScope, f
 			if pgCode(err) == pgInvalidTextRepr {
 				return domain.ErrNotFound
 			}
+			if pgCode(err) == pgUniqueViolation && strings.Contains(pgConstraint(err), "birth_date") {
+				return errOneBirthDate
+			}
 			if err != nil {
 				return err
 			}
 			if n, _ := res.RowsAffected(); n == 0 {
 				return domain.ErrNotFound
 			}
+		}
+		if err := syncBirthDates(ctx, tx, es.OrgID(), es.EventID()); err != nil {
+			return err
 		}
 		return insertAudit(ctx, tx, es.OrgID(), es.AccountID(), domain.Audit{
 			EventID: es.EventID(), Action: action, TargetType: "field", TargetID: f.ID,
@@ -106,6 +115,29 @@ func (r *RegistrationRepo) SaveField(ctx context.Context, es authz.EventScope, f
 	return &f, nil
 }
 
+var errOneBirthDate = fmt.Errorf("%w: this event already asks for a birth date; one birth date question is enough", domain.ErrConflict)
+
+// syncBirthDates makes event_participants.birth_date follow the event's
+// birth date question: the answers to it after one is added (or a date
+// question becomes one), nothing once it's removed.
+func syncBirthDates(ctx context.Context, tx *sql.Tx, orgID, eventID string) error {
+	var key sql.NullString
+	err := tx.QueryRowContext(ctx, `SELECT key FROM form_fields
+		WHERE org_id = $1 AND event_id = $2 AND type = 'birth_date' AND workshop_id IS NULL`, orgID, eventID).Scan(&key)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	// Answers were checked as dates when given; anything else counts as none.
+	_, err = tx.ExecContext(ctx, `
+		UPDATE event_participants SET birth_date = d.value
+		FROM (SELECT id, CASE WHEN $3::text IS NOT NULL AND answers->>$3 ~ '^\d{4}-\d{2}-\d{2}$' AND answers->>$3 >= '1900-01-01'
+		                      THEN (answers->>$3)::date END AS value
+		      FROM event_participants WHERE org_id = $1 AND event_id = $2) d
+		WHERE event_participants.id = d.id AND event_participants.birth_date IS DISTINCT FROM d.value`,
+		orgID, eventID, key)
+	return err
+}
+
 func (r *RegistrationRepo) DeleteField(ctx context.Context, es authz.EventScope, fieldID string) error {
 	return withTenant(ctx, r.db, es.OrgID(), es.AccountID(), func(tx *sql.Tx) error {
 		var key string
@@ -115,6 +147,9 @@ func (r *RegistrationRepo) DeleteField(ctx context.Context, es authz.EventScope,
 			return domain.ErrNotFound
 		}
 		if err != nil {
+			return err
+		}
+		if err := syncBirthDates(ctx, tx, es.OrgID(), es.EventID()); err != nil {
 			return err
 		}
 		return insertAudit(ctx, tx, es.OrgID(), es.AccountID(), domain.Audit{
@@ -192,14 +227,31 @@ func (r *RegistrationRepo) PublicEvent(ctx context.Context, orgSlug, eventSlug s
 	return p, err
 }
 
-const participantCols = `p.id, p.event_id, COALESCE(p.account_id::text, ''), p.email, p.full_name, p.status,
-	p.pass_id, p.answers, p.source, p.registered_at, p.updated_at`
+// eventAgeOn is the day an event counts ages on: its "age is counted on"
+// date, else its start date in its own time zone, else today. The alias is
+// the events row; see participantAge.
+func eventAgeOn(e string) string {
+	return `COALESCE(` + e + `.age_on, (` + e + `.starts_at AT TIME ZONE ` + e + `.time_zone)::date, CURRENT_DATE)`
+}
+
+// participantAge is p's age in whole years on its event's cut-off date
+// (NULL without a birth date). Postgres's age() counts a birthday as
+// reached on the same month and day, so 18 on the day itself is 18.
+var participantAge = `CASE WHEN p.birth_date IS NULL THEN NULL ELSE date_part('year', age((SELECT ` + eventAgeOn("ae") +
+	` FROM events ae WHERE ae.id = p.event_id), p.birth_date))::int END`
+
+// participantIsMinor: under 18 on the cut-off date (false without a birth date).
+var participantIsMinor = `(p.birth_date IS NOT NULL AND ` + participantAge + ` < 18)`
+
+var participantCols = `p.id, p.event_id, COALESCE(p.account_id::text, ''), p.email, p.full_name, p.status,
+	p.pass_id, p.answers, p.source, p.registered_at, p.updated_at,
+	COALESCE(to_char(p.birth_date, 'YYYY-MM-DD'), ''), ` + participantAge
 
 func scanParticipant(row interface{ Scan(...any) error }) (domain.EventParticipant, error) {
 	var p domain.EventParticipant
 	var answers []byte
 	err := row.Scan(&p.ID, &p.EventID, &p.AccountID, &p.Email, &p.FullName, &p.Status,
-		&p.PassID, &answers, &p.Source, &p.RegisteredAt, &p.UpdatedAt)
+		&p.PassID, &answers, &p.Source, &p.RegisteredAt, &p.UpdatedAt, &p.BirthDate, &p.Age)
 	if err == nil {
 		err = json.Unmarshal(answers, &p.Answers)
 	}
@@ -255,9 +307,9 @@ func (r *RegistrationRepo) Register(ctx context.Context, ev *domain.Event, p dom
 			}
 			id := newID()
 			if _, err := tx.ExecContext(ctx, `
-				INSERT INTO event_participants (id, org_id, event_id, email, full_name, status, pass_id, answers, source, external_ref)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULLIF($10, ''))`,
-				id, ev.OrgID, ev.ID, p.Email, p.FullName, status, pid, answers, orDefault(p.Source, "form"), p.ExternalRef); err != nil {
+				INSERT INTO event_participants (id, org_id, event_id, email, full_name, status, pass_id, answers, source, external_ref, birth_date)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULLIF($10, ''), NULLIF($11, '')::date)`,
+				id, ev.OrgID, ev.ID, p.Email, p.FullName, status, pid, answers, orDefault(p.Source, "form"), p.ExternalRef, p.BirthDate); err != nil {
 				if pgCode(err) == pgUniqueViolation && strings.Contains(pgConstraint(err), "external") {
 					return ErrAlreadyImported
 				}
@@ -296,6 +348,9 @@ func (r *RegistrationRepo) ListParticipants(ctx context.Context, es authz.EventS
 			n := len(args)
 			where += fmt.Sprintf(" AND (p.full_name ILIKE $%d OR p.email ILIKE $%d OR p.pass_id ILIKE $%d)", n, n, n)
 		}
+		if q.Minors {
+			where += " AND " + participantIsMinor
+		}
 		rows, err := tx.QueryContext(ctx, `SELECT `+participantCols+` FROM event_participants p WHERE `+where+`
 			ORDER BY p.registered_at DESC LIMIT 500`, args...)
 		if err != nil {
@@ -327,7 +382,17 @@ func (r *RegistrationRepo) ListParticipants(ctx context.Context, es authz.EventS
 			}
 			counts[s] = n
 		}
-		return crows.Err()
+		if err := crows.Err(); err != nil {
+			return err
+		}
+		var minors int
+		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM event_participants p
+			WHERE p.org_id = $1 AND p.event_id = $2 AND p.status <> 'cancelled' AND `+participantIsMinor,
+			es.OrgID(), es.EventID()).Scan(&minors); err != nil {
+			return err
+		}
+		counts[domain.CountMinors] = minors
+		return nil
 	})
 	return out, counts, err
 }

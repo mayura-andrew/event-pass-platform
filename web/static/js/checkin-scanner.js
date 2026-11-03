@@ -37,6 +37,14 @@ async function call(method, path, body) {
 
 // ---- Result card ------------------------------------------------------------
 const icons = { green: '✓', amber: '!', red: '✕' };
+// "Under 18" next to a minor's name: follow the safeguarding policy.
+function minorChip() {
+  const c = document.createElement('span');
+  c.className = 'chip chip-minor';
+  c.textContent = 'Under 18';
+  c.title = 'Under 18 on the event\'s cut-off date: follow the safeguarding policy';
+  return c;
+}
 let current = null; // { request, result }
 
 function hideResult() { $('result').hidden = true; current = null; }
@@ -51,6 +59,7 @@ function show(result, request) {
   $('r-detail').textContent = result.detail || '';
   const p = result.participant;
   $('r-name').textContent = p ? p.full_name : '';
+  if (p && p.minor) $('r-name').append(' ', minorChip());
   $('r-pass').textContent = p ? p.pass_id : '';
   const dl = $('r-answers');
   dl.replaceChildren();
@@ -169,6 +178,7 @@ $('lookup-form').addEventListener('submit', async (e) => {
       const who = document.createElement('div');
       who.className = 'who';
       const b = document.createElement('b'); b.textContent = p.full_name;
+      if (p.minor) b.append(' ', minorChip());
       const s = document.createElement('span'); s.textContent = `${p.pass_id} · ${p.status}`;
       who.append(b, s);
       const btn = document.createElement('button');

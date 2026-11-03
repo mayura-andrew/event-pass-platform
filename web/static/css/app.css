@@ -395,3 +395,9 @@ a.btn[aria-disabled=true] { opacity: .5; pointer-events: none; }
   .map { height: 55vh; }
   .people-card { max-height: none; }
 }
+
+/* ---- Under 18 ---- */
+.chip-minor { min-height: 22px; padding: 0 8px; font-size: .75rem; font-weight: 700; color: var(--warning); border-color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 12%, transparent); vertical-align: middle; }
+a.tile-minor { color: inherit; text-decoration: none; border-color: var(--warning); }
+a.tile-minor:hover .tile-l { text-decoration: underline; }

@@ -143,9 +143,13 @@ type EventStats struct {
 	// Check-ins per 10 minutes over the last 12 hours, oldest first.
 	PerTenMinutes []Bucket `json:"per_ten_minutes"`
 	// Registrations per day over the last 30 days.
-	RegistrationsPerDay []Bucket  `json:"registrations_per_day"`
-	CheckedIn           int       `json:"checked_in"`
-	At                  time.Time `json:"at"`
+	RegistrationsPerDay []Bucket `json:"registrations_per_day"`
+	CheckedIn           int      `json:"checked_in"`
+	// Minors: registered people under 18 on the event's cut-off date;
+	// AsksBirthDate: the form has a birth date question (else no tile).
+	Minors        int       `json:"minors"`
+	AsksBirthDate bool      `json:"asks_birth_date"`
+	At            time.Time `json:"at"`
 }
 
 type Bucket struct {

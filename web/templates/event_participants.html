@@ -4,6 +4,7 @@
 <nav class="filters" aria-label="Filter by status">
   {{range $d.Statuses}}<a href="{{$d.Href .Key}}"{{if eq .Key $d.Filter}} aria-current="page"{{end}}>{{.Label}} <span class="count">{{$d.Count .Key}}</span></a>{{end}}
 </nav>
+{{if eq $d.Filter "minors"}}<p class="hint">People under 18 on {{$d.AgeOn}}, from the birth date they gave. Cancelled registrations aren't counted.</p>{{end}}
 <form class="toolbar" method="get" action="{{$d.Base}}/participants" role="search">
   {{if $d.Filter}}<input type="hidden" name="status" value="{{$d.Filter}}">{{end}}
   <label for="p-search" class="sr-only">Search participants</label>
@@ -14,7 +15,7 @@
 <ul class="people card">
   {{range $d.Participants}}
   <li>
-    <div class="who">{{template "avatar" (dict "Name" .FullName "Email" .Email)}}<b>{{.FullName}}</b><span>{{.Email}} · <code>{{.PassID}}</code> · {{when .RegisteredAt}}</span></div>
+    <div class="who">{{template "avatar" (dict "Name" .FullName "Email" .Email)}}<b>{{.FullName}}{{if .Minor}} <span class="chip chip-minor" title="Under 18 on {{$d.AgeOn}} (age {{deref .Age}}): follow the safeguarding policy">Under 18</span>{{end}}</b><span>{{.Email}} · <code>{{.PassID}}</code> · {{when .RegisteredAt}}</span></div>
     <div class="actions">
       <span class="pstatus pstatus-{{.Status}}">{{statusWord .Status}}</span>
       <a class="btn btn-quiet" href="{{$d.Base}}/participants/{{.ID}}/pass.png" target="_blank" rel="noopener">Pass</a>

@@ -17,6 +17,7 @@ import (
 	"log/slog"
 	"net/url"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -362,12 +363,27 @@ func SheetRows(d *postgres.SheetData) map[string][][]any {
 	for _, f := range d.Fields {
 		head = append(head, f.Label)
 	}
+	asksAge := slices.ContainsFunc(d.Fields, func(f domain.FormField) bool { return f.Type == domain.FieldBirthDate })
+	if asksAge {
+		label := "Under 18"
+		if day := AgeOn(&d.Event); !day.IsZero() {
+			label += " on " + day.Format("2 Jan 2006")
+		}
+		head = append(head, label)
+	}
 	people := [][]any{head}
 	for _, p := range d.Participants {
 		reg := p.RegisteredAt
 		row := []any{p.PassID, p.FullName, p.Email, p.Status, at(&reg), p.Source}
 		for _, f := range d.Fields {
 			row = append(row, answerText(p.Answers[f.Key]))
+		}
+		if asksAge {
+			minor := ""
+			if p.Age != nil {
+				minor = answerText(p.Minor())
+			}
+			row = append(row, minor)
 		}
 		people = append(people, row)
 	}
@@ -468,5 +484,6 @@ func mapResponse(cfg domain.FormConfig, fields []domain.FormField, r FormRespons
 	for key := range errs {
 		delete(answers, key)
 	}
-	return domain.EventParticipant{Email: email, FullName: name, Answers: answers, Source: "import", ExternalRef: r.ID}, true
+	return domain.EventParticipant{Email: email, FullName: name, Answers: answers, Source: "import", ExternalRef: r.ID,
+		BirthDate: BirthDate(fields, answers)}, true
 }

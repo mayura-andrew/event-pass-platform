@@ -99,6 +99,19 @@ func ImportLegacy(ctx context.Context, db *sql.DB, orgSlug, ownerEmail, eventNam
 	}
 	n, _ := r.RowsAffected()
 	res.Fields = int(n)
+	// Birth dates, when the current build has any: a birth date question
+	// (organizers only), so minors are counted on the event's cut-off date.
+	r, err = tx.ExecContext(ctx, `
+		INSERT INTO form_fields (id, org_id, event_id, key, type, config, position)
+		SELECT gen_random_uuid(), $1::uuid, $2::uuid, 'date_of_birth', 'birth_date',
+		       '{"label": "Birth date", "required": false, "visibility": "admin"}', 1
+		WHERE EXISTS (SELECT 1 FROM participants WHERE is_confirmed AND date_of_birth IS NOT NULL)
+		ON CONFLICT (event_id, key) WHERE workshop_id IS NULL DO NOTHING`, orgID, res.EventID)
+	if err != nil {
+		return nil, err
+	}
+	n, _ = r.RowsAffected()
+	res.Fields += int(n)
 
 	var total int
 	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM participants WHERE is_confirmed`).Scan(&total); err != nil {
@@ -106,12 +119,14 @@ func ImportLegacy(ctx context.Context, db *sql.DB, orgSlug, ownerEmail, eventNam
 	}
 	r, err = tx.ExecContext(ctx, `
 		INSERT INTO event_participants (id, org_id, event_id, account_id, email, full_name, status, pass_id, answers,
-		                                source, legacy_membership_id, legacy_qr_signature, registered_at)
+		                                source, legacy_membership_id, legacy_qr_signature, registered_at, birth_date)
 		SELECT p.id, $1, $2, (SELECT a.id FROM accounts a WHERE a.email = lower(p.email)), lower(p.email), p.full_name,
 		       'registered', p.membership_id,
 		       p.custom_attributes || CASE WHEN COALESCE(p.team_name, '') = '' THEN '{}'::jsonb
-		                                   ELSE jsonb_build_object('team_name', p.team_name) END,
-		       'import', p.membership_id, p.qr_signature, p.created_at
+		                                   ELSE jsonb_build_object('team_name', p.team_name) END
+		                           || CASE WHEN p.date_of_birth IS NULL THEN '{}'::jsonb
+		                                   ELSE jsonb_build_object('date_of_birth', to_char(p.date_of_birth, 'YYYY-MM-DD')) END,
+		       'import', p.membership_id, p.qr_signature, p.created_at, p.date_of_birth
 		FROM participants p
 		WHERE p.is_confirmed AND length(p.membership_id) <= 20
 		ON CONFLICT DO NOTHING`, orgID, res.EventID)
@@ -159,7 +174,7 @@ func (r *RegistrationRepo) CheckParticipant(ctx context.Context, orgID, accountI
 			WHERE p.org_id = $1 AND p.event_id = $2 AND p.id = $3`, orgID, eventID, participantID)
 		var answers []byte
 		if err := row.Scan(&p.ID, &p.EventID, &p.AccountID, &p.Email, &p.FullName, &p.Status,
-			&p.PassID, &answers, &p.Source, &p.RegisteredAt, &p.UpdatedAt, &legacy); err != nil {
+			&p.PassID, &answers, &p.Source, &p.RegisteredAt, &p.UpdatedAt, &p.BirthDate, &p.Age, &legacy); err != nil {
 			return err
 		}
 		return json.Unmarshal(answers, &p.Answers)

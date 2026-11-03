@@ -42,6 +42,7 @@ async function refresh() {
     text('[data-stat="checked_in"]', st.checked_in);
     text('[data-stat="pending"]', st.participants.pending || 0);
     text('[data-stat="waitlisted"]', st.participants.waitlisted || 0);
+    text('[data-stat="minors"]', st.minors || 0);
     const list = document.getElementById('checkpoint-bars');
     list.replaceChildren();
     for (const c of st.checkpoints) {

@@ -25,7 +25,7 @@ const eventCols = `e.id, e.org_id, e.slug, e.name, e.type, e.status, e.descripti
 	e.owner_id, COALESCE(oa.name, ''), COALESCE(oa.email, ''), COALESCE(oa.avatar_url, ''),
 	e.created_at, e.updated_at, e.archived_at, e.deleted_at,
 	e.published_at, e.reg_mode, e.reg_opens_at, e.reg_closes_at, e.waitlist, e.pass_prefix,
-	e.pass_template_id, e.pass_template_version`
+	e.pass_template_id, e.pass_template_version, e.age_on`
 
 // eventFrom joins the owner's account; it can be missing from view when the
 // owner has left the org, hence the LEFT JOIN and COALESCEs above.
@@ -39,7 +39,7 @@ func eventDest(e *domain.Event, venue, settings *[]byte) []any {
 		&e.OwnerID, &e.OwnerName, &e.OwnerEmail, &e.OwnerAvatar,
 		&e.CreatedAt, &e.UpdatedAt, &e.ArchivedAt, &e.DeletedAt,
 		&e.PublishedAt, &e.RegMode, &e.RegOpensAt, &e.RegClosesAt, &e.Waitlist, &e.PassPrefix,
-		&e.PassTemplateID, &e.PassTemplateVersion}
+		&e.PassTemplateID, &e.PassTemplateVersion, &e.AgeOn}
 }
 
 func decodeEvent(e *domain.Event, venue, settings []byte) error {
@@ -741,12 +741,15 @@ func (r *EventRepo) SetPublished(ctx context.Context, es authz.EventScope, publi
 // UpdateRegistration saves the registration settings.
 func (r *EventRepo) UpdateRegistration(ctx context.Context, es authz.EventScope, st domain.RegistrationSettings) error {
 	diff := map[string]any{"reg_mode": st.Mode, "waitlist": st.Waitlist, "pass_prefix": st.PassPrefix}
+	if st.AgeOn != nil {
+		diff["age_on"] = st.AgeOn.Format("2006-01-02")
+	}
 	return r.inEvent(ctx, es, domain.Audit{Action: "event.registration", Diff: diff}, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, `
 			UPDATE events SET reg_mode = $3, reg_opens_at = $4, reg_closes_at = $5, waitlist = $6, pass_prefix = $7,
-			       updated_at = NOW()
+			       age_on = $8, updated_at = NOW()
 			WHERE org_id = $1 AND id = $2`,
-			es.OrgID(), es.EventID(), st.Mode, st.OpensAt, st.ClosesAt, st.Waitlist, st.PassPrefix)
+			es.OrgID(), es.EventID(), st.Mode, st.OpensAt, st.ClosesAt, st.Waitlist, st.PassPrefix, st.AgeOn)
 		return err
 	})
 }
