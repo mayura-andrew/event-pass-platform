@@ -1,8 +1,8 @@
 {
-  "name": "Space Apps Scanner",
-  "short_name": "Scanner",
-  "description": "Offline delegate check-in for NASA Space Apps Challenge volunteers.",
-  "start_url": "/scanner.html",
+  "name": "Event Pass Platform",
+  "short_name": "Event Pass",
+  "description": "Event registration, passes, workshops, and check-in.",
+  "start_url": "/app",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",

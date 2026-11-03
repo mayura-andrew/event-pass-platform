@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nasa-spaceapps/nsac-qr/internal/domain"
+	"github.com/mayura-andrew/event-pass-platform/internal/domain"
 )
 
 // OutboxStore is the worker's queue (postgres.OutboxRepo).

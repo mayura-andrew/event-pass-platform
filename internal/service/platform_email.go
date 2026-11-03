@@ -9,7 +9,7 @@ import (
 
 // ---- Platform emails (SaaS) ----------------------------------------------------
 // Sign-in links and org invites come from the platform, not from one event,
-// so they carry the product name instead of the Colombo artwork.
+// so they carry the product name instead of legacy artwork.
 
 // ActionEmail is a short message with one button.
 type ActionEmail struct {

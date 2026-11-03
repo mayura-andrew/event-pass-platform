@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nasa-spaceapps/nsac-qr/internal/domain"
-	"github.com/nasa-spaceapps/nsac-qr/internal/passes"
+	"github.com/mayura-andrew/event-pass-platform/internal/domain"
+	"github.com/mayura-andrew/event-pass-platform/internal/passes"
 )
 
 // PassService turns a participant into their pass: QR token and card.
@@ -64,15 +64,9 @@ func (s *PassService) LoadImages(ctx context.Context, orgID string, d *passes.De
 	return nil
 }
 
-// Token is what the pass's QR code holds. A delegate imported from the
-// current build keeps their old payload, so the pass already in their
-// inbox still scans.
+// Token is what the pass's QR code holds.
 func (s *PassService) Token(pc *domain.PassContext) (string, error) {
 	p := pc.Participant
-	if pc.LegacySig != "" {
-		b, err := json.Marshal(passes.Legacy{ID: p.ID, Sig: pc.LegacySig})
-		return string(b), err
-	}
 	return s.keys.Issue(pc.Event.OrgID, pc.Event.ID, p.ID, p.PassID)
 }
 
@@ -163,18 +157,13 @@ func PassFilename(passID, ext string) string {
 	return "pass-" + safe + "." + ext
 }
 
-// Scanned is a recognised QR payload: a platform token, or a pass from the
-// current build.
+// Scanned is a recognised platform QR payload.
 type Scanned struct {
 	Claims *passes.Claims
-	Legacy *passes.Legacy
 }
 
-// Parse recognises and (for tokens) verifies a scanned QR payload.
+// Parse recognises and verifies a scanned QR payload.
 func (s *PassService) Parse(payload string) (*Scanned, error) {
-	if l, ok := passes.ParseLegacy(payload); ok {
-		return &Scanned{Legacy: &l}, nil
-	}
 	c, err := s.keys.Verify(payload)
 	if err != nil {
 		return nil, err

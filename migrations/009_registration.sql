@@ -5,10 +5,7 @@
 -- =============================================================================
 -- A published event has a public page where people register. Each person's
 -- registration is one row in event_participants (same email in two events =
--- two rows, one account). This is a new table: the current build's
--- `participants` table keeps serving the live event until it is imported
--- (cmd/legacy-import), which copies its rows here with their old QR
--- signatures so passes already sent keep scanning.
+-- two rows, one account).
 --
 -- Safe to re-run.
 
@@ -76,8 +73,6 @@ CREATE TABLE IF NOT EXISTS event_participants (
     answers       JSONB NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(answers) = 'object'),
     source        VARCHAR(20)  NOT NULL DEFAULT 'form' CHECK (source IN ('form', 'organizer', 'import')),
     -- Imported from the current build: its QR payload stays valid.
-    legacy_membership_id VARCHAR(100),
-    legacy_qr_signature  VARCHAR(255),
     registered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     FOREIGN KEY (org_id, event_id) REFERENCES events (org_id, id) ON DELETE CASCADE,
@@ -94,25 +89,25 @@ CREATE INDEX IF NOT EXISTS idx_event_participants_email ON event_participants (e
 -- -----------------------------------------------------------------------------
 ALTER TABLE form_fields        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE event_participants ENABLE ROW LEVEL SECURITY;
-GRANT SELECT, INSERT, UPDATE, DELETE ON form_fields, event_participants TO nsac_tenant;
+GRANT SELECT, INSERT, UPDATE, DELETE ON form_fields, event_participants TO event_pass_tenant;
 
 DROP POLICY IF EXISTS form_fields_all ON form_fields;
-CREATE POLICY form_fields_all ON form_fields FOR ALL TO nsac_tenant
+CREATE POLICY form_fields_all ON form_fields FOR ALL TO event_pass_tenant
     USING (org_id = app_org_id()) WITH CHECK (org_id = app_org_id());
 
 -- Participants: the current org's, plus (portal) the caller's own passes in
 -- any org. Writes only in the current org.
 DROP POLICY IF EXISTS event_participants_select ON event_participants;
-CREATE POLICY event_participants_select ON event_participants FOR SELECT TO nsac_tenant
+CREATE POLICY event_participants_select ON event_participants FOR SELECT TO event_pass_tenant
     USING (org_id = app_org_id() OR account_id = app_account_id());
 DROP POLICY IF EXISTS event_participants_insert ON event_participants;
-CREATE POLICY event_participants_insert ON event_participants FOR INSERT TO nsac_tenant
+CREATE POLICY event_participants_insert ON event_participants FOR INSERT TO event_pass_tenant
     WITH CHECK (org_id = app_org_id());
 DROP POLICY IF EXISTS event_participants_update ON event_participants;
-CREATE POLICY event_participants_update ON event_participants FOR UPDATE TO nsac_tenant
+CREATE POLICY event_participants_update ON event_participants FOR UPDATE TO event_pass_tenant
     USING (org_id = app_org_id()) WITH CHECK (org_id = app_org_id());
 DROP POLICY IF EXISTS event_participants_delete ON event_participants;
-CREATE POLICY event_participants_delete ON event_participants FOR DELETE TO nsac_tenant
+CREATE POLICY event_participants_delete ON event_participants FOR DELETE TO event_pass_tenant
     USING (org_id = app_org_id());
 
 -- The portal shows each pass with its event and org, across orgs: reading
@@ -120,18 +115,18 @@ CREATE POLICY event_participants_delete ON event_participants FOR DELETE TO nsac
 -- portal exception can never reach an UPDATE or DELETE).
 DROP POLICY IF EXISTS events_all ON events;
 DROP POLICY IF EXISTS events_select ON events;
-CREATE POLICY events_select ON events FOR SELECT TO nsac_tenant
+CREATE POLICY events_select ON events FOR SELECT TO event_pass_tenant
     USING (org_id = app_org_id()
            OR id IN (SELECT p.event_id FROM event_participants p WHERE p.account_id = app_account_id()));
 DROP POLICY IF EXISTS events_insert ON events;
-CREATE POLICY events_insert ON events FOR INSERT TO nsac_tenant WITH CHECK (org_id = app_org_id());
+CREATE POLICY events_insert ON events FOR INSERT TO event_pass_tenant WITH CHECK (org_id = app_org_id());
 DROP POLICY IF EXISTS events_update ON events;
-CREATE POLICY events_update ON events FOR UPDATE TO nsac_tenant
+CREATE POLICY events_update ON events FOR UPDATE TO event_pass_tenant
     USING (org_id = app_org_id()) WITH CHECK (org_id = app_org_id());
 DROP POLICY IF EXISTS events_delete ON events;
-CREATE POLICY events_delete ON events FOR DELETE TO nsac_tenant USING (org_id = app_org_id());
+CREATE POLICY events_delete ON events FOR DELETE TO event_pass_tenant USING (org_id = app_org_id());
 DROP POLICY IF EXISTS orgs_select ON orgs;
-CREATE POLICY orgs_select ON orgs FOR SELECT TO nsac_tenant
+CREATE POLICY orgs_select ON orgs FOR SELECT TO event_pass_tenant
     USING (id = app_org_id()
            OR id IN (SELECT m.org_id FROM org_members m WHERE m.account_id = app_account_id())
            OR id IN (SELECT s.org_id FROM event_shares s WHERE s.account_id = app_account_id())

@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nasa-spaceapps/nsac-qr/internal/domain"
+	"github.com/mayura-andrew/event-pass-platform/internal/domain"
 )
 
 var passIDRe = regexp.MustCompile(`\b(SAC-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4})\b`)
@@ -26,7 +26,7 @@ func TestRegistrationJourney(t *testing.T) {
 	base := "/api/v1/orgs/" + org.Slug + "/events"
 
 	starts := time.Now().Add(14 * 24 * time.Hour).UTC().Format(time.RFC3339)
-	status, b := ann.api("POST", base, map[string]any{"name": "Space Apps Colombo", "starts_at": starts,
+	status, b := ann.api("POST", base, map[string]any{"name": "Example Event", "starts_at": starts,
 		"capacity": 2, "visibility": "unlisted", "time_zone": "Asia/Colombo"})
 	if status != http.StatusCreated {
 		t.Fatalf("create: HTTP %d %s", status, b)

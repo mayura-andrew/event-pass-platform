@@ -149,35 +149,35 @@ ALTER TABLE workshop_signups ENABLE ROW LEVEL SECURITY;
 ALTER TABLE checkpoints      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE checkins         ENABLE ROW LEVEL SECURITY;
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON workshops, workshop_signups, checkpoints TO nsac_tenant;
+GRANT SELECT, INSERT, UPDATE, DELETE ON workshops, workshop_signups, checkpoints TO event_pass_tenant;
 -- Append-only: an undo is an UPDATE of undone_at, never a DELETE.
-GRANT SELECT, INSERT, UPDATE (undone_at, undone_by) ON checkins TO nsac_tenant;
-GRANT EXECUTE ON FUNCTION add_default_checkpoints(UUID, UUID) TO nsac_tenant;
+GRANT SELECT, INSERT, UPDATE (undone_at, undone_by) ON checkins TO event_pass_tenant;
+GRANT EXECUTE ON FUNCTION add_default_checkpoints(UUID, UUID) TO event_pass_tenant;
 
 -- Workshops and sign-ups: the current org's; participants also read the
 -- workshops of events they're registered for and their own sign-ups (portal).
 DROP POLICY IF EXISTS workshops_select ON workshops;
-CREATE POLICY workshops_select ON workshops FOR SELECT TO nsac_tenant
+CREATE POLICY workshops_select ON workshops FOR SELECT TO event_pass_tenant
     USING (org_id = app_org_id()
            OR event_id IN (SELECT p.event_id FROM event_participants p WHERE p.account_id = app_account_id()));
 DROP POLICY IF EXISTS workshops_write ON workshops;
-CREATE POLICY workshops_write ON workshops FOR ALL TO nsac_tenant
+CREATE POLICY workshops_write ON workshops FOR ALL TO event_pass_tenant
     USING (org_id = app_org_id()) WITH CHECK (org_id = app_org_id());
 
 DROP POLICY IF EXISTS workshop_signups_all ON workshop_signups;
-CREATE POLICY workshop_signups_all ON workshop_signups FOR ALL TO nsac_tenant
+CREATE POLICY workshop_signups_all ON workshop_signups FOR ALL TO event_pass_tenant
     USING (org_id = app_org_id()) WITH CHECK (org_id = app_org_id());
 
 DROP POLICY IF EXISTS checkpoints_all ON checkpoints;
-CREATE POLICY checkpoints_all ON checkpoints FOR ALL TO nsac_tenant
+CREATE POLICY checkpoints_all ON checkpoints FOR ALL TO event_pass_tenant
     USING (org_id = app_org_id()) WITH CHECK (org_id = app_org_id());
 
 DROP POLICY IF EXISTS checkins_select ON checkins;
-CREATE POLICY checkins_select ON checkins FOR SELECT TO nsac_tenant USING (org_id = app_org_id());
+CREATE POLICY checkins_select ON checkins FOR SELECT TO event_pass_tenant USING (org_id = app_org_id());
 DROP POLICY IF EXISTS checkins_insert ON checkins;
 -- Recorded as the signed-in staff member, never on someone's behalf.
-CREATE POLICY checkins_insert ON checkins FOR INSERT TO nsac_tenant
+CREATE POLICY checkins_insert ON checkins FOR INSERT TO event_pass_tenant
     WITH CHECK (org_id = app_org_id() AND staff_account_id IS NOT DISTINCT FROM app_account_id());
 DROP POLICY IF EXISTS checkins_undo ON checkins;
-CREATE POLICY checkins_undo ON checkins FOR UPDATE TO nsac_tenant
+CREATE POLICY checkins_undo ON checkins FOR UPDATE TO event_pass_tenant
     USING (org_id = app_org_id()) WITH CHECK (org_id = app_org_id());

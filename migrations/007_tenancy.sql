@@ -7,8 +7,8 @@
 -- tables: org_id is added to those in a later migration, when events exist.
 --
 -- Tenant isolation, database wall: tenant tables have Row Level Security
--- policies for the nsac_tenant role. The API runs every tenant query inside a
--- transaction that does SET LOCAL ROLE nsac_tenant and sets app.org_id and
+-- policies for the event_pass_tenant role. The API runs every tenant query inside a
+-- transaction that does SET LOCAL ROLE event_pass_tenant and sets app.org_id and
 -- app.account_id, so a query that forgets its WHERE org_id still only sees the
 -- current organization. The connecting user (the table owner) bypasses RLS for
 -- pre-tenant lookups such as sessions and invite tokens.
@@ -18,14 +18,14 @@
 -- +goose StatementBegin
 DO $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'nsac_tenant') THEN
-        CREATE ROLE nsac_tenant NOLOGIN NOBYPASSRLS;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'event_pass_tenant') THEN
+        CREATE ROLE event_pass_tenant NOLOGIN NOBYPASSRLS;
     END IF;
 END $$;
 -- +goose StatementEnd
 
--- The API's database user switches to nsac_tenant for tenant transactions.
-GRANT nsac_tenant TO CURRENT_USER;
+-- The API's database user switches to event_pass_tenant for tenant transactions.
+GRANT event_pass_tenant TO CURRENT_USER;
 
 -- +goose StatementBegin
 CREATE OR REPLACE FUNCTION app_org_id() RETURNS uuid
@@ -41,7 +41,7 @@ LANGUAGE sql STABLE AS $$
 $$;
 -- +goose StatementEnd
 
-GRANT EXECUTE ON FUNCTION app_org_id(), app_account_id() TO nsac_tenant;
+GRANT EXECUTE ON FUNCTION app_org_id(), app_account_id() TO event_pass_tenant;
 
 -- -----------------------------------------------------------------------------
 -- 1. Accounts and sign-in (not tenant-owned: one per person)
@@ -171,7 +171,7 @@ CREATE TRIGGER trg_keep_one_org_owner
 -- 3. Row Level Security
 -- -----------------------------------------------------------------------------
 -- Enabled on every table, as in 001, so Supabase's public API roles see
--- nothing. Policies exist only for nsac_tenant.
+-- nothing. Policies exist only for event_pass_tenant.
 ALTER TABLE accounts        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE auth_identities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sessions        ENABLE ROW LEVEL SECURITY;
@@ -181,45 +181,45 @@ ALTER TABLE org_members     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE invites         ENABLE ROW LEVEL SECURITY;
 
 -- The tenant role can reach tenant tables only, and accounts read-only.
-GRANT SELECT, INSERT, UPDATE, DELETE ON orgs, org_members, invites TO nsac_tenant;
-GRANT SELECT ON accounts TO nsac_tenant;
+GRANT SELECT, INSERT, UPDATE, DELETE ON orgs, org_members, invites TO event_pass_tenant;
+GRANT SELECT ON accounts TO event_pass_tenant;
 
 -- Orgs: the current one, plus (for "my organizations") any the caller belongs to.
 DROP POLICY IF EXISTS orgs_select ON orgs;
-CREATE POLICY orgs_select ON orgs FOR SELECT TO nsac_tenant
+CREATE POLICY orgs_select ON orgs FOR SELECT TO event_pass_tenant
     USING (id = app_org_id()
            OR id IN (SELECT m.org_id FROM org_members m WHERE m.account_id = app_account_id()));
 DROP POLICY IF EXISTS orgs_insert ON orgs;
-CREATE POLICY orgs_insert ON orgs FOR INSERT TO nsac_tenant
+CREATE POLICY orgs_insert ON orgs FOR INSERT TO event_pass_tenant
     WITH CHECK (id = app_org_id() AND created_by = app_account_id());
 DROP POLICY IF EXISTS orgs_update ON orgs;
-CREATE POLICY orgs_update ON orgs FOR UPDATE TO nsac_tenant
+CREATE POLICY orgs_update ON orgs FOR UPDATE TO event_pass_tenant
     USING (id = app_org_id()) WITH CHECK (id = app_org_id());
 DROP POLICY IF EXISTS orgs_delete ON orgs;
-CREATE POLICY orgs_delete ON orgs FOR DELETE TO nsac_tenant
+CREATE POLICY orgs_delete ON orgs FOR DELETE TO event_pass_tenant
     USING (id = app_org_id());
 
 -- Members: read the current org's, or the caller's own memberships anywhere;
 -- write only in the current org.
 DROP POLICY IF EXISTS org_members_select ON org_members;
-CREATE POLICY org_members_select ON org_members FOR SELECT TO nsac_tenant
+CREATE POLICY org_members_select ON org_members FOR SELECT TO event_pass_tenant
     USING (org_id = app_org_id() OR account_id = app_account_id());
 DROP POLICY IF EXISTS org_members_insert ON org_members;
-CREATE POLICY org_members_insert ON org_members FOR INSERT TO nsac_tenant
+CREATE POLICY org_members_insert ON org_members FOR INSERT TO event_pass_tenant
     WITH CHECK (org_id = app_org_id());
 DROP POLICY IF EXISTS org_members_update ON org_members;
-CREATE POLICY org_members_update ON org_members FOR UPDATE TO nsac_tenant
+CREATE POLICY org_members_update ON org_members FOR UPDATE TO event_pass_tenant
     USING (org_id = app_org_id()) WITH CHECK (org_id = app_org_id());
 DROP POLICY IF EXISTS org_members_delete ON org_members;
-CREATE POLICY org_members_delete ON org_members FOR DELETE TO nsac_tenant
+CREATE POLICY org_members_delete ON org_members FOR DELETE TO event_pass_tenant
     USING (org_id = app_org_id());
 
 DROP POLICY IF EXISTS invites_all ON invites;
-CREATE POLICY invites_all ON invites FOR ALL TO nsac_tenant
+CREATE POLICY invites_all ON invites FOR ALL TO event_pass_tenant
     USING (org_id = app_org_id()) WITH CHECK (org_id = app_org_id());
 
 -- Accounts: yourself, and the members of the current org.
 DROP POLICY IF EXISTS accounts_select ON accounts;
-CREATE POLICY accounts_select ON accounts FOR SELECT TO nsac_tenant
+CREATE POLICY accounts_select ON accounts FOR SELECT TO event_pass_tenant
     USING (id = app_account_id()
            OR id IN (SELECT m.account_id FROM org_members m WHERE m.org_id = app_org_id()));

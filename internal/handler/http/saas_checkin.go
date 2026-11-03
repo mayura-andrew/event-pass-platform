@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nasa-spaceapps/nsac-qr/internal/authz"
-	"github.com/nasa-spaceapps/nsac-qr/internal/domain"
-	"github.com/nasa-spaceapps/nsac-qr/internal/service"
+	"github.com/mayura-andrew/event-pass-platform/internal/authz"
+	"github.com/mayura-andrew/event-pass-platform/internal/domain"
+	"github.com/mayura-andrew/event-pass-platform/internal/service"
 )
 
 func init() {

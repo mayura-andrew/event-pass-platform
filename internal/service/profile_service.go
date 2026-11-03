@@ -24,10 +24,10 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/nasa-spaceapps/nsac-qr/internal/authz"
-	"github.com/nasa-spaceapps/nsac-qr/internal/domain"
-	"github.com/nasa-spaceapps/nsac-qr/internal/passes"
-	"github.com/nasa-spaceapps/nsac-qr/internal/repository/postgres"
+	"github.com/mayura-andrew/event-pass-platform/internal/authz"
+	"github.com/mayura-andrew/event-pass-platform/internal/domain"
+	"github.com/mayura-andrew/event-pass-platform/internal/passes"
+	"github.com/mayura-andrew/event-pass-platform/internal/repository/postgres"
 )
 
 // LocationFresh is how long a shared location shows after its last update.

@@ -3,4 +3,4 @@
 bin
 *.csv
 Dockerfile
-nsac-qr.compose.yaml
+event-pass.compose.yaml

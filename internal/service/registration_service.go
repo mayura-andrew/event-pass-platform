@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"crypto/rand"
-	"crypto/subtle"
 	"errors"
 	"fmt"
 	"math/big"
@@ -16,8 +15,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/nasa-spaceapps/nsac-qr/internal/authz"
-	"github.com/nasa-spaceapps/nsac-qr/internal/domain"
+	"github.com/mayura-andrew/event-pass-platform/internal/authz"
+	"github.com/mayura-andrew/event-pass-platform/internal/domain"
 )
 
 // RegistrationStore persists forms and participants (postgres.RegistrationRepo).
@@ -78,7 +77,7 @@ func NewPassID(prefix string) string {
 var prefixRe = regexp.MustCompile(`^[A-Z0-9]{2,6}$`)
 
 // PassPrefix suggests a prefix from an event name: the initials of its first
-// words ("Space Apps Colombo 2026" -> "SAC").
+// words ("Example Event 2026" -> "SAC").
 func PassPrefix(name string) string {
 	var initials []rune
 	for _, w := range strings.FieldsFunc(name, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }) {
@@ -500,12 +499,10 @@ type PassCheck struct {
 // ParticipantChecker loads a participant for a pass check
 // (postgres.RegistrationRepo).
 type ParticipantChecker interface {
-	CheckParticipant(ctx context.Context, orgID, accountID, eventID, participantID string) (*domain.EventParticipant, string, error)
+	CheckParticipant(ctx context.Context, orgID, accountID, eventID, participantID string) (*domain.EventParticipant, error)
 }
 
 // CheckPass decides whether a scanned QR is a valid pass for this event.
-// New passes are verified by signature; passes imported from the current
-// build by matching the signature stored at import, so they need no key.
 func (s *RegistrationService) CheckPass(ctx context.Context, es authz.EventScope, ps *PassService, checker ParticipantChecker, payload string) (*PassCheck, error) {
 	if err := es.Require(authz.EventLookup); err != nil {
 		return nil, err
@@ -514,29 +511,18 @@ func (s *RegistrationService) CheckPass(ctx context.Context, es authz.EventScope
 	if err != nil {
 		return &PassCheck{Result: CheckInvalid, Message: "Not a valid pass"}, nil
 	}
-	var participantID string
-	if c := scanned.Claims; c != nil {
-		if c.OrgID != es.OrgID() || c.EventID != es.EventID() {
-			return &PassCheck{Result: CheckWrongEvent, Message: "Pass is for another event"}, nil
-		}
-		participantID = c.ParticipantID
-	} else {
-		participantID = scanned.Legacy.ID
+	if scanned.Claims.OrgID != es.OrgID() || scanned.Claims.EventID != es.EventID() {
+		return &PassCheck{Result: CheckWrongEvent, Message: "Pass is for another event"}, nil
 	}
-	p, legacySig, err := checker.CheckParticipant(ctx, es.OrgID(), es.AccountID(), es.EventID(), participantID)
+	p, err := checker.CheckParticipant(ctx, es.OrgID(), es.AccountID(), es.EventID(), scanned.Claims.ParticipantID)
 	if errors.Is(err, domain.ErrNotFound) {
-		if scanned.Legacy != nil {
-			return &PassCheck{Result: CheckInvalid, Message: "Not a pass for this event"}, nil
-		}
 		return &PassCheck{Result: CheckInvalid, Message: "This pass no longer exists"}, nil
 	}
 	if err != nil {
 		return nil, err
 	}
 	switch {
-	case scanned.Legacy != nil && (legacySig == "" || subtle.ConstantTimeCompare([]byte(legacySig), []byte(scanned.Legacy.Sig)) != 1):
-		return &PassCheck{Result: CheckInvalid, Message: "Not a valid pass"}, nil
-	case scanned.Claims != nil && scanned.Claims.PassID != p.PassID:
+	case scanned.Claims.PassID != p.PassID:
 		return &PassCheck{Result: CheckInvalid, Message: "This pass was replaced"}, nil
 	}
 	pc := &PassCheck{Participant: p}

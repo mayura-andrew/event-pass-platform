@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nasa-spaceapps/nsac-qr/internal/authz"
-	"github.com/nasa-spaceapps/nsac-qr/internal/domain"
+	"github.com/mayura-andrew/event-pass-platform/internal/authz"
+	"github.com/mayura-andrew/event-pass-platform/internal/domain"
 )
 
 func (f *tenancyFixture) event(t *testing.T, sc authz.OrgScope, name string) authz.EventScope {
@@ -183,7 +183,7 @@ func TestDuplicateKeepsTeamAndTrashRetention(t *testing.T) {
 	events := NewEventRepo(f.db)
 	a, b, c := f.account(t, "a"), f.account(t, "b"), f.account(t, "c")
 	scA, _ := f.org(t, a, "a")
-	es := f.event(t, scA, "Space Apps 2025")
+	es := f.event(t, scA, "Community Apps 2025")
 	events.PutShare(ctx, es, b.ID, domain.EventRoleEditor)
 	events.PutShare(ctx, es, c.ID, domain.EventRoleCheckin)
 	if err := events.SetLink(ctx, es, []byte("link-"+f.tag), nil); err != nil {
@@ -192,7 +192,7 @@ func TestDuplicateKeepsTeamAndTrashRetention(t *testing.T) {
 
 	src, _ := events.EventAccess(ctx, scA, es.EventID())
 	copyEv := *src.Event
-	copyEv.Name, copyEv.Slug = "Space Apps 2026", "e"
+	copyEv.Name, copyEv.Slug = "Community Apps 2026", "e"
 	dup, err := events.CreateEvent(ctx, scA, &copyEv, es.EventID(), domain.Audit{Action: "event.duplicate", TargetType: "event"})
 	if err != nil {
 		t.Fatal(err)

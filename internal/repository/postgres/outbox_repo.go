@@ -6,7 +6,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/nasa-spaceapps/nsac-qr/internal/domain"
+	"github.com/mayura-andrew/event-pass-platform/internal/domain"
 )
 
 // OutboxRepo is the worker's view of the email outbox. The worker serves
@@ -72,8 +72,7 @@ func (r *OutboxRepo) PassContext(ctx context.Context, orgID, participantID strin
 func passContext(ctx context.Context, db *sql.DB, orgID, participantID string) (*domain.PassContext, error) {
 	pc := &domain.PassContext{}
 	var venue, settings []byte
-	var legacy sql.NullString
-	dest := append(eventDest(&pc.Event, &venue, &settings), &pc.OrgName, &pc.OrgSlug, &legacy)
+	dest := append(eventDest(&pc.Event, &venue, &settings), &pc.OrgName, &pc.OrgSlug)
 	p, err := scanParticipant(db.QueryRowContext(ctx, `SELECT `+participantCols+` FROM event_participants p
 		WHERE p.org_id = $1 AND p.id = $2`, orgID, participantID))
 	if errors.Is(err, sql.ErrNoRows) || pgCode(err) == pgInvalidTextRepr {
@@ -83,7 +82,7 @@ func passContext(ctx context.Context, db *sql.DB, orgID, participantID string) (
 		return nil, err
 	}
 	pc.Participant = p
-	err = db.QueryRowContext(ctx, `SELECT `+eventCols+`, o.name, o.slug, p.legacy_qr_signature`+eventFrom+`
+	err = db.QueryRowContext(ctx, `SELECT `+eventCols+`, o.name, o.slug`+eventFrom+`
 		JOIN orgs o ON o.id = e.org_id
 		JOIN event_participants p ON p.event_id = e.id AND p.id = $2
 		WHERE e.org_id = $1`, orgID, participantID).Scan(dest...)
@@ -93,7 +92,6 @@ func passContext(ctx context.Context, db *sql.DB, orgID, participantID string) (
 	if err := decodeEvent(&pc.Event, venue, settings); err != nil {
 		return nil, err
 	}
-	pc.LegacySig = legacy.String
 	err = withTenant(ctx, db, orgID, "", func(tx *sql.Tx) error {
 		var err error
 		if pc.Fields, err = listFormFields(ctx, tx, orgID, pc.Event.ID); err != nil {

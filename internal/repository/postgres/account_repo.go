@@ -6,7 +6,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/nasa-spaceapps/nsac-qr/internal/domain"
+	"github.com/mayura-andrew/event-pass-platform/internal/domain"
 )
 
 // AccountRepo stores accounts, sign-in links and sessions. These are not

@@ -72,17 +72,17 @@ ALTER TABLE participant_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE participant_locations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE participant_map_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE beta_feedback ENABLE ROW LEVEL SECURITY;
-GRANT SELECT, INSERT, UPDATE, DELETE ON participant_profiles, participant_locations, participant_map_settings TO nsac_tenant;
-GRANT SELECT, INSERT ON beta_feedback TO nsac_tenant;
+GRANT SELECT, INSERT, UPDATE, DELETE ON participant_profiles, participant_locations, participant_map_settings TO event_pass_tenant;
+GRANT SELECT, INSERT ON beta_feedback TO event_pass_tenant;
 DROP POLICY IF EXISTS participant_profiles_org ON participant_profiles;
-CREATE POLICY participant_profiles_org ON participant_profiles FOR ALL TO nsac_tenant
+CREATE POLICY participant_profiles_org ON participant_profiles FOR ALL TO event_pass_tenant
     USING (org_id = app_org_id()) WITH CHECK (org_id = app_org_id());
 DROP POLICY IF EXISTS participant_locations_org ON participant_locations;
-CREATE POLICY participant_locations_org ON participant_locations FOR ALL TO nsac_tenant
+CREATE POLICY participant_locations_org ON participant_locations FOR ALL TO event_pass_tenant
     USING (org_id = app_org_id()) WITH CHECK (org_id = app_org_id());
 DROP POLICY IF EXISTS participant_map_settings_org ON participant_map_settings;
-CREATE POLICY participant_map_settings_org ON participant_map_settings FOR ALL TO nsac_tenant
+CREATE POLICY participant_map_settings_org ON participant_map_settings FOR ALL TO event_pass_tenant
     USING (org_id = app_org_id()) WITH CHECK (org_id = app_org_id());
 DROP POLICY IF EXISTS beta_feedback_org ON beta_feedback;
-CREATE POLICY beta_feedback_org ON beta_feedback FOR ALL TO nsac_tenant
+CREATE POLICY beta_feedback_org ON beta_feedback FOR ALL TO event_pass_tenant
     USING (org_id = app_org_id()) WITH CHECK (org_id = app_org_id());

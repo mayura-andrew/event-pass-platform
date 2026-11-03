@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nasa-spaceapps/nsac-qr/internal/authz"
-	"github.com/nasa-spaceapps/nsac-qr/internal/domain"
+	"github.com/mayura-andrew/event-pass-platform/internal/authz"
+	"github.com/mayura-andrew/event-pass-platform/internal/domain"
 )
 
 // RegistrationRepo stores registration forms and event participants
@@ -18,6 +18,21 @@ import (
 type RegistrationRepo struct{ db *sql.DB }
 
 func NewRegistrationRepo(db *sql.DB) *RegistrationRepo { return &RegistrationRepo{db: db} }
+
+func (r *RegistrationRepo) CheckParticipant(ctx context.Context, orgID, accountID, eventID, participantID string) (*domain.EventParticipant, error) {
+	var p *domain.EventParticipant
+	err := withTenant(ctx, r.db, orgID, accountID, func(tx *sql.Tx) error {
+		participant, err := scanParticipant(tx.QueryRowContext(ctx, `SELECT `+participantCols+`
+			FROM event_participants
+			WHERE org_id = $1 AND event_id = $2 AND id = $3`, orgID, eventID, participantID))
+		p = &participant
+		return err
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, domain.ErrNotFound
+	}
+	return p, err
+}
 
 // ---- Form fields -------------------------------------------------------------
 

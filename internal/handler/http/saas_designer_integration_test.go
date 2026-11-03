@@ -14,8 +14,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nasa-spaceapps/nsac-qr/internal/domain"
-	"github.com/nasa-spaceapps/nsac-qr/internal/passes"
+	"github.com/mayura-andrew/event-pass-platform/internal/domain"
+	"github.com/mayura-andrew/event-pass-platform/internal/passes"
 )
 
 func getBytes(t *testing.T, u *user, path string) (int, string, []byte) {
@@ -47,7 +47,7 @@ func TestDesignerGate(t *testing.T) {
 	base := "/api/v1/orgs/" + f.org.Slug + "/pass-templates"
 
 	// Start from the gallery's badge, then make it ours.
-	status, b := owner.api("POST", base, map[string]string{"from": "conference", "name": "Colombo badge"})
+	status, b := owner.api("POST", base, map[string]string{"from": "conference", "name": "Community badge"})
 	var tpl domain.PassTemplate
 	json.Unmarshal(b, &tpl)
 	if status != http.StatusCreated || tpl.CurrentVersion != 1 {
@@ -67,7 +67,7 @@ func TestDesignerGate(t *testing.T) {
 			bad.Elements[i].FG = "#AAAAAA"
 		}
 	}
-	status, b = owner.api("PUT", base+"/"+tpl.ID, map[string]any{"name": "Colombo badge", "design": bad})
+	status, b = owner.api("PUT", base+"/"+tpl.ID, map[string]any{"name": "Community badge", "design": bad})
 	if status != http.StatusUnprocessableEntity || !strings.Contains(string(b), "contrast") {
 		t.Fatalf("low-contrast QR: HTTP %d %s; want 422 with the contrast problem", status, b)
 	}
@@ -81,7 +81,7 @@ func TestDesignerGate(t *testing.T) {
 	good.Elements = append(append([]passes.Element{}, d.Elements...), passes.Element{ID: "team", Type: "text",
 		Text: "Food: {{answers.food}}", X: 60, Y: 720, W: 680, H: 50, Font: passes.Font{Size: 34, Weight: 700},
 		Color: "token:primary", Align: "left", HideIfEmpty: "answers.food"})
-	status, b = owner.api("PUT", base+"/"+tpl.ID, map[string]any{"name": "Colombo badge", "design": good})
+	status, b = owner.api("PUT", base+"/"+tpl.ID, map[string]any{"name": "Community badge", "design": good})
 	if status != http.StatusOK || !strings.Contains(string(b), `"version":2`) {
 		t.Fatalf("save: HTTP %d %s", status, b)
 	}
@@ -117,7 +117,7 @@ func TestDesignerGate(t *testing.T) {
 	// Editing the template again doesn't touch the event until it moves.
 	moved := good
 	moved.Background = "#F4F6FA"
-	owner.api("PUT", base+"/"+tpl.ID, map[string]any{"name": "Colombo badge", "design": moved})
+	owner.api("PUT", base+"/"+tpl.ID, map[string]any{"name": "Community badge", "design": moved})
 	_, _, again := getBytes(t, owner, evPage+"/participants/"+p.ID+"/pass.png")
 	if !bytes.Equal(again, download) {
 		t.Error("saving version 3 changed a pass pinned to version 2")

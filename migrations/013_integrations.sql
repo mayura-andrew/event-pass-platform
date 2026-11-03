@@ -39,8 +39,8 @@ ALTER TABLE integrations ENABLE ROW LEVEL SECURITY;
 -- The tenant role manages the event's integrations but can't read the secret
 -- (the worker, as the connecting user, decrypts it).
 GRANT SELECT (id, org_id, event_id, kind, config, google_email, status, last_synced_at, last_error, imported,
-              connected_by, created_at, updated_at) ON integrations TO nsac_tenant;
-GRANT INSERT, UPDATE, DELETE ON integrations TO nsac_tenant;
+              connected_by, created_at, updated_at) ON integrations TO event_pass_tenant;
+GRANT INSERT, UPDATE, DELETE ON integrations TO event_pass_tenant;
 DROP POLICY IF EXISTS integrations_all ON integrations;
-CREATE POLICY integrations_all ON integrations FOR ALL TO nsac_tenant
+CREATE POLICY integrations_all ON integrations FOR ALL TO event_pass_tenant
     USING (org_id = app_org_id()) WITH CHECK (org_id = app_org_id());

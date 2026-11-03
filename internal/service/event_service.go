@@ -14,8 +14,8 @@ import (
 	_ "time/tzdata" // event time zones work in the Alpine image, which has no zoneinfo
 	"unicode/utf8"
 
-	"github.com/nasa-spaceapps/nsac-qr/internal/authz"
-	"github.com/nasa-spaceapps/nsac-qr/internal/domain"
+	"github.com/mayura-andrew/event-pass-platform/internal/authz"
+	"github.com/mayura-andrew/event-pass-platform/internal/domain"
 )
 
 // EventStore persists events and sharing (postgres.EventRepo).
@@ -127,7 +127,7 @@ var (
 	maxCapacity = 1_000_000
 )
 
-// Slugify makes a URL slug from a name: "Space Apps Colombo 2026" ->
+// Slugify makes a URL slug from a name: "Example Event 2026" ->
 // "space-apps-colombo-2026".
 func Slugify(name string) string {
 	s := nonSlug.ReplaceAllString(strings.ToLower(name), "-")

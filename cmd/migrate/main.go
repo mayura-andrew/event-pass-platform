@@ -15,8 +15,8 @@ import (
 
 	"github.com/pressly/goose/v3"
 
-	"github.com/nasa-spaceapps/nsac-qr/internal/repository/postgres"
-	"github.com/nasa-spaceapps/nsac-qr/migrations"
+	"github.com/mayura-andrew/event-pass-platform/internal/repository/postgres"
+	"github.com/mayura-andrew/event-pass-platform/migrations"
 )
 
 func main() {

@@ -15,11 +15,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nasa-spaceapps/nsac-qr/internal/authz"
-	"github.com/nasa-spaceapps/nsac-qr/internal/domain"
-	"github.com/nasa-spaceapps/nsac-qr/internal/passes"
-	"github.com/nasa-spaceapps/nsac-qr/internal/repository/postgres"
-	"github.com/nasa-spaceapps/nsac-qr/internal/service"
+	"github.com/mayura-andrew/event-pass-platform/internal/authz"
+	"github.com/mayura-andrew/event-pass-platform/internal/domain"
+	"github.com/mayura-andrew/event-pass-platform/internal/passes"
+	"github.com/mayura-andrew/event-pass-platform/internal/repository/postgres"
+	"github.com/mayura-andrew/event-pass-platform/internal/service"
 )
 
 type checkinFixture struct {
@@ -44,7 +44,7 @@ func newCheckinFixture(t *testing.T, n int) *checkinFixture {
 	f.owner.signIn("")
 	f.org = f.owner.createOrg("gate")
 	starts := time.Now().Add(-time.Hour)
-	_, b := f.owner.api("POST", "/api/v1/orgs/"+f.org.Slug+"/events", map[string]any{"name": "Space Apps Colombo",
+	_, b := f.owner.api("POST", "/api/v1/orgs/"+f.org.Slug+"/events", map[string]any{"name": "Example Event",
 		"starts_at": starts, "ends_at": starts.Add(30 * time.Hour), "visibility": "unlisted"})
 	f.ev = &domain.Event{}
 	json.Unmarshal(b, f.ev)

@@ -9,9 +9,6 @@
 // It carries no personal data and never signs anyone in. Keys are numbered:
 // new passes are signed with the current key, and old keys stay in the ring
 // to verify passes already sent, so keys rotate without reissuing passes.
-//
-// Passes from the current build ({"id": ..., "sig": hex HMAC}) are not
-// tokens; ParseLegacy recognises them so imported delegates keep scanning.
 package passes
 
 import (
@@ -20,7 +17,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -86,7 +82,7 @@ func ParseKeyRing(spec string) (*KeyRing, error) {
 // development when PASS_SIGNING_KEYS is unset. Production sets real keys.
 func DerivedKeyRing(secret []byte) *KeyRing {
 	mac := hmac.New(sha256.New, secret)
-	mac.Write([]byte("nsac pass signing key v1"))
+	mac.Write([]byte("event pass signing key v1"))
 	return &KeyRing{current: 1, keys: map[int]ed25519.PrivateKey{1: ed25519.NewKeyFromSeed(mac.Sum(nil))}}
 }
 
@@ -159,34 +155,4 @@ func (kr *KeyRing) Verify(token string) (*Claims, error) {
 		return nil, ErrBadSig
 	}
 	return &c, nil
-}
-
-// Legacy is a QR payload from the current build: the delegate's UUID and
-// hex HMAC-SHA256(membership_id:email).
-type Legacy struct {
-	ID  string `json:"id"`
-	Sig string `json:"sig"`
-}
-
-// ParseLegacy recognises a current-build QR payload. ok is false for
-// anything else, including new tokens.
-func ParseLegacy(payload string) (Legacy, bool) {
-	var l Legacy
-	if err := json.Unmarshal([]byte(strings.TrimSpace(payload)), &l); err != nil || l.ID == "" || l.Sig == "" {
-		return Legacy{}, false
-	}
-	if _, err := uuidBytes(l.ID); err != nil {
-		return Legacy{}, false
-	}
-	return l, true
-}
-
-// VerifyLegacy checks a legacy signature against the imported delegate's
-// membership ID and email, with the current build's HMAC_SECRET_KEY.
-func VerifyLegacy(l Legacy, membershipID, email string, hmacKey []byte) bool {
-	mac := hmac.New(sha256.New, hmacKey)
-	mac.Write([]byte(membershipID + ":" + email))
-	want := mac.Sum(nil)
-	got, err := hex.DecodeString(l.Sig)
-	return err == nil && hmac.Equal(want, got)
 }

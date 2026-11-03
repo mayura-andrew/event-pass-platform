@@ -148,58 +148,58 @@ ALTER TABLE event_stars  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE event_opens  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_log    ENABLE ROW LEVEL SECURITY;
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON events, event_shares, event_stars, event_opens TO nsac_tenant;
+GRANT SELECT, INSERT, UPDATE, DELETE ON events, event_shares, event_stars, event_opens TO event_pass_tenant;
 -- Append-only: the tenant role can add entries but never change or remove them.
-GRANT SELECT, INSERT ON audit_log TO nsac_tenant;
+GRANT SELECT, INSERT ON audit_log TO event_pass_tenant;
 
 -- Guests reach an org through a share, so "my organizations" includes it.
 DROP POLICY IF EXISTS orgs_select ON orgs;
-CREATE POLICY orgs_select ON orgs FOR SELECT TO nsac_tenant
+CREATE POLICY orgs_select ON orgs FOR SELECT TO event_pass_tenant
     USING (id = app_org_id()
            OR id IN (SELECT m.org_id FROM org_members m WHERE m.account_id = app_account_id())
            OR id IN (SELECT s.org_id FROM event_shares s WHERE s.account_id = app_account_id()));
 
 -- Accounts: also the guests and owners of the current org's events.
 DROP POLICY IF EXISTS accounts_select ON accounts;
-CREATE POLICY accounts_select ON accounts FOR SELECT TO nsac_tenant
+CREATE POLICY accounts_select ON accounts FOR SELECT TO event_pass_tenant
     USING (id = app_account_id()
            OR id IN (SELECT m.account_id FROM org_members m WHERE m.org_id = app_org_id())
            OR id IN (SELECT s.account_id FROM event_shares s WHERE s.org_id = app_org_id())
            OR id IN (SELECT e.owner_id FROM events e WHERE e.org_id = app_org_id()));
 
 DROP POLICY IF EXISTS events_all ON events;
-CREATE POLICY events_all ON events FOR ALL TO nsac_tenant
+CREATE POLICY events_all ON events FOR ALL TO event_pass_tenant
     USING (org_id = app_org_id()) WITH CHECK (org_id = app_org_id());
 
 -- Shares: the current org's, plus the caller's own anywhere (to find the
 -- orgs they're a guest of).
 DROP POLICY IF EXISTS event_shares_select ON event_shares;
-CREATE POLICY event_shares_select ON event_shares FOR SELECT TO nsac_tenant
+CREATE POLICY event_shares_select ON event_shares FOR SELECT TO event_pass_tenant
     USING (org_id = app_org_id() OR account_id = app_account_id());
 DROP POLICY IF EXISTS event_shares_insert ON event_shares;
-CREATE POLICY event_shares_insert ON event_shares FOR INSERT TO nsac_tenant
+CREATE POLICY event_shares_insert ON event_shares FOR INSERT TO event_pass_tenant
     WITH CHECK (org_id = app_org_id());
 DROP POLICY IF EXISTS event_shares_update ON event_shares;
-CREATE POLICY event_shares_update ON event_shares FOR UPDATE TO nsac_tenant
+CREATE POLICY event_shares_update ON event_shares FOR UPDATE TO event_pass_tenant
     USING (org_id = app_org_id()) WITH CHECK (org_id = app_org_id());
 DROP POLICY IF EXISTS event_shares_delete ON event_shares;
-CREATE POLICY event_shares_delete ON event_shares FOR DELETE TO nsac_tenant
+CREATE POLICY event_shares_delete ON event_shares FOR DELETE TO event_pass_tenant
     USING (org_id = app_org_id());
 
 -- Stars and opens are personal as well as per-org.
 DROP POLICY IF EXISTS event_stars_own ON event_stars;
-CREATE POLICY event_stars_own ON event_stars FOR ALL TO nsac_tenant
+CREATE POLICY event_stars_own ON event_stars FOR ALL TO event_pass_tenant
     USING (org_id = app_org_id() AND account_id = app_account_id())
     WITH CHECK (org_id = app_org_id() AND account_id = app_account_id());
 DROP POLICY IF EXISTS event_opens_own ON event_opens;
-CREATE POLICY event_opens_own ON event_opens FOR ALL TO nsac_tenant
+CREATE POLICY event_opens_own ON event_opens FOR ALL TO event_pass_tenant
     USING (org_id = app_org_id() AND account_id = app_account_id())
     WITH CHECK (org_id = app_org_id() AND account_id = app_account_id());
 
 DROP POLICY IF EXISTS audit_select ON audit_log;
-CREATE POLICY audit_select ON audit_log FOR SELECT TO nsac_tenant
+CREATE POLICY audit_select ON audit_log FOR SELECT TO event_pass_tenant
     USING (org_id = app_org_id());
 -- Entries are written as the signed-in account, never on someone's behalf.
 DROP POLICY IF EXISTS audit_insert ON audit_log;
-CREATE POLICY audit_insert ON audit_log FOR INSERT TO nsac_tenant
+CREATE POLICY audit_insert ON audit_log FOR INSERT TO event_pass_tenant
     WITH CHECK (org_id = app_org_id() AND actor_account_id IS NOT DISTINCT FROM app_account_id());

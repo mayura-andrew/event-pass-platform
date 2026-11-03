@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nasa-spaceapps/nsac-qr/internal/domain"
+	"github.com/mayura-andrew/event-pass-platform/internal/domain"
 )
 
 func TestMyPasses(t *testing.T) {
@@ -32,7 +32,7 @@ func TestMyPasses(t *testing.T) {
 	ann, bob := env.newBrowser(t, "ann"), env.newBrowser(t, "bob")
 	ann.signIn("")
 	bob.signIn("")
-	pageA := publish(ann, "porta", "Space Apps Colombo")
+	pageA := publish(ann, "porta", "Example Event")
 	pageB := publish(bob, "portb", "Kandy Robotics Day")
 
 	// Registered without an account, in two orgs.
@@ -56,7 +56,7 @@ func TestMyPasses(t *testing.T) {
 	}
 	res := gita.get("/me")
 	page := body(res)
-	if !strings.Contains(page, "Space Apps Colombo") || !strings.Contains(page, "Kandy Robotics Day") {
+	if !strings.Contains(page, "Example Event") || !strings.Contains(page, "Kandy Robotics Day") {
 		t.Fatal("My passes page doesn't list both events")
 	}
 	passURL := "/me/passes/" + mine[0].ID

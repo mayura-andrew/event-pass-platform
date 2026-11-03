@@ -1,4 +1,4 @@
-module github.com/nasa-spaceapps/nsac-qr
+module github.com/mayura-andrew/event-pass-platform
 
 go 1.22
 

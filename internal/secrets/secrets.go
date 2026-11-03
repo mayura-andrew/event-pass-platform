@@ -46,7 +46,7 @@ func FromBase64(s string) (*Box, error) {
 // Derived makes a box from another secret, for local development only.
 func Derived(secret []byte) *Box {
 	mac := hmac.New(sha256.New, secret)
-	mac.Write([]byte("nsac integrations key v1"))
+	mac.Write([]byte("event pass integrations key v1"))
 	b, _ := New(mac.Sum(nil))
 	return b
 }

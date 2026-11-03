@@ -11,7 +11,7 @@ import (
 func card(name string) Card {
 	kr := DerivedKeyRing([]byte("test"))
 	tok, _ := kr.Issue(org, ev, part, "SAC-7KQ4-M2XD")
-	return Card{OrgName: "Colombo Space Club", EventName: "Space Apps Colombo 2026", When: "3–4 Oct 2026", Where: "BMICH",
+	return Card{OrgName: "Community Events", EventName: "Example Event 2026", When: "3–4 Oct 2026", Where: "Convention Center",
 		FullName: name, PassID: "SAC-7KQ4-M2XD", Status: "registered", Token: tok,
 		Lines: []Line{{"T-shirt", "M"}}}
 }

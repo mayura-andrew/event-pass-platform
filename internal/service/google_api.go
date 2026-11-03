@@ -10,7 +10,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/nasa-spaceapps/nsac-qr/internal/domain"
+	"github.com/mayura-andrew/event-pass-platform/internal/domain"
 )
 
 // GoogleAPI calls the Sheets and Forms REST APIs with an access token. Base

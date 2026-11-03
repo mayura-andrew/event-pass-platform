@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nasa-spaceapps/nsac-qr/internal/domain"
-	"github.com/nasa-spaceapps/nsac-qr/internal/repository/postgres"
+	"github.com/mayura-andrew/event-pass-platform/internal/domain"
+	"github.com/mayura-andrew/event-pass-platform/internal/repository/postgres"
 )
 
 func TestAgeOnDefaultsToStartDate(t *testing.T) {

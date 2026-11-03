@@ -13,6 +13,12 @@ import (
 
 var update = flag.Bool("update", false, "rewrite the golden pass images in testdata/")
 
+const (
+	org  = "01a15000-0000-7000-8000-0000000000a1"
+	ev   = "01a15000-0000-7000-8000-0000000000e1"
+	part = "01a15000-0000-7000-8000-0000000000f1"
+)
+
 func TestGalleryPassesChecks(t *testing.T) {
 	for _, g := range Gallery() {
 		if ps := Check(g.Design); len(ps) > 0 {

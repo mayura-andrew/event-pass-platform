@@ -19,10 +19,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nasa-spaceapps/nsac-qr/internal/domain"
-	"github.com/nasa-spaceapps/nsac-qr/internal/repository/postgres"
-	"github.com/nasa-spaceapps/nsac-qr/internal/secrets"
-	"github.com/nasa-spaceapps/nsac-qr/internal/service"
+	"github.com/mayura-andrew/event-pass-platform/internal/domain"
+	"github.com/mayura-andrew/event-pass-platform/internal/repository/postgres"
+	"github.com/mayura-andrew/event-pass-platform/internal/secrets"
+	"github.com/mayura-andrew/event-pass-platform/internal/service"
 )
 
 const testFormID = "1FAIpQLSf-test-form-0123456789abc"
@@ -148,7 +148,7 @@ func newFakeGoogle(t *testing.T, app string) *fakeGoogle {
 			return map[string]any{"title": title, "questionItem": map[string]any{"question": map[string]string{"questionId": id}}}
 		}
 		json.NewEncoder(w).Encode(map[string]any{
-			"info":     map[string]string{"title": "Colombo sign-up"},
+			"info":     map[string]string{"title": "Community sign-up"},
 			"settings": map[string]string{"emailCollectionType": "DO_NOT_COLLECT"},
 			"items":    []any{item("q1", "Your full name"), item("q2", "Email address"), item("q3", "Dietary needs"), map[string]string{"title": "A section header"}},
 		})

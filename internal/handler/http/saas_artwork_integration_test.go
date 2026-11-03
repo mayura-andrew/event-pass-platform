@@ -16,8 +16,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nasa-spaceapps/nsac-qr/internal/domain"
-	"github.com/nasa-spaceapps/nsac-qr/internal/passes"
+	"github.com/mayura-andrew/event-pass-platform/internal/domain"
+	"github.com/mayura-andrew/event-pass-platform/internal/passes"
 )
 
 func artworkPNG(w, h int, c color.NRGBA) []byte {
@@ -71,7 +71,7 @@ func TestArtworkTemplate(t *testing.T) {
 	red := color.NRGBA{200, 30, 30, 255}
 
 	// Upload the artwork: the designer opens on the new template.
-	res := upload(t, owner, orgPage+"/upload", map[string]string{"name": "Colombo artwork"}, artworkPNG(1080, 1920, red))
+	res := upload(t, owner, orgPage+"/upload", map[string]string{"name": "Community artwork"}, artworkPNG(1080, 1920, red))
 	html := body(res)
 	if res.StatusCode != http.StatusOK || !strings.Contains(res.Request.URL.Path, "/pass-templates/") || !strings.Contains(html, "Your artwork is in") {
 		t.Fatalf("upload artwork: HTTP %d at %s", res.StatusCode, res.Request.URL.Path)
@@ -83,7 +83,7 @@ func TestArtworkTemplate(t *testing.T) {
 	var d passes.Design
 	json.Unmarshal(tpl.Design, &d)
 	ids := passes.AssetIDs(d)
-	if tpl.Name != "Colombo artwork" || d.Size.Preset != "phone" || len(ids) != 1 {
+	if tpl.Name != "Community artwork" || d.Size.Preset != "phone" || len(ids) != 1 {
 		t.Fatalf("template from artwork: %s %+v", tpl.Name, d.Size)
 	}
 
@@ -148,7 +148,7 @@ func TestArtworkTemplate(t *testing.T) {
 		t.Errorf("another org's asset: HTTP %d, want 404", res.StatusCode)
 	}
 	d.Elements = append([]passes.Element{{ID: "stolen", Type: "image", Src: foreign.Src, X: 0, Y: 0, W: 100, H: 100}}, d.Elements...)
-	status, b = owner.api("PUT", "/api/v1/orgs/"+f.org.Slug+"/pass-templates/"+tplID, map[string]any{"name": "Colombo artwork", "design": d})
+	status, b = owner.api("PUT", "/api/v1/orgs/"+f.org.Slug+"/pass-templates/"+tplID, map[string]any{"name": "Community artwork", "design": d})
 	if status != http.StatusUnprocessableEntity || !strings.Contains(string(b), "wasn't uploaded to this organization") {
 		t.Errorf("save with another org's image: HTTP %d %s", status, b)
 	}

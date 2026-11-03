@@ -1,4 +1,4 @@
-# DigitalOcean App Platform spec for the NSAC QR API + web apps.
+# DigitalOcean App Platform spec for the Event Pass Platform API + web apps.
 #
 # This file is the source of truth: .github/workflows/deploy.yml applies it
 # on every push to main (digitalocean/app_action/deploy@v2), creating the app
@@ -9,7 +9,7 @@
 # repository secret of the same name (Settings > Secrets and variables >
 # Actions). Never put a real secret in this file. ${APP_URL} is the exception:
 # App Platform fills it in, and the action leaves it alone.
-name: nsac-qr
+name: event-pass-platform
 # Bangalore. Pick the Supabase project in Mumbai (ap-south-1) to keep the
 # database round trip short.
 region: blr
@@ -17,7 +17,7 @@ region: blr
 services:
   - name: api
     github:
-      repo: ai4all-learn/nsac-qr   # change to your repository
+      repo: ai4all-learn/event-pass-platform   # change to your repository
       branch: main
       # The GitHub Actions workflow deploys after the tests pass; letting App
       # Platform also build on push would deploy every commit twice.
@@ -49,13 +49,12 @@ services:
         scope: RUN_TIME
         type: SECRET
         value: '${JWT_SECRET}'
-      # Signs delegate QR passes added from /admin/ingest.html. The SAME value
-      # the seed script uses, kept for the whole event: changing it breaks
-      # every pass already sent.
-      - key: HMAC_SECRET_KEY
+      # Signs participant passes issued by the platform. Keep it stable:
+      # changing it breaks every pass already sent.
+      - key: PASS_SIGNING_KEYS
         scope: RUN_TIME
         type: SECRET
-        value: '${HMAC_SECRET_KEY}'
+        value: '${PASS_SIGNING_KEYS}'
 
       # --- Gmail SMTP --------------------------------------------------------
       - key: SMTP_HOST
@@ -93,7 +92,7 @@ services:
         value: ${APP_URL}
       - key: EVENT_NAME
         scope: RUN_TIME
-        value: NASA Space Apps Colombo
+        value: Event Pass
       # Pass email queue: one email every 2 s, at most 450 per 24 hours
       # (Gmail's ~500/day, shared with staff emails). On Google Workspace
       # (~2,000/day) raise the limit to about 1900.
@@ -109,12 +108,12 @@ services:
       - key: CLIENT_IP_HEADER
         scope: RUN_TIME
         value: DO-Connecting-IP
-      - key: JWT_TTL
+      - key: SESSION_TTL
         scope: RUN_TIME
         value: 14h
       # Database connections this container may open. Keep it below the
       # Supabase project's pool size (Database Settings > Connection pooling
-      # > Pool Size), leaving room for the seed script and the SQL editor.
+      # > Pool Size), leaving room for migrations, the SQL editor, and dashboards.
       - key: DB_MAX_CONNS
         scope: RUN_TIME
         value: "10"

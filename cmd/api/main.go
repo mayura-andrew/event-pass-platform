@@ -1,4 +1,4 @@
-// Command api runs the NSAC QR delegate management API and serves the PWA.
+// Command api runs the event pass platform API.
 package main
 
 import (
@@ -10,17 +10,15 @@ import (
 	"net/mail"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
-	"github.com/nasa-spaceapps/nsac-qr/internal/auth"
-	"github.com/nasa-spaceapps/nsac-qr/internal/config"
-	httphandler "github.com/nasa-spaceapps/nsac-qr/internal/handler/http"
-	"github.com/nasa-spaceapps/nsac-qr/internal/passes"
-	"github.com/nasa-spaceapps/nsac-qr/internal/repository/postgres"
-	"github.com/nasa-spaceapps/nsac-qr/internal/secrets"
-	"github.com/nasa-spaceapps/nsac-qr/internal/service"
+	"github.com/mayura-andrew/event-pass-platform/internal/config"
+	httphandler "github.com/mayura-andrew/event-pass-platform/internal/handler/http"
+	"github.com/mayura-andrew/event-pass-platform/internal/passes"
+	"github.com/mayura-andrew/event-pass-platform/internal/repository/postgres"
+	"github.com/mayura-andrew/event-pass-platform/internal/secrets"
+	"github.com/mayura-andrew/event-pass-platform/internal/service"
 )
 
 func main() {
@@ -47,15 +45,6 @@ func run() error {
 	defer db.Close()
 
 	// Repositories
-	adminRepo := postgres.NewAdminRepo(db)
-	participantRepo := postgres.NewParticipantRepo(db)
-	scenarioRepo := postgres.NewScenarioRepo(db)
-	scanRepo := postgres.NewScanRepo(db)
-	dashboardRepo := postgres.NewDashboardRepo(db)
-	staffRepo := postgres.NewStaffRepo(db)
-	ingestRepo := postgres.NewIngestRepo(db)
-	fieldRepo := postgres.NewFieldRepo(db)
-	emailRepo := postgres.NewEmailRepo(db)
 	accountRepo := postgres.NewAccountRepo(db)
 	orgRepo := postgres.NewOrgRepo(db)
 	eventRepo := postgres.NewEventRepo(db)
@@ -76,43 +65,11 @@ func run() error {
 		return err
 	}
 
-	logo := loadEmailLogo(cfg.PublicDir)
-
-	// Pass email queue. The worker only runs when SMTP is configured; the
-	// status endpoint works either way.
-	emailCfg := service.EmailWorkerConfig{
-		Interval:   cfg.EmailSendInterval,
-		DailyLimit: cfg.EmailDailyLimit,
-		BaseURL:    cfg.AppBaseURL,
-		EventName:  cfg.EventName,
-		Logo:       logo,
-	}
-	var emailWorker *service.EmailWorker
-	if cfg.SMTPHost != "" {
-		emailWorker = service.NewEmailWorker(emailRepo, mailer, emailCfg)
-	}
-
 	// Services
-	tokens := auth.NewTokenManager(cfg.JWTSecret, cfg.JWTTTL)
-	scenarios := service.NewScenarioService(scenarioRepo)
-	feed := service.NewScanFeed(dashboardRepo)
 	h := &httphandler.Handler{
-		Auth:         service.NewAuthService(adminRepo, tokens),
-		Sync:         service.NewSyncService(participantRepo, scanRepo, scenarioRepo, staffRepo),
-		Participants: service.NewParticipantService(participantRepo),
-		Scenarios:    scenarios,
-		Dashboard:    service.NewDashboardService(dashboardRepo, scenarios, fieldRepo, cfg.CheckInCode),
-		Fields:       service.NewFieldService(fieldRepo),
-		Emails:       service.NewEmailQueueService(emailRepo, emailWorker, emailCfg),
-		Feed:         feed,
-		Staff:        service.NewStaffService(staffRepo, mailer, cfg.AppBaseURL, cfg.EventName, logo),
-		Ingest:       newIngest(ingestRepo, cfg.HMACSecretKey),
-		Accounts:     adminRepo,
-
 		ClientIPHeader:  cfg.ClientIPHeader,
 		LoginRatePerMin: cfg.LoginRatePerMin,
 		PassRatePerMin:  cfg.PassRatePerMin,
-		Tokens:          tokens,
 		MapsAPIKey:      cfg.GoogleMapsAPIKey,
 		MapsMapID:       cfg.GoogleMapsMapID,
 
@@ -156,26 +113,11 @@ func run() error {
 		IdleTimeout:       120 * time.Second,
 	}
 
-	// The live scan feed stops with ctx; that closes every open dashboard
-	// stream so Shutdown below isn't held up waiting for them.
 	feedCtx, stopFeed := context.WithCancel(ctx)
 	defer stopFeed()
-	go feed.Run(feedCtx)
 	go liveFeed.Run(feedCtx)
 	go h.Integrations.Run(feedCtx)
 	srv.RegisterOnShutdown(stopFeed)
-
-	// The email worker stops with ctx too, after recording any message it
-	// is in the middle of sending; shutdown waits for that below.
-	workerDone := make(chan struct{})
-	if emailWorker != nil {
-		go func() {
-			defer close(workerDone)
-			emailWorker.Run(ctx)
-		}()
-	} else {
-		close(workerDone)
-	}
 
 	// Participant emails (pass issued, approval, waitlist). Like the pass
 	// email queue, only with SMTP configured; queued emails wait otherwise.
@@ -211,22 +153,7 @@ func run() error {
 	defer cancel()
 	err = srv.Shutdown(shutdownCtx)
 	<-outboxDone
-	select {
-	case <-workerDone:
-	case <-time.After(60 * time.Second):
-		slog.Warn("email worker still sending at shutdown; an interrupted job is retried on the next start")
-	}
 	return err
-}
-
-// newIngest returns nil when HMAC_SECRET_KEY is unset: the dashboard then
-// answers 503 instead of creating delegates whose passes can't be signed.
-func newIngest(repo *postgres.IngestRepo, key []byte) *service.IngestService {
-	if len(key) == 0 {
-		slog.Warn("HMAC_SECRET_KEY not set: delegates can't be added from the dashboard")
-		return nil
-	}
-	return service.NewIngestService(repo, key)
 }
 
 // passKeyRing loads the pass signing keys, or derives a development key.
@@ -259,23 +186,8 @@ func newGoogle(cfg *config.Config) *service.GoogleOAuth {
 	return service.NewGoogleOAuth(cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.AppBaseURL+"/auth/google/callback")
 }
 
-// emailLogoFile is the white event logo sized for email headers, made from
-// public/assets/Colombo LW.png (README: "Changing the logo").
-const emailLogoFile = "assets/colombo-logo-email.png"
-
-// loadEmailLogo reads the email header logo once. Without it emails still go
-// out, with the event name in text, so a missing file is only a warning.
-func loadEmailLogo(publicDir string) service.EmailLogo {
-	b, err := os.ReadFile(filepath.Join(publicDir, emailLogoFile))
-	if err != nil {
-		slog.Warn("email logo not found: emails use a text header", "file", emailLogoFile, "err", err)
-		return nil
-	}
-	return b
-}
-
 // newMailer builds the SMTP mailer, or a disabled one when SMTP_HOST is unset
-// (staff provisioning then answers 503 instead of creating unusable accounts).
+// (email actions remain queued until SMTP is configured).
 func newMailer(cfg *config.Config) (service.Mailer, error) {
 	if cfg.SMTPHost == "" {
 		slog.Warn("SMTP_HOST not set: staff accounts can't be created from the dashboard")

@@ -1,7 +1,7 @@
 package postgres
 
 // Integration tests for migration 007: accounts, orgs and the Row Level
-// Security wall. Skipped unless NSAC_TEST_DATABASE_URL is set (see
+// Security wall. Skipped unless EVENT_PASS_TEST_DATABASE_URL is set (see
 // scan_repo_integration_test.go). Rows use it-<tag>-* emails and slugs and
 // are deleted afterwards.
 
@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nasa-spaceapps/nsac-qr/internal/authz"
-	"github.com/nasa-spaceapps/nsac-qr/internal/domain"
+	"github.com/mayura-andrew/event-pass-platform/internal/authz"
+	"github.com/mayura-andrew/event-pass-platform/internal/domain"
 )
 
 type tenancyFixture struct {

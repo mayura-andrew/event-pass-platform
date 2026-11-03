@@ -3,9 +3,9 @@
 #
 # Repository secrets this needs (Settings > Secrets and variables > Actions):
 #   DIGITALOCEAN_ACCESS_TOKEN  read/write access to App Platform
-#   DATABASE_URL, JWT_SECRET, HMAC_SECRET_KEY, SMTP_USERNAME, SMTP_PASSWORD, SMTP_FROM
+#   DATABASE_URL, JWT_SECRET, PASS_SIGNING_KEYS, SMTP_USERNAME, SMTP_PASSWORD, SMTP_FROM
 #   GOOGLE_MAPS_API_KEY        optional
-# See DEPLOY.md, step 5.
+# See README.md for local setup and configuration.
 name: Test and deploy
 
 on:
@@ -28,13 +28,13 @@ jobs:
         image: postgres:16-alpine
         env:
           POSTGRES_PASSWORD: ci
-          POSTGRES_DB: nsac_test
+          POSTGRES_DB: event_pass_test
         ports: ['5432:5432']
         options: >-
-          --health-cmd "pg_isready -U postgres -d nsac_test"
+          --health-cmd "pg_isready -U postgres -d event_pass_test"
           --health-interval 5s --health-timeout 5s --health-retries 12
     env:
-      NSAC_TEST_DATABASE_URL: postgres://postgres:ci@localhost:5432/nsac_test?sslmode=disable
+      EVENT_PASS_TEST_DATABASE_URL: postgres://postgres:ci@localhost:5432/event_pass_test?sslmode=disable
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -42,7 +42,7 @@ jobs:
           go-version-file: go.mod
       - run: go vet ./...
       - name: Apply migrations
-        run: DATABASE_URL="$NSAC_TEST_DATABASE_URL" go run ./cmd/migrate up
+        run: DATABASE_URL="$EVENT_PASS_TEST_DATABASE_URL" go run ./cmd/migrate up
       - run: go test ./...
 
   deploy:
@@ -58,7 +58,7 @@ jobs:
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       JWT_SECRET: ${{ secrets.JWT_SECRET }}
-      HMAC_SECRET_KEY: ${{ secrets.HMAC_SECRET_KEY }}
+      PASS_SIGNING_KEYS: ${{ secrets.PASS_SIGNING_KEYS }}
       SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
       SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
       SMTP_FROM: ${{ secrets.SMTP_FROM }}
@@ -73,21 +73,21 @@ jobs:
           DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
         run: |
           fail=0
-          for name in DIGITALOCEAN_ACCESS_TOKEN DATABASE_URL JWT_SECRET HMAC_SECRET_KEY SMTP_USERNAME SMTP_PASSWORD SMTP_FROM; do
+          for name in DIGITALOCEAN_ACCESS_TOKEN DATABASE_URL JWT_SECRET PASS_SIGNING_KEYS SMTP_USERNAME SMTP_PASSWORD SMTP_FROM; do
             if [ -z "${!name}" ]; then
               echo "::error::Repository secret $name is not set"
               fail=1
             fi
           done
           # Values are substituted into single-quoted YAML in .do/app.yaml.
-          for name in DATABASE_URL JWT_SECRET HMAC_SECRET_KEY SMTP_USERNAME SMTP_PASSWORD SMTP_FROM GOOGLE_MAPS_API_KEY; do
+          for name in DATABASE_URL JWT_SECRET PASS_SIGNING_KEYS SMTP_USERNAME SMTP_PASSWORD SMTP_FROM GOOGLE_MAPS_API_KEY; do
             case "${!name}" in
               *"'"* | *$'\n'*)
                 echo "::error::Secret $name contains a single quote or a line break; remove it"
                 fail=1 ;;
             esac
           done
-          for name in JWT_SECRET HMAC_SECRET_KEY; do
+          for name in JWT_SECRET PASS_SIGNING_KEYS; do
             value=${!name}
             if [ -n "$value" ] && [ "${#value}" -lt 32 ]; then
               echo "::error::$name must be at least 32 characters (openssl rand -hex 32)"

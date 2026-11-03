@@ -15,7 +15,7 @@ import (
 // DefaultMaxConns fits Supabase's session pooler on small plans with room to
 // spare: in session mode every open client connection holds one database
 // connection from the project's pool (Database Settings > Connection pooling
-// > Pool Size), and the seed script, the SQL editor and dashboards need some.
+// > Pool Size), and migrations, the SQL editor, and dashboards need some.
 const DefaultMaxConns = 10
 
 // Open connects through pgx's database/sql driver with up to maxConns

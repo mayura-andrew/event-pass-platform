@@ -18,7 +18,7 @@ type Problem struct {
 func Samples(token string) map[string]Vars {
 	base := func(name, status string) Vars {
 		return Vars{Status: status, Token: token, Answers: []Line{{"T-shirt", "M"}, {"Team", "Orbiters"}},
-			Values: map[string]string{"org.name": "Colombo Space Club", "event.name": "Space Apps Colombo 2026",
+			Values: map[string]string{"org.name": "Community Events", "event.name": "Example Event 2026",
 				"event.dateRange": "3–4 Oct 2026", "event.venue": "BMICH", "event.when": "3–4 Oct 2026 · BMICH",
 				"participant.fullName": name, "pass.id": "CSA-7KQ4-M2XD", "answers.t_shirt": "M", "answers.team_name": "Orbiters"}}
 	}

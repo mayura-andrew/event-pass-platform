@@ -35,8 +35,8 @@ CREATE INDEX IF NOT EXISTS idx_outbox_participant ON outbox (participant_id, cre
 ALTER TABLE outbox ENABLE ROW LEVEL SECURITY;
 -- Tenant transactions queue emails and read their status; the worker runs
 -- as the connecting user across orgs.
-GRANT SELECT, INSERT ON outbox TO nsac_tenant;
+GRANT SELECT, INSERT ON outbox TO event_pass_tenant;
 DROP POLICY IF EXISTS outbox_select ON outbox;
-CREATE POLICY outbox_select ON outbox FOR SELECT TO nsac_tenant USING (org_id = app_org_id());
+CREATE POLICY outbox_select ON outbox FOR SELECT TO event_pass_tenant USING (org_id = app_org_id());
 DROP POLICY IF EXISTS outbox_insert ON outbox;
-CREATE POLICY outbox_insert ON outbox FOR INSERT TO nsac_tenant WITH CHECK (org_id = app_org_id());
+CREATE POLICY outbox_insert ON outbox FOR INSERT TO event_pass_tenant WITH CHECK (org_id = app_org_id());

@@ -3,7 +3,7 @@
 # filling in its '${NAME}' secrets from a local env file that never goes in
 # the repository.
 #
-#   scripts/staging-spec.sh [env-file]     # default ~/.config/nsac-qr/staging.env
+#   scripts/deploy-staging.sh [env-file]   # default ~/.config/event-pass-platform/staging.env
 #
 # The env file holds DATABASE_URL, SMTP_USERNAME, SMTP_PASSWORD and
 # optionally SMTP_FROM (defaults to SMTP_USERNAME). JWT_SECRET,
@@ -12,7 +12,7 @@
 # pass and loses Google connections. Needs doctl, signed in.
 set -euo pipefail
 
-env_file=${1:-$HOME/.config/nsac-qr/staging.env}
+env_file=${1:-$HOME/.config/event-pass-platform/staging.env}
 spec=$(dirname "$0")/../.do/staging.yaml
 [ -f "$env_file" ] || { echo "missing $env_file (see the comment at the top of this script)" >&2; exit 1; }
 chmod 600 "$env_file"
@@ -48,7 +48,7 @@ open(dst, "w").write(re.sub(r"'\$\{([A-Z_]+)\}'", fill, text))
 PY
 doctl apps spec validate "$filled" >/dev/null
 
-id=$(doctl apps list --format ID,Spec.Name --no-header | awk '$2 == "nsac-qr-staging" {print $1}')
+id=$(doctl apps list --format ID,Spec.Name --no-header | awk '$2 == "event-pass-platform-staging" {print $1}')
 if [ -z "$id" ]; then
   doctl apps create --spec "$filled" --format ID,DefaultIngress --wait=false
 else

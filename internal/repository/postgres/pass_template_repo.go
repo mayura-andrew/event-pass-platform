@@ -7,8 +7,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/nasa-spaceapps/nsac-qr/internal/authz"
-	"github.com/nasa-spaceapps/nsac-qr/internal/domain"
+	"github.com/mayura-andrew/event-pass-platform/internal/authz"
+	"github.com/mayura-andrew/event-pass-platform/internal/domain"
 )
 
 // PassTemplateRepo stores an org's pass templates and their versions

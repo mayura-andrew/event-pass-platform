@@ -20,13 +20,13 @@ jobs:
         image: postgres:16-alpine
         env:
           POSTGRES_PASSWORD: ci
-          POSTGRES_DB: nsac_load
+          POSTGRES_DB: event_pass_load
         ports: ['5432:5432']
         options: >-
-          --health-cmd "pg_isready -U postgres -d nsac_load"
+          --health-cmd "pg_isready -U postgres -d event_pass_load"
           --health-interval 5s --health-timeout 5s --health-retries 12
     env:
-      DATABASE_URL: postgres://postgres:ci@localhost:5432/nsac_load?sslmode=disable
+      DATABASE_URL: postgres://postgres:ci@localhost:5432/event_pass_load?sslmode=disable
       JWT_SECRET: nightly-load-test-secret-0123456789abcdef
     steps:
       - uses: actions/checkout@v4

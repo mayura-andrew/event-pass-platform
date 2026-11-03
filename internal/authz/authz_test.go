@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/nasa-spaceapps/nsac-qr/internal/domain"
+	"github.com/mayura-andrew/event-pass-platform/internal/domain"
 )
 
 // The org half of the spec's role table, written out so a change to the

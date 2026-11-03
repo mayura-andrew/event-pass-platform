@@ -15,10 +15,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nasa-spaceapps/nsac-qr/internal/domain"
-	"github.com/nasa-spaceapps/nsac-qr/internal/passes"
-	"github.com/nasa-spaceapps/nsac-qr/internal/repository/postgres"
-	"github.com/nasa-spaceapps/nsac-qr/internal/service"
+	"github.com/mayura-andrew/event-pass-platform/internal/domain"
+	"github.com/mayura-andrew/event-pass-platform/internal/passes"
+	"github.com/mayura-andrew/event-pass-platform/internal/repository/postgres"
+	"github.com/mayura-andrew/event-pass-platform/internal/service"
 )
 
 type failingMailer struct{ err error }
@@ -32,7 +32,7 @@ func TestPassEmails(t *testing.T) {
 	ann.signIn("")
 	org := ann.createOrg("mail")
 	base := "/api/v1/orgs/" + org.Slug + "/events"
-	_, b := ann.api("POST", base, map[string]any{"name": "Space Apps Colombo", "visibility": "unlisted",
+	_, b := ann.api("POST", base, map[string]any{"name": "Example Event", "visibility": "unlisted",
 		"starts_at": time.Now().Add(10 * 24 * time.Hour), "venue": map[string]any{"name": "BMICH"}})
 	var ev domain.Event
 	json.Unmarshal(b, &ev)
@@ -89,7 +89,7 @@ func TestPassEmails(t *testing.T) {
 	if time.Since(start) > 60*time.Second {
 		t.Errorf("pass email took %s (spec: within 60 s)", time.Since(start))
 	}
-	if m.Subject != "Your pass for Space Apps Colombo" || len(m.Inline) != 1 || len(m.Attachments) != 1 ||
+	if m.Subject != "Your pass for Example Event" || len(m.Inline) != 1 || len(m.Attachments) != 1 ||
 		!bytes.HasPrefix(m.Inline[0].Data, []byte("\x89PNG")) || !bytes.HasPrefix(m.Attachments[0].Data, []byte("%PDF")) {
 		t.Fatalf("pass email: subject %q, %d inline, %d attachments", m.Subject, len(m.Inline), len(m.Attachments))
 	}
@@ -146,7 +146,7 @@ func TestPassEmails(t *testing.T) {
 	chaID := list.Participants[0].ID
 	ann.api("PATCH", evAPI+"/participants/"+chaID, map[string]string{"status": "registered"})
 	drain()
-	if msgs := sent(cha); len(msgs) != 2 || msgs[1].Subject != "Your pass for Space Apps Colombo" {
+	if msgs := sent(cha); len(msgs) != 2 || msgs[1].Subject != "Your pass for Example Event" {
 		t.Fatalf("after approval: %d emails", len(msgs))
 	}
 

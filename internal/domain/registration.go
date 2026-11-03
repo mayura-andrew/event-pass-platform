@@ -178,8 +178,6 @@ type PassContext struct {
 	OrgName     string
 	OrgSlug     string
 	Fields      []FormField
-	// Imported from the current build: the QR keeps its old payload.
-	LegacySig string
 	// The event's pinned pass design (nil: Classic).
 	Design json.RawMessage
 }

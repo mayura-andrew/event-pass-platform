@@ -52,13 +52,13 @@ END $$;
 
 ALTER TABLE pass_templates         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pass_template_versions ENABLE ROW LEVEL SECURITY;
-GRANT SELECT, INSERT, UPDATE ON pass_templates TO nsac_tenant;
+GRANT SELECT, INSERT, UPDATE ON pass_templates TO event_pass_tenant;
 -- Versions are append-only.
-GRANT SELECT, INSERT ON pass_template_versions TO nsac_tenant;
+GRANT SELECT, INSERT ON pass_template_versions TO event_pass_tenant;
 
 DROP POLICY IF EXISTS pass_templates_all ON pass_templates;
-CREATE POLICY pass_templates_all ON pass_templates FOR ALL TO nsac_tenant
+CREATE POLICY pass_templates_all ON pass_templates FOR ALL TO event_pass_tenant
     USING (org_id = app_org_id()) WITH CHECK (org_id = app_org_id());
 DROP POLICY IF EXISTS pass_template_versions_all ON pass_template_versions;
-CREATE POLICY pass_template_versions_all ON pass_template_versions FOR ALL TO nsac_tenant
+CREATE POLICY pass_template_versions_all ON pass_template_versions FOR ALL TO event_pass_tenant
     USING (org_id = app_org_id()) WITH CHECK (org_id = app_org_id());

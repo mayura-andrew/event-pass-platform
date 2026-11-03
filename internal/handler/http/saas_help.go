@@ -6,7 +6,7 @@ package httphandler
 import (
 	"net/http"
 
-	"github.com/nasa-spaceapps/nsac-qr/internal/service"
+	"github.com/mayura-andrew/event-pass-platform/internal/service"
 )
 
 type helpTopic struct {

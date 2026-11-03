@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS pass_assets (
 );
 
 ALTER TABLE pass_assets ENABLE ROW LEVEL SECURITY;
-GRANT SELECT, INSERT ON pass_assets TO nsac_tenant;
+GRANT SELECT, INSERT ON pass_assets TO event_pass_tenant;
 DROP POLICY IF EXISTS pass_assets_org ON pass_assets;
-CREATE POLICY pass_assets_org ON pass_assets FOR ALL TO nsac_tenant
+CREATE POLICY pass_assets_org ON pass_assets FOR ALL TO event_pass_tenant
     USING (org_id = app_org_id()) WITH CHECK (org_id = app_org_id());

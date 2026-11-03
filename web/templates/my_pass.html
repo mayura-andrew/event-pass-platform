@@ -47,7 +47,7 @@
     </div>
     <div class="field">
       <label for="pf-headline">Headline</label>
-      <input id="pf-headline" name="headline" type="text" maxlength="100" value="{{if $f}}{{$f.Headline}}{{else}}{{$pr.Headline}}{{end}}" placeholder="Data science student, University of Colombo"{{with index $errs "headline"}} aria-invalid="true"{{end}}>
+      <input id="pf-headline" name="headline" type="text" maxlength="100" value="{{if $f}}{{$f.Headline}}{{else}}{{$pr.Headline}}{{end}}" placeholder="Data science student"{{with index $errs "headline"}} aria-invalid="true"{{end}}>
       {{with index $errs "headline"}}<p class="field-error">{{.}}</p>{{end}}
     </div>
     <div class="row cols">

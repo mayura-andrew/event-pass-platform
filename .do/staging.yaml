@@ -7,9 +7,9 @@
 # migrations first, so a push is all it takes.
 #
 # '${NAME}' values are secrets, filled in when the app is created or its spec
-# updated (scripts/staging-spec.sh reads them from a local file). Never put a
+# updated (scripts/deploy-staging.sh reads them from a local file). Never put a
 # real secret in this file. ${APP_URL} is filled in by App Platform.
-name: nsac-qr-staging
+name: event-pass-platform-staging
 region: blr # Bangalore, next to the Supabase project in Mumbai
 
 jobs:
@@ -17,12 +17,12 @@ jobs:
   - name: migrate
     kind: PRE_DEPLOY
     github:
-      repo: ai4all-learn/nsac-qr
+      repo: ai4all-learn/event-pass-platform
       branch: saas/m3-registration
       deploy_on_push: true
     dockerfile_path: Dockerfile
     source_dir: /
-    run_command: /app/nsac-qr-migrate up
+    run_command: /app/event-pass-platform-migrate up
     instance_count: 1
     instance_size_slug: apps-s-1vcpu-0.5gb
     envs:
@@ -34,7 +34,7 @@ jobs:
 services:
   - name: api
     github:
-      repo: ai4all-learn/nsac-qr
+      repo: ai4all-learn/event-pass-platform
       branch: saas/m3-registration
       deploy_on_push: true
     dockerfile_path: Dockerfile
@@ -110,7 +110,7 @@ services:
         value: Event Pass (staging)
       - key: EVENT_NAME
         scope: RUN_TIME
-        value: NASA Space Apps Colombo
+        value: Event Pass
       - key: CLIENT_IP_HEADER
         scope: RUN_TIME
         value: DO-Connecting-IP

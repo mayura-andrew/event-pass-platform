@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nasa-spaceapps/nsac-qr/internal/domain"
+	"github.com/mayura-andrew/event-pass-platform/internal/domain"
 )
 
 type mapResponse struct {

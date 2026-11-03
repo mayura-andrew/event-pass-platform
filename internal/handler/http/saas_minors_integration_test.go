@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nasa-spaceapps/nsac-qr/internal/domain"
-	"github.com/nasa-spaceapps/nsac-qr/internal/service"
+	"github.com/mayura-andrew/event-pass-platform/internal/domain"
+	"github.com/mayura-andrew/event-pass-platform/internal/service"
 )
 
 func TestUnder18OnCutoffDate(t *testing.T) {

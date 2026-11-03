@@ -13,7 +13,7 @@ spec asks for goose.
 - Keep the files in `migrations/` with their names. Each of 001-006 gets a
   `-- +goose Up` header and runs as one statement, which works because none
   uses explicit transactions or statements that can't run in one.
-- `cmd/migrate` (also in the Docker image as `/app/nsac-qr-migrate`) runs
+- `cmd/migrate` (also in the Docker image as `/app/event-pass-platform-migrate`) runs
   `goose up` with the files embedded. On a database set up by hand, the first
   run re-applies 001-006 (harmless by design) and records them.
 - goose is pinned to v3.22.1: later releases require Go 1.26 and upgrade pgx

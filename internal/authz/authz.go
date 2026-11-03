@@ -6,7 +6,7 @@
 // up for the signed-in account, so a handler can't query an org by ID alone.
 package authz
 
-import "github.com/nasa-spaceapps/nsac-qr/internal/domain"
+import "github.com/mayura-andrew/event-pass-platform/internal/domain"
 
 // Action is something a member may do inside an organization.
 type Action string

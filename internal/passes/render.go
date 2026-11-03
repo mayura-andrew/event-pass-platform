@@ -183,7 +183,7 @@ func PDF(card Card) ([]byte, error) {
 	out.Write(jpg.Bytes())
 	out.WriteString("\nendstream\nendobj\n")
 	obj(5, fmt.Sprintf("<< /Length %d >>\nstream\n%sendstream", len(content), content))
-	obj(6, "<< /Title ("+pdfString(card.EventName+" pass")+") /Producer (nsac-qr) >>")
+	obj(6, "<< /Title ("+pdfString(card.EventName+" pass")+") /Producer (event-pass-platform) >>")
 	xref := out.Len()
 	out.WriteString("xref\n0 7\n0000000000 65535 f \n")
 	for i := 1; i <= 6; i++ {

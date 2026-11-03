@@ -2,131 +2,14 @@ package httphandler
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"net"
 	"net/http"
 	"runtime/debug"
-	"slices"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/nasa-spaceapps/nsac-qr/internal/auth"
-	"github.com/nasa-spaceapps/nsac-qr/internal/domain"
 )
-
-type ctxKey int
-
-const claimsKey ctxKey = iota
-
-func claimsFrom(ctx context.Context) *auth.Claims {
-	c, _ := ctx.Value(claimsKey).(*auth.Claims)
-	return c
-}
-
-// AccountLookup returns an account's live state (role, active, temporary
-// password) so changes apply before the JWT expires.
-type AccountLookup interface {
-	AccountState(ctx context.Context, id string) (*domain.AccountState, error)
-}
-
-// accountCacheTTL bounds how long a deactivation, role change or password
-// reset can take to reach an already signed-in device.
-const accountCacheTTL = 30 * time.Second
-
-type accountCache struct {
-	lookup AccountLookup
-	mu     sync.Mutex
-	items  map[string]cachedAccount
-}
-
-type cachedAccount struct {
-	state   domain.AccountState
-	fetched time.Time
-}
-
-func newAccountCache(l AccountLookup) *accountCache {
-	return &accountCache{lookup: l, items: make(map[string]cachedAccount)}
-}
-
-func (c *accountCache) get(ctx context.Context, id string) (*domain.AccountState, error) {
-	c.mu.Lock()
-	id = strings.ToLower(id)
-	it, ok := c.items[id]
-	c.mu.Unlock()
-	if ok && time.Since(it.fetched) < accountCacheTTL {
-		return &it.state, nil
-	}
-	st, err := c.lookup.AccountState(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	c.mu.Lock()
-	if len(c.items) > 10_000 { // bound memory; accounts number in the hundreds
-		clear(c.items)
-	}
-	c.items[id] = cachedAccount{state: *st, fetched: time.Now()}
-	c.mu.Unlock()
-	return st, nil
-}
-
-// forget drops an entry so a change made on this instance applies at once.
-func (c *accountCache) forget(id string) {
-	c.mu.Lock()
-	delete(c.items, strings.ToLower(id))
-	c.mu.Unlock()
-}
-
-// authenticate verifies the Bearer JWT, then checks the account's live state:
-// deactivated or deleted accounts get 401, and the claims' role is replaced
-// by the current one. Accounts on a temporary password get 403
-// PASSWORD_CHANGE_REQUIRED unless allowPending (the change-password route).
-func (h *Handler) authenticate(next http.Handler, allowPending bool) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		raw, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if !ok || raw == "" {
-			writeError(w, http.StatusUnauthorized, "missing bearer token")
-			return
-		}
-		claims, err := h.Tokens.Verify(raw)
-		if err != nil {
-			writeError(w, http.StatusUnauthorized, "invalid or expired token")
-			return
-		}
-
-		st, err := h.accounts.get(r.Context(), claims.Subject)
-		switch {
-		case errors.Is(err, domain.ErrNotFound):
-			writeError(w, http.StatusUnauthorized, "account no longer exists")
-			return
-		case err != nil:
-			writeDomainError(w, r, err)
-			return
-		case !st.IsActive:
-			writeError(w, http.StatusUnauthorized, "account has been deactivated")
-			return
-		case st.ForcePasswordChange && !allowPending:
-			writeDomainError(w, r, domain.ErrPasswordChangeRequired)
-			return
-		}
-		claims.Role = st.Role // a role change applies without re-login
-
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), claimsKey, claims)))
-	})
-}
-
-// requireRole must run after authenticate.
-func requireRole(roles []string, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		c := claimsFrom(r.Context())
-		if c == nil || !slices.Contains(roles, c.Role) {
-			writeError(w, http.StatusForbidden, "insufficient role")
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
 
 // ---- Rate limiting -----------------------------------------------------------
 

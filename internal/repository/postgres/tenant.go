@@ -8,13 +8,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/nasa-spaceapps/nsac-qr/internal/domain"
+	"github.com/mayura-andrew/event-pass-platform/internal/domain"
 )
 
 // tenantRole is the database role tenant transactions run as. It has no
 // BYPASSRLS, so the policies in migration 007 apply even though the API
 // connects as the tables' owner.
-const tenantRole = "nsac_tenant"
+const tenantRole = "event_pass_tenant"
 
 // withTenant runs fn in a transaction scoped to one org and account: wall 2 of
 // tenant isolation. Row Level Security then limits every statement in fn to

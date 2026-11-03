@@ -1,7 +1,7 @@
 package httphandler
 
 // Integration tests for M2: events, sharing and the audit log. Same setup as
-// saas_integration_test.go (NSAC_TEST_DATABASE_URL, it-<tag>-* rows).
+// saas_integration_test.go (EVENT_PASS_TEST_DATABASE_URL, it-<tag>-* rows).
 //
 // TestEventAuthorizationMatrix is generated from eventRoutes and the role
 // matrix: every route, called by every kind of person, must allow exactly
@@ -16,9 +16,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nasa-spaceapps/nsac-qr/internal/authz"
-	"github.com/nasa-spaceapps/nsac-qr/internal/domain"
-	"github.com/nasa-spaceapps/nsac-qr/internal/repository/postgres"
+	"github.com/mayura-andrew/event-pass-platform/internal/authz"
+	"github.com/mayura-andrew/event-pass-platform/internal/domain"
+	"github.com/mayura-andrew/event-pass-platform/internal/repository/postgres"
 )
 
 // persona is someone calling event routes, and how they relate to the event.
@@ -425,7 +425,7 @@ func TestGuestsLinksAndOrgSwitch(t *testing.T) {
 	ann.signIn("")
 	org := ann.createOrg("guests")
 	base := "/api/v1/orgs/" + org.Slug + "/events"
-	_, b := ann.api("POST", base, map[string]any{"name": "Space Apps Colombo"})
+	_, b := ann.api("POST", base, map[string]any{"name": "Example Event"})
 	var ev domain.Event
 	json.Unmarshal(b, &ev)
 
@@ -452,11 +452,11 @@ func TestGuestsLinksAndOrgSwitch(t *testing.T) {
 		t.Errorf("guest creates an event: HTTP %d, want 403", status)
 	}
 	status, b = gita.api("GET", base+"?view=shared", nil)
-	if status != http.StatusOK || !strings.Contains(string(b), "Space Apps Colombo") {
+	if status != http.StatusOK || !strings.Contains(string(b), "Example Event") {
 		t.Fatalf("guest's shared view: HTTP %d %s", status, b)
 	}
 	res := gita.get("/o/" + org.Slug)
-	if page := body(res); res.StatusCode != http.StatusOK || !strings.Contains(page, "Space Apps Colombo") {
+	if page := body(res); res.StatusCode != http.StatusOK || !strings.Contains(page, "Example Event") {
 		t.Fatalf("guest's events home: HTTP %d", res.StatusCode)
 	}
 
@@ -470,7 +470,7 @@ func TestGuestsLinksAndOrgSwitch(t *testing.T) {
 	}
 	anon := env.newBrowser(t, "anon")
 	path := link.URL[strings.Index(link.URL, "/l/"):]
-	if res := anon.get(path); res.StatusCode != http.StatusOK || !strings.Contains(body(res), "Space Apps Colombo") {
+	if res := anon.get(path); res.StatusCode != http.StatusOK || !strings.Contains(body(res), "Example Event") {
 		t.Fatalf("open link signed out: HTTP %d", res.StatusCode)
 	}
 	ann.api("DELETE", base+"/"+ev.ID+"/link-share", nil)
@@ -508,7 +508,7 @@ func TestGuestsLinksAndOrgSwitch(t *testing.T) {
 	}
 	// The tenant role can't rewrite history.
 	if _, err := env.db.ExecContext(context.Background(), `
-		DO $$ BEGIN SET LOCAL ROLE nsac_tenant; UPDATE audit_log SET action = 'x'; END $$`); err == nil || !strings.Contains(err.Error(), "permission denied") {
+		DO $$ BEGIN SET LOCAL ROLE event_pass_tenant; UPDATE audit_log SET action = 'x'; END $$`); err == nil || !strings.Contains(err.Error(), "permission denied") {
 		t.Errorf("tenant role updating the audit log: %v, want permission denied", err)
 	}
 }
@@ -519,7 +519,7 @@ func TestEventPagesRender(t *testing.T) {
 	ann := env.newBrowser(t, "ann")
 	ann.signIn("")
 	org := ann.createOrg("pages")
-	res := ann.form("POST", "/o/"+org.Slug+"/events", url.Values{"name": {"Space Apps Colombo"}, "type": {"hackathon"},
+	res := ann.form("POST", "/o/"+org.Slug+"/events", url.Values{"name": {"Example Event"}, "type": {"hackathon"},
 		"starts": {"2026-10-03T09:00"}, "ends": {"2026-10-04T18:00"}, "time_zone": {"Asia/Colombo"}, "visibility": {"private"},
 		"venue_name": {"BMICH"}, "lat": {"6.9010"}, "lng": {"79.8722"}, "capacity": {"300"}, "tags": {"space, 2026"}})
 	page := body(res)
@@ -539,7 +539,7 @@ func TestEventPagesRender(t *testing.T) {
 		t.Error("link not shown after turning it on")
 	}
 	// A bad edit keeps what was typed and says why.
-	res = ann.form("POST", eventPath, url.Values{"name": {"Space Apps Colombo"}, "starts": {"2026-10-04T09:00"},
+	res = ann.form("POST", eventPath, url.Values{"name": {"Example Event"}, "starts": {"2026-10-04T09:00"},
 		"ends": {"2026-10-03T09:00"}, "time_zone": {"Asia/Colombo"}, "visibility": {"private"}, "type": {"hackathon"}})
 	if page := body(res); res.StatusCode != http.StatusBadRequest || !strings.Contains(page, "ends before it starts") || !strings.Contains(page, "2026-10-04T09:00") {
 		t.Errorf("invalid edit: HTTP %d", res.StatusCode)

@@ -73,7 +73,7 @@
 {{$f := .Form}}
 <div class="field">
   <label for="ev-name">Name</label>
-  <input id="ev-name" name="name" type="text" maxlength="150" value="{{$f.Name}}" placeholder="Space Apps Colombo 2026"{{if not $f.DuplicateFrom}} required{{end}}>
+  <input id="ev-name" name="name" type="text" maxlength="150" value="{{$f.Name}}" placeholder="Example Event 2026"{{if not $f.DuplicateFrom}} required{{end}}>
 </div>
 <div class="row cols">
   <div class="field grow">
@@ -105,7 +105,7 @@
 </fieldset>
 <fieldset class="group">
   <legend>Where</legend>
-  <div class="field"><label for="ev-venue">Venue</label><input id="ev-venue" name="venue_name" type="text" maxlength="150" value="{{$f.VenueName}}" placeholder="BMICH, Colombo"></div>
+  <div class="field"><label for="ev-venue">Venue</label><input id="ev-venue" name="venue_name" type="text" maxlength="150" value="{{$f.VenueName}}" placeholder="Convention Center"></div>
   <div class="field"><label for="ev-addr">Address</label><input id="ev-addr" name="venue_address" type="text" maxlength="300" value="{{$f.VenueAddress}}"></div>
   <div class="row cols">
     <div class="field grow"><label for="ev-lat">Map pin latitude</label><input id="ev-lat" name="lat" type="text" inputmode="decimal" value="{{$f.Lat}}" placeholder="6.9010"></div>

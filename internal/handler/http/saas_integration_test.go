@@ -2,7 +2,7 @@ package httphandler
 
 // End-to-end tests for the M1 SaaS routes against a real PostgreSQL with the
 // migrations applied (go run ./cmd/migrate up). Skipped unless
-// NSAC_TEST_DATABASE_URL is set. Accounts and orgs use it-<tag>-* emails and
+// EVENT_PASS_TEST_DATABASE_URL is set. Accounts and orgs use it-<tag>-* emails and
 // slugs and are deleted afterwards.
 //
 // TestTenantIsolation is the spec's isolation suite: every route in
@@ -29,11 +29,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nasa-spaceapps/nsac-qr/internal/domain"
-	"github.com/nasa-spaceapps/nsac-qr/internal/passes"
-	"github.com/nasa-spaceapps/nsac-qr/internal/repository/postgres"
-	"github.com/nasa-spaceapps/nsac-qr/internal/secrets"
-	"github.com/nasa-spaceapps/nsac-qr/internal/service"
+	"github.com/mayura-andrew/event-pass-platform/internal/domain"
+	"github.com/mayura-andrew/event-pass-platform/internal/passes"
+	"github.com/mayura-andrew/event-pass-platform/internal/repository/postgres"
+	"github.com/mayura-andrew/event-pass-platform/internal/secrets"
+	"github.com/mayura-andrew/event-pass-platform/internal/service"
 )
 
 // captureMailer keeps sent messages so tests can follow emailed links.
@@ -79,9 +79,9 @@ func newSaaSEnv(t *testing.T) *saasEnv { return newSaaSEnvWith(t, nil) }
 
 func newSaaSEnvWith(t *testing.T, google *service.GoogleOAuth) *saasEnv {
 	t.Helper()
-	dsn := os.Getenv("NSAC_TEST_DATABASE_URL")
+	dsn := os.Getenv("EVENT_PASS_TEST_DATABASE_URL")
 	if dsn == "" {
-		t.Skip("NSAC_TEST_DATABASE_URL not set")
+		t.Skip("EVENT_PASS_TEST_DATABASE_URL not set")
 	}
 	ctx := context.Background()
 	db, err := postgres.Open(ctx, dsn)
@@ -280,9 +280,9 @@ func TestJourneyCreateOrgAndInvite(t *testing.T) {
 	}
 
 	slug := env.prefix + "club"
-	res = ann.form("POST", "/app/orgs", url.Values{"name": {"Colombo Space Club"}, "slug": {slug}})
+	res = ann.form("POST", "/app/orgs", url.Values{"name": {"Community Events"}, "slug": {slug}})
 	page := body(res)
-	if res.Request.URL.Path != "/o/"+slug || !strings.Contains(page, "Colombo Space Club") || !strings.Contains(page, "Organization created") {
+	if res.Request.URL.Path != "/o/"+slug || !strings.Contains(page, "Community Events") || !strings.Contains(page, "Organization created") {
 		t.Fatalf("create org landed on %s", res.Request.URL.Path)
 	}
 	// The same address again is a friendly error, not a crash.
@@ -305,7 +305,7 @@ func TestJourneyCreateOrgAndInvite(t *testing.T) {
 	}
 	res = ben.signIn(res.Request.URL.Query().Get("next"))
 	page = body(res)
-	if res.Request.URL.Path != "/invite" || !strings.Contains(page, "Join Colombo Space Club") {
+	if res.Request.URL.Path != "/invite" || !strings.Contains(page, "Join Community Events") {
 		t.Fatalf("after sign-in landed on %s", res.Request.URL.Path)
 	}
 	res = ben.form("POST", "/invite/accept", url.Values{"token": {inviteToken}})
