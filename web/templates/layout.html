@@ -12,7 +12,7 @@
   <link rel="stylesheet" href="/static/css/tokens.css">
   <link rel="stylesheet" href="/static/css/app.css">
 </head>
-<body>
+<body{{if .Account}} data-authenticated data-account-id="{{.Account.ID}}"{{end}}>
   <div class="loading-track" id="loading-track" hidden>
     <span class="loading-track-bar" aria-hidden="true"></span>
     <span class="sr-only" id="loading-announcement" role="status" aria-live="polite"></span>

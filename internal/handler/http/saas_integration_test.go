@@ -332,6 +332,10 @@ func TestJourneyCreateOrgAndInvite(t *testing.T) {
 	if status, _ := ben.api("GET", "/api/v1/me", nil); status != http.StatusUnauthorized {
 		t.Fatalf("after sign-out /me: HTTP %d", status)
 	}
+	res = ben.get("/app")
+	if res.Request.URL.Path != "/login" {
+		t.Fatalf("after sign-out /app landed on %s, want /login", res.Request.URL.Path)
+	}
 }
 
 // Only platform admins create organizations. A pass holder who signs in
@@ -402,6 +406,39 @@ func TestEmailLinkIsSingleUseAndStaysOnSite(t *testing.T) {
 		t.Fatalf("cross-site login form: HTTP %d", r2.StatusCode)
 	}
 	r2.Body.Close()
+}
+
+func TestSigningIntoAnotherAccountReplacesBrowserSession(t *testing.T) {
+	env := newSaaSEnv(t)
+	browser := env.newBrowser(t, "first")
+	browser.signIn("")
+	firstAccountID := browser.id
+
+	secondEmail := env.prefix + "second@test.local"
+	res := browser.form("POST", "/login", url.Values{"email": {secondEmail}})
+	if res.StatusCode != http.StatusOK || !strings.Contains(body(res), "Check your email") {
+		t.Fatalf("request second account link: HTTP %d", res.StatusCode)
+	}
+	token := env.mail.lastToken(t, secondEmail)
+	res = browser.form("POST", "/auth/email/verify", url.Values{"token": {token}})
+	if res.Request.URL.Path != "/app" {
+		t.Fatalf("signing into second account landed on %s", res.Request.URL.Path)
+	}
+	res.Body.Close()
+
+	status, b := browser.api("GET", "/api/v1/me", nil)
+	if status != http.StatusOK {
+		t.Fatalf("get current account: HTTP %d %s", status, b)
+	}
+	var me struct {
+		Account domain.Account `json:"account"`
+	}
+	if err := json.Unmarshal(b, &me); err != nil {
+		t.Fatal(err)
+	}
+	if me.Account.ID == firstAccountID || me.Account.Email != secondEmail {
+		t.Fatalf("browser still authenticated as previous account %q", me.Account.Email)
+	}
 }
 
 // fill replaces the path parameters in an org route with concrete values.

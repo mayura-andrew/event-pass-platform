@@ -56,4 +56,30 @@ document.addEventListener('submit', (event) => {
   show('Submitting form');
 });
 
-window.addEventListener('pageshow', hide);
+window.addEventListener('pageshow', (event) => {
+  hide();
+  if (event.persisted && document.body.hasAttribute('data-authenticated')) location.reload();
+});
+
+window.addEventListener('pagehide', (event) => {
+  if (!event.persisted || !document.body.hasAttribute('data-authenticated')) return;
+  const main = document.createElement('main');
+  main.className = 'wrap narrow';
+  const message = document.createElement('p');
+  message.setAttribute('role', 'status');
+  message.textContent = 'Checking your session...';
+  main.append(message);
+  document.body.replaceChildren(main);
+});
+
+const accountId = document.body.dataset.accountId;
+if (accountId) {
+  try {
+    localStorage.setItem('event-pass.account', accountId);
+  } catch {
+    // Cross-tab refresh is a convenience; the server still verifies every request.
+  }
+  window.addEventListener('storage', (event) => {
+    if (event.key === 'event-pass.account' && event.newValue !== accountId) location.reload();
+  });
+}

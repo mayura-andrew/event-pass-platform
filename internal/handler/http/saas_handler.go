@@ -371,6 +371,7 @@ func (h *Handler) googleCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) logoutPost(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	p, err := h.currentPrincipal(r)
 	if err != nil {
 		h.renderError(w, r, nil, err)

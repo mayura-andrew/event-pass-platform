@@ -174,6 +174,7 @@ func (h *Handler) apiOrg(fn orgFunc) http.Handler {
 // Form posts need the session's CSRF token in the "csrf" field.
 func (h *Handler) pageAuthed(fn authedFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
 		r, cancel := withDeadline(r, pageDeadline)
 		defer cancel()
 		p, err := h.currentPrincipal(r)
