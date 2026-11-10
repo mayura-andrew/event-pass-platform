@@ -111,6 +111,11 @@ services:
       - key: SESSION_TTL
         scope: RUN_TIME
         value: 14h
+      # Only these accounts (comma-separated) can create organizations.
+      # Everyone else signs in for their passes or joins an org by invite.
+      - key: PLATFORM_ADMIN_EMAILS
+        scope: RUN_TIME
+        value: CHANGE_ME@example.org
       # Database connections this container may open. Keep it below the
       # Supabase project's pool size (Database Settings > Connection pooling
       # > Pool Size), leaving room for migrations, the SQL editor, and dashboards.

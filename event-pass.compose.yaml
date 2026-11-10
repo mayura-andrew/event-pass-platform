@@ -35,16 +35,7 @@ services:
       DATABASE_URL: postgres://event_pass:event-pass-local-password@db:5432/event_pass?sslmode=disable
       PORT: "8080"
       PUBLIC_DIR: /app/public
-      # Local email always goes to Mailpit (http://localhost:8025). These are
-      # fixed values, not ${...} defaults, on purpose: Compose would otherwise
-      # pull SMTP_* from the developer's shell and send test mail for real.
       APP_BASE_URL: http://localhost:8080
-      SMTP_HOST: mail
-      SMTP_PORT: "1025"
-      SMTP_SECURITY: none
-      SMTP_USERNAME: ""
-      SMTP_PASSWORD: ""
-      SMTP_FROM: Event Pass Platform <no-reply@event-pass.local>
     depends_on:
       db:
         condition: service_healthy
@@ -53,7 +44,7 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
 
-  # Catches every email the API sends; read them at http://localhost:8025.
+  # Local SMTP capture when .env SMTP_HOST is set to "mail".
   mail:
     image: axllent/mailpit:v1.21.8
     ports:

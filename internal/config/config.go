@@ -47,6 +47,12 @@ type Config struct {
 	ProductName        string        // platform name in pages and emails
 	SessionTTL         time.Duration // signed-in session lifetime
 
+	// PlatformAdminEmails (PLATFORM_ADMIN_EMAILS, comma-separated) are the
+	// only accounts that may create organizations. Everyone else signs in
+	// for their passes only, or joins an org by invite. Empty: nobody can
+	// create an organization from the app.
+	PlatformAdminEmails []string
+
 	// Ed25519 seeds for pass QR tokens, "1:<base64>,2:<base64>"; the highest
 	// ID signs new passes, the others still verify. Empty: a key derived from
 	// JWT_SECRET (local development only).
@@ -94,6 +100,11 @@ func Load() (*Config, error) {
 		MapTileAttribution: os.Getenv("MAP_TILE_ATTRIBUTION"),
 	}
 	c.ClientIPHeader = os.Getenv("CLIENT_IP_HEADER")
+	for _, e := range strings.Split(os.Getenv("PLATFORM_ADMIN_EMAILS"), ",") {
+		if e = strings.ToLower(strings.TrimSpace(e)); e != "" {
+			c.PlatformAdminEmails = append(c.PlatformAdminEmails, e)
+		}
+	}
 	var err error
 	if c.LoginRatePerMin, err = getInt("LOGIN_RATE_PER_MIN", 30); err != nil {
 		return nil, err

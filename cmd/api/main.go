@@ -76,7 +76,7 @@ func run() error {
 		SignIn: service.NewAccountService(accountRepo, mailer, newGoogle(cfg), service.AccountConfig{
 			BaseURL: cfg.AppBaseURL, Product: cfg.ProductName, SessionTTL: cfg.SessionTTL,
 		}),
-		Orgs:          service.NewOrgService(orgRepo, mailer, cfg.AppBaseURL, cfg.ProductName),
+		Orgs:          newOrgService(orgRepo, mailer, cfg),
 		Events:        service.NewEventService(eventRepo, accountRepo, orgRepo, mailer, cfg.AppBaseURL, cfg.ProductName),
 		Registrations: service.NewRegistrationService(registrationRepo, eventRepo, outboxRepo),
 		Passes:        passService,
@@ -184,6 +184,20 @@ func newGoogle(cfg *config.Config) *service.GoogleOAuth {
 		return nil
 	}
 	return service.NewGoogleOAuth(cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.AppBaseURL+"/auth/google/callback")
+}
+
+// newOrgService lets only PLATFORM_ADMIN_EMAILS create organizations.
+// Everyone else (pass holders) can sign in for their passes or join an org
+// by invite, but can't open an org of their own.
+func newOrgService(store service.OrgStore, mailer service.Mailer, cfg *config.Config) *service.OrgService {
+	s := service.NewOrgService(store, mailer, cfg.AppBaseURL, cfg.ProductName)
+	s.OrgCreators = service.OrgCreatorsByEmail(cfg.PlatformAdminEmails)
+	if len(cfg.PlatformAdminEmails) == 0 {
+		slog.Warn("PLATFORM_ADMIN_EMAILS not set: nobody can create organizations from the app")
+	} else {
+		slog.Info("organization creation limited to platform admins", "count", len(cfg.PlatformAdminEmails))
+	}
+	return s
 }
 
 // newMailer builds the SMTP mailer, or a disabled one when SMTP_HOST is unset

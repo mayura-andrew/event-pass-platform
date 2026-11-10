@@ -8,10 +8,13 @@
   <li><a href="/o/{{.Slug}}"><span class="text"><span class="name">{{.Name}}</span><span class="slug">/o/{{.Slug}}</span></span><span class="chip">{{.Role}}</span></a></li>
   {{end}}
 </ul>
-{{else}}
+{{else if .Data.CanCreate}}
 <div class="card empty">You don't belong to an organization yet. Create one below, or open an invite from your email.</div>
+{{else}}
+<div class="card empty">You don't belong to an organization yet. To run events, ask an organization admin to invite you. Registered for an event? Your passes are in <a href="/me">My passes</a>.</div>
 {{end}}
 
+{{if .Data.CanCreate}}
 <section class="card mt-24" aria-labelledby="new-org">
   <h2 id="new-org">Create an organization</h2>
   <form method="post" action="/app/orgs">
@@ -30,4 +33,5 @@
   </form>
 </section>
 <script type="module" src="/static/js/org-new.js"></script>
+{{end}}
 {{end}}

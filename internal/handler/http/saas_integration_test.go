@@ -117,6 +117,9 @@ func newSaaSEnvWith(t *testing.T, google *service.GoogleOAuth) *saasEnv {
 	h.Integrations = service.NewIntegrationService(postgres.NewIntegrationRepo(db), regRepo, nil, service.NewGoogleAPI(),
 		secrets.Derived([]byte("test-integrations-key")), base+"/auth/google/integration/callback")
 	h.Profiles = service.NewProfileService(postgres.NewPortalRepo(db), postgres.NewProfileRepo(db))
+	// Journeys create orgs as any test user; TestOrgCreationPlatformAdminsOnly
+	// covers the real restriction.
+	h.Orgs.OrgCreators = service.AnyoneCreatesOrgs
 	env.h = h
 	h.Checkins = service.NewCheckinService(postgres.NewCheckinRepo(db), postgres.NewWorkshopRepo(db), h.Registrations, regRepo,
 		h.Passes, regRepo)
@@ -328,6 +331,45 @@ func TestJourneyCreateOrgAndInvite(t *testing.T) {
 	ben.form("POST", "/logout", url.Values{})
 	if status, _ := ben.api("GET", "/api/v1/me", nil); status != http.StatusUnauthorized {
 		t.Fatalf("after sign-out /me: HTTP %d", status)
+	}
+}
+
+// Only platform admins create organizations. A pass holder who signs in
+// sees no create form, is refused by the page and the API, and can still
+// join an org when its admin invites them.
+func TestOrgCreationPlatformAdminsOnly(t *testing.T) {
+	env := newSaaSEnv(t)
+	admin := env.newBrowser(t, "admin")
+	pat := env.newBrowser(t, "pat") // registered for a pass, nothing more
+	env.h.Orgs.OrgCreators = service.OrgCreatorsByEmail([]string{strings.ToUpper(admin.email)})
+
+	res := pat.signIn("")
+	if page := body(res); strings.Contains(page, "Create an organization") || !strings.Contains(page, "My passes") {
+		t.Fatal("non-admin sees the create form on /app")
+	}
+	slug := env.prefix + "pats"
+	res = pat.form("POST", "/app/orgs", url.Values{"name": {"Pat's Org"}, "slug": {slug}})
+	if page := body(res); res.StatusCode != http.StatusForbidden || !strings.Contains(page, "only platform administrators") {
+		t.Fatalf("non-admin page create: HTTP %d", res.StatusCode)
+	}
+	if status, b := pat.api("POST", "/api/v1/orgs", map[string]string{"name": "Pat's Org", "slug": slug}); status != http.StatusForbidden {
+		t.Fatalf("non-admin API create: HTTP %d %s", status, b)
+	}
+	if status, b := pat.api("GET", "/api/v1/orgs", nil); status != http.StatusOK || (string(bytes.TrimSpace(b)) != "[]" && string(bytes.TrimSpace(b)) != "null") {
+		t.Fatalf("non-admin has orgs after refused create: %s", b)
+	}
+
+	// The platform admin (matched case-insensitively) can.
+	if page := body(admin.signIn("")); !strings.Contains(page, "Create an organization") {
+		t.Fatal("platform admin doesn't see the create form")
+	}
+	m := admin.createOrg("hq")
+
+	// Approval for everyone else is an invite from that org.
+	admin.invite(m.Slug, pat.email, domain.OrgRoleMember)
+	pat.join()
+	if status, _ := pat.api("GET", "/api/v1/orgs/"+m.Slug, nil); status != http.StatusOK {
+		t.Fatalf("invited member can't open the org: HTTP %d", status)
 	}
 }
 

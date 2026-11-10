@@ -13,6 +13,10 @@
   <link rel="stylesheet" href="/static/css/app.css">
 </head>
 <body>
+  <div class="loading-track" id="loading-track" hidden>
+    <span class="loading-track-bar" aria-hidden="true"></span>
+    <span class="sr-only" id="loading-announcement" role="status" aria-live="polite"></span>
+  </div>
   <header class="topbar">
     <a class="topbar-brand" href="/app">{{.Product}}</a>
     <a class="topbar-link" href="/help">Help</a>
@@ -30,5 +34,6 @@
     {{if .Notice}}<p class="alert alert-success" role="status">{{.Notice}}</p>{{end}}
     {{template "content" .}}
   </main>
+  <script type="module" src="/static/js/loading.js"></script>
 </body>
 </html>{{end}}

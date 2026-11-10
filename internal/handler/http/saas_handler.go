@@ -163,7 +163,7 @@ func (h *Handler) apiCreateOrg(w http.ResponseWriter, r *http.Request, p *princi
 	if !decodeJSON(w, r, 4<<10, &req) {
 		return
 	}
-	m, err := h.Orgs.CreateOrg(r.Context(), p.scope(), req.Name, req.Slug)
+	m, err := h.Orgs.CreateOrg(r.Context(), p.scope(), p.account.Email, req.Name, req.Slug)
 	if err != nil {
 		writeDomainError(w, r, err)
 		return
@@ -398,6 +398,9 @@ func (h *Handler) logoutPost(w http.ResponseWriter, r *http.Request) {
 type appData struct {
 	Orgs       []domain.OrgMembership
 	Name, Slug string
+	// CanCreate shows the create form: platform admins only. The service
+	// checks again on submit.
+	CanCreate bool
 }
 
 func (h *Handler) appPage(w http.ResponseWriter, r *http.Request, p *principal) {
@@ -411,12 +414,13 @@ func (h *Handler) renderApp(w http.ResponseWriter, r *http.Request, p *principal
 		return
 	}
 	data.Orgs = orgs
+	data.CanCreate = h.Orgs.CanCreateOrg(p.account.Email)
 	h.render(w, status, "app", p, view{Title: "Your organizations", Error: errMsg, Data: data})
 }
 
 func (h *Handler) createOrgPost(w http.ResponseWriter, r *http.Request, p *principal) {
 	name, slug := r.PostFormValue("name"), r.PostFormValue("slug")
-	m, err := h.Orgs.CreateOrg(r.Context(), p.scope(), name, slug)
+	m, err := h.Orgs.CreateOrg(r.Context(), p.scope(), p.account.Email, name, slug)
 	if err != nil {
 		status, msg := pageErrorStatus(err)
 		if status == http.StatusInternalServerError {

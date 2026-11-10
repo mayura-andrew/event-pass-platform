@@ -50,14 +50,47 @@ type OrgService struct {
 	mailer  Mailer
 	baseURL string
 	product string
+	// OrgCreators decides who may create organizations. nil: nobody, so
+	// a missing setting keeps the platform closed rather than open.
+	OrgCreators OrgCreatorPolicy
 }
+
+// OrgCreatorPolicy reports whether the account with this (lower-cased)
+// email may create organizations.
+type OrgCreatorPolicy func(email string) bool
+
+// OrgCreatorsByEmail allows only the listed emails (platform admins).
+func OrgCreatorsByEmail(emails []string) OrgCreatorPolicy {
+	allowed := make(map[string]bool, len(emails))
+	for _, e := range emails {
+		if e = strings.ToLower(strings.TrimSpace(e)); e != "" {
+			allowed[e] = true
+		}
+	}
+	return func(email string) bool { return allowed[strings.ToLower(email)] }
+}
+
+// AnyoneCreatesOrgs lets every signed-in account create organizations
+// (tests and tooling only).
+func AnyoneCreatesOrgs(string) bool { return true }
 
 func NewOrgService(store OrgStore, mailer Mailer, baseURL, product string) *OrgService {
 	return &OrgService{store: store, mailer: mailer, baseURL: baseURL, product: product}
 }
 
-// CreateOrg makes a new organization owned by the caller.
-func (s *OrgService) CreateOrg(ctx context.Context, as authz.AccountScope, name, slug string) (*domain.OrgMembership, error) {
+// CanCreateOrg reports whether the account with this email may create
+// organizations. Others reach orgs only through an invite.
+func (s *OrgService) CanCreateOrg(email string) bool {
+	return s.OrgCreators != nil && email != "" && s.OrgCreators(email)
+}
+
+// CreateOrg makes a new organization owned by the caller, whose account
+// email is checked against OrgCreators.
+func (s *OrgService) CreateOrg(ctx context.Context, as authz.AccountScope, email, name, slug string) (*domain.OrgMembership, error) {
+	if !s.CanCreateOrg(email) {
+		slog.Warn("org creation refused", "account", as.AccountID())
+		return nil, fmt.Errorf("%w: only platform administrators can create organizations; ask an organization admin to invite you", domain.ErrForbidden)
+	}
 	name = strings.TrimSpace(name)
 	slug = strings.ToLower(strings.TrimSpace(slug))
 	if n := utf8.RuneCountInString(name); n < 2 || n > 120 || !ValidDisplayName(name) {
