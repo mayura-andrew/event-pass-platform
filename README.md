@@ -94,6 +94,37 @@ restrictions on ports 465 and 587. Brevo's sending limits and sender
 verification rules still apply. The configured
 `EMAIL_DAILY_LIMIT=450`; use a transactional email provider for larger events.
 
+## Amazon Linux EC2 with RDS PostgreSQL
+
+The repository includes a Docker Compose deployment for an Amazon Linux 2023
+EC2 instance in [deploy/ec2](./deploy/ec2). It runs the API, applies embedded
+database migrations against RDS, and uses Caddy to obtain and renew an HTTPS
+certificate.
+
+Before deploying:
+
+1. Put the EC2 instance and RDS instance in the same VPC. Allow inbound TCP
+   `5432` on the RDS security group only from the EC2 security group.
+2. Allow inbound TCP `80` and `443` on the EC2 security group. Point the
+   public DNS record in `APP_DOMAIN` at the EC2 public address or Elastic IP.
+3. Install Docker and Git on the instance, clone this repository, and copy
+   [deploy/ec2/.env.example](./deploy/ec2/.env.example) to
+   `deploy/ec2/.env`. Set `DATABASE_URL` to the RDS endpoint with
+   `sslmode=require`, generate the application secrets, and set the real SMTP
+   values and sender.
+4. Set `APP_BASE_URL` to the same `https://` URL as `APP_DOMAIN`, then run:
+
+```sh
+chmod 600 deploy/ec2/.env
+chmod +x deploy/ec2/deploy.sh
+deploy/ec2/deploy.sh
+```
+
+The migration command runs before the API is restarted. Do not expose port
+`8080` publicly; Caddy is the only service that publishes ports on the host.
+Keep the `.env` file outside version control and preserve
+`JWT_SECRET`, `PASS_SIGNING_KEYS`, and `INTEGRATIONS_KEY` across deployments.
+
 ## Tests
 
 ```sh
