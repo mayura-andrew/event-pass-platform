@@ -346,6 +346,87 @@ func (r *RegistrationRepo) Register(ctx context.Context, ev *domain.Event, p dom
 	return nil, errors.New("could not find a free pass ID")
 }
 
+// ImportParticipants registers one validated batch atomically. Imports bypass
+// public registration dates and approval mode, but may not exceed event
+// capacity. Each pass email is queued in the same transaction as its record.
+func (r *RegistrationRepo) ImportParticipants(ctx context.Context, es authz.EventScope, participants []domain.EventParticipant, passID func() string) error {
+	return withTenant(ctx, r.db, es.OrgID(), es.AccountID(), func(tx *sql.Tx) error {
+		var capacity sql.NullInt64
+		if err := tx.QueryRowContext(ctx, `SELECT capacity FROM events
+			WHERE org_id = $1 AND id = $2 FOR UPDATE`, es.OrgID(), es.EventID()).Scan(&capacity); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return domain.ErrNotFound
+			}
+			return err
+		}
+
+		args := []any{es.OrgID(), es.EventID()}
+		placeholders := make([]string, len(participants))
+		for i, p := range participants {
+			args = append(args, p.Email)
+			placeholders[i] = fmt.Sprintf("$%d", len(args))
+		}
+		rows, err := tx.QueryContext(ctx, `SELECT email FROM event_participants
+			WHERE org_id = $1 AND event_id = $2 AND email IN (`+strings.Join(placeholders, ",")+`)`, args...)
+		if err != nil {
+			return err
+		}
+		if rows.Next() {
+			var email string
+			if err := rows.Scan(&email); err != nil {
+				rows.Close()
+				return err
+			}
+			rows.Close()
+			return fmt.Errorf("%w: %s is already on this event's participant list", domain.ErrConflict, email)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return err
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+
+		if capacity.Valid {
+			var taken int64
+			if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM event_participants
+				WHERE org_id = $1 AND event_id = $2 AND status IN ('registered', 'pending')`,
+				es.OrgID(), es.EventID()).Scan(&taken); err != nil {
+				return err
+			}
+			if taken+int64(len(participants)) > capacity.Int64 {
+				return fmt.Errorf("%w: importing %d people would exceed the event capacity of %d",
+					domain.ErrConflict, len(participants), capacity.Int64)
+			}
+		}
+
+		for _, p := range participants {
+			answers, err := json.Marshal(p.Answers)
+			if err != nil {
+				return fmt.Errorf("encode participant answers: %w", err)
+			}
+			id := newID()
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO event_participants (id, org_id, event_id, email, full_name, status, pass_id, answers, source)
+				VALUES ($1, $2, $3, $4, $5, 'registered', $6, $7, 'import')`,
+				id, es.OrgID(), es.EventID(), p.Email, p.FullName, passID(), answers); err != nil {
+				if pgCode(err) == pgUniqueViolation && strings.Contains(pgConstraint(err), "email") {
+					return fmt.Errorf("%w: %s is already on this event's participant list", domain.ErrConflict, p.Email)
+				}
+				return err
+			}
+			if err := enqueueMail(ctx, tx, es.OrgID(), es.EventID(), id, p.Email, domain.MailPassIssued); err != nil {
+				return err
+			}
+		}
+		return insertAudit(ctx, tx, es.OrgID(), es.AccountID(), domain.Audit{
+			EventID: es.EventID(), Action: "participant.import", TargetType: "participant_batch", TargetID: es.EventID(),
+			Diff: map[string]any{"count": len(participants)},
+		})
+	})
+}
+
 // ---- Organizer's participant list --------------------------------------------
 
 func (r *RegistrationRepo) ListParticipants(ctx context.Context, es authz.EventScope, q domain.ParticipantQuery) ([]domain.EventParticipant, domain.ParticipantCounts, error) {

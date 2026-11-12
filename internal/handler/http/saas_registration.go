@@ -4,10 +4,13 @@ package httphandler
 // organizer's participant list (milestone M3).
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -40,6 +43,7 @@ func init() {
 		{"POST", evPage + "/publish", false, authz.EventEdit, "event.publish", (*Handler).publishPost},
 		{"POST", evPage + "/unpublish", false, authz.EventEdit, "event.unpublish", (*Handler).unpublishPost},
 		{"GET", evPage + "/participants", false, authz.EventDashboard, "", (*Handler).participantsPage},
+		{"POST", evPage + "/participants/import", false, authz.EventEdit, "participant.import", (*Handler).participantImportPost},
 		{"POST", evPage + "/participants/{participant}/status", false, authz.EventEdit, "participant.status", (*Handler).participantStatusPost},
 		{"POST", ev + "/passes/check", true, authz.EventLookup, "", (*Handler).apiCheckPass},
 		{"GET", evPage + "/participants/{participant}/pass.png", false, authz.EventDashboard, "", (*Handler).participantPassPNG},
@@ -129,7 +133,12 @@ func (h *Handler) apiListParticipants(w http.ResponseWriter, r *http.Request, e 
 		writeDomainError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"participants": list, "counts": counts})
+	views, err := h.Registrations.ParticipantViews(r.Context(), e.es, list)
+	if err != nil {
+		writeDomainError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"participants": views, "counts": counts})
 }
 
 func (h *Handler) apiSetParticipantStatus(w http.ResponseWriter, r *http.Request, e *eventReq) {
@@ -324,10 +333,22 @@ func (d participantsData) Count(status string) int {
 	return d.Counts[status]
 }
 
-var participantNotices = map[string]string{"status": "Status updated."}
+var participantNotices = map[string]string{
+	"status":   "Status updated.",
+	"imported": "CSV imported. Pass emails are queued for delivery.",
+}
 
 func (h *Handler) participantsPage(w http.ResponseWriter, r *http.Request, e *eventReq) {
-	q := participantQuery(r)
+	notice := participantNotices[r.URL.Query().Get("notice")]
+	if r.URL.Query().Get("notice") == "imported" {
+		if count, err := strconv.Atoi(r.URL.Query().Get("count")); err == nil && count > 0 {
+			notice = fmt.Sprintf("Imported %d participants. Pass emails are queued for delivery.", count)
+		}
+	}
+	h.renderParticipantsPage(w, r, e, participantQuery(r), http.StatusOK, "", notice)
+}
+
+func (h *Handler) renderParticipantsPage(w http.ResponseWriter, r *http.Request, e *eventReq, q domain.ParticipantQuery, status int, errMsg, notice string) {
 	list, counts, err := h.Registrations.Participants(r.Context(), e.es, q)
 	if err != nil {
 		h.renderError(w, r, e.principal, err)
@@ -349,8 +370,53 @@ func (h *Handler) participantsPage(w http.ResponseWriter, r *http.Request, e *ev
 	if e.event.StartsAt != nil || e.event.AgeOn != nil {
 		d.AgeOn = service.AgeOn(e.event).Format("2 Jan 2006")
 	}
-	h.render(w, http.StatusOK, "event_participants", e.principal, view{Title: "Participants · " + e.event.Name,
-		Notice: participantNotices[r.URL.Query().Get("notice")], Data: d})
+	h.render(w, status, "event_participants", e.principal, view{Title: "Participants · " + e.event.Name,
+		Error: errMsg, Notice: notice, Data: d})
+}
+
+const maxParticipantCSVBytes = 5 << 20
+
+func (h *Handler) participantImportPost(w http.ResponseWriter, r *http.Request, e *eventReq) {
+	fail := func(err error) {
+		status, msg := pageErrorStatus(err)
+		if status == http.StatusInternalServerError {
+			h.renderError(w, r, e.principal, err)
+			return
+		}
+		h.renderParticipantsPage(w, r, e, participantQuery(r), status, msg, "")
+	}
+
+	file, header, err := r.FormFile("csv")
+	if err != nil {
+		fail(fmt.Errorf("%w: choose a CSV file to import", domain.ErrValidation))
+		return
+	}
+	defer file.Close()
+	if header.Size > maxParticipantCSVBytes {
+		fail(fmt.Errorf("%w: CSV must be no larger than 5 MB", domain.ErrValidation))
+		return
+	}
+	raw, err := io.ReadAll(io.LimitReader(file, maxParticipantCSVBytes+1))
+	if err != nil {
+		fail(fmt.Errorf("read participant CSV: %w", err))
+		return
+	}
+	if len(raw) > maxParticipantCSVBytes {
+		fail(fmt.Errorf("%w: CSV must be no larger than 5 MB", domain.ErrValidation))
+		return
+	}
+	participants, err := service.ParseParticipantCSV(bytes.NewReader(raw))
+	if err != nil {
+		fail(err)
+		return
+	}
+	if err := h.Registrations.ImportParticipants(r.Context(), e.es, e.event, participants); err != nil {
+		fail(err)
+		return
+	}
+	dest := fmt.Sprintf("/o/%s/events/%s/participants?notice=imported&count=%d",
+		e.org.Slug, e.event.ID, len(participants))
+	http.Redirect(w, r, dest, http.StatusSeeOther)
 }
 
 func (h *Handler) participantStatusPost(w http.ResponseWriter, r *http.Request, e *eventReq) {
@@ -526,5 +592,19 @@ func (h *Handler) apiCheckPass(w http.ResponseWriter, r *http.Request, e *eventR
 		writeDomainError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, res)
+	out := struct {
+		Result      string                   `json:"result"`
+		Message     string                   `json:"message"`
+		Participant *service.ParticipantView `json:"participant,omitempty"`
+	}{Result: res.Result, Message: res.Message}
+	if res.Participant != nil {
+		views, err := h.Registrations.ParticipantViews(r.Context(), e.es, []domain.EventParticipant{*res.Participant})
+		if err != nil {
+			writeDomainError(w, r, err)
+			return
+		}
+		out.Participant = &views[0]
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, out)
 }

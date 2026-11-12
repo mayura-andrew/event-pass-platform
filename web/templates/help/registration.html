@@ -17,12 +17,13 @@
   <li><b>Only people you approve</b> wait as <i>pending</i> until you choose <b>Approve</b> on the <b>Participants</b> tab. They get their pass then.</li>
 </ul>
 <p>Set a <b>Capacity</b> in the event's <b>Settings</b> to limit places. Tick the waitlist option to put people on a waitlist when it's full; <b>Give a place</b> on the <b>Participants</b> tab lets someone in. <b>Opens</b> and <b>Closes</b> limit when the form accepts registrations.</p>
+<p>Event editors can also import a CSV from the <b>Participants</b> tab. Include <code>Name</code>, <code>Email</code>, and <code>Title</code> columns. Imports bypass public registration dates and approval, so these people are registered immediately; event capacity still applies. Their title is included in pass data. Pass emails are queued and require SMTP configuration for delivery. The default pass prints the title; custom designs can show it with an Answers element or the <code>answers.title</code> variable.</p>
 <h2>Publishing and visibility</h2>
 <p>A draft is visible only to your team. <b>Publish</b> puts it online. What that means depends on the event's visibility, set in <b>Settings</b>:</p>
 <ul>
   <li><b>Public</b>: listed on your organization's page, with a registration form.</li>
   <li><b>Unlisted</b>: a registration form for anyone with the link. Good for invitation-only events where you send the link yourself.</li>
-  <li><b>Private</b>: no public page or form. Add people by <a href="/help/google-form">importing a Google Form</a>.</li>
+  <li><b>Private</b>: no public page or form. Add people from the <b>Participants</b> tab with a CSV or <a href="/help/google-form">importing a Google Form</a>.</li>
 </ul>
 <p>Someone who registers twice with the same email isn't added twice: they get their existing pass again.</p>
 {{end}}

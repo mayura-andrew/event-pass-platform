@@ -9,6 +9,7 @@ General-purpose event registration and pass management for organizations.
 - Open or approval-based registration, dates, capacity, and waitlists
 - Custom questions with required fields and selectable options
 - Participant pass emails, `/me` pass portal, PNG/PDF downloads
+- CSV import for registered participants and pass-email distribution
 - Workshop registration and staff check-in
 - Pass design templates and previews
 - Google Forms import and Google Sheets synchronization

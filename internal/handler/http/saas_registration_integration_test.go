@@ -5,6 +5,7 @@ package httphandler
 // saas_integration_test.go.
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/url"
@@ -14,9 +15,119 @@ import (
 	"time"
 
 	"github.com/mayura-andrew/event-pass-platform/internal/domain"
+	"github.com/mayura-andrew/event-pass-platform/internal/repository/postgres"
+	"github.com/mayura-andrew/event-pass-platform/internal/service"
 )
 
 var passIDRe = regexp.MustCompile(`\b(SAC-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4})\b`)
+
+func TestPageTemplatesParse(t *testing.T) {
+	if _, err := loadPages(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestParticipantCSVImportIssuesAndEmailsPasses(t *testing.T) {
+	env := newSaaSEnv(t)
+	owner := env.newBrowser(t, "import-owner")
+	owner.signIn("")
+	org := owner.createOrg("csv-import")
+	base := "/api/v1/orgs/" + org.Slug + "/events"
+	status, b := owner.api("POST", base, map[string]any{
+		"name": "Example Event", "starts_at": time.Now().Add(14 * 24 * time.Hour),
+		"capacity": 2, "visibility": "unlisted", "time_zone": "Asia/Colombo",
+	})
+	if status != http.StatusCreated {
+		t.Fatalf("create event: HTTP %d %s", status, b)
+	}
+	var ev domain.Event
+	if err := json.Unmarshal(b, &ev); err != nil {
+		t.Fatal(err)
+	}
+	if status, b = owner.api("PATCH", base+"/"+ev.ID+"/registration", map[string]any{"reg_mode": "approval"}); status != http.StatusNoContent {
+		t.Fatalf("set approval mode: HTTP %d %s", status, b)
+	}
+
+	csv := []byte("Email,Title,Name\n" +
+		env.prefix + "csv-one@test.local,Engineer,Ann Perera\n" +
+		env.prefix + "csv-two@test.local,Organizer,Ben Silva\n")
+	page := "/o/" + org.Slug + "/events/" + ev.ID + "/participants/import"
+	res := uploadAs(t, owner, page, "csv", nil, csv)
+	html := body(res)
+	if res.StatusCode != http.StatusOK || !strings.Contains(html, "Imported 2 participants") {
+		t.Fatalf("import CSV: HTTP %d at %s: %s", res.StatusCode, res.Request.URL.Path, html)
+	}
+
+	_, b = owner.api("GET", base+"/"+ev.ID+"/participants", nil)
+	var list struct{ Participants []domain.EventParticipant }
+	if err := json.Unmarshal(b, &list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Participants) != 2 {
+		t.Fatalf("participant count %d, want 2", len(list.Participants))
+	}
+	var imported domain.EventParticipant
+	for _, p := range list.Participants {
+		if p.Status != domain.PartRegistered || p.Source != "import" {
+			t.Errorf("imported participant status/source: %s/%s", p.Status, p.Source)
+		}
+		if p.FullName == "Ann Perera" {
+			imported = p
+		}
+	}
+	if imported.ID == "" || imported.Answers["title"] != "Engineer" {
+		t.Fatalf("name/title not stored from CSV: %+v", imported)
+	}
+
+	pc, err := postgres.NewOutboxRepo(env.db).PassContext(context.Background(), org.ID, imported.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	card, err := env.h.Passes.Card(pc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(card.Lines) != 1 || card.Lines[0].Label != "Title" || card.Lines[0].Value != "Engineer" {
+		t.Errorf("pass title: %+v", card.Lines)
+	}
+
+	worker := service.NewOutboxWorker(postgres.NewOutboxRepo(env.db), env.mail, env.h.Passes, env.h.BaseURL, env.h.Product)
+	if sent, err := worker.RunOnce(context.Background()); err != nil || sent != 2 {
+		t.Fatalf("send imported pass emails: sent=%d err=%v", sent, err)
+	}
+	env.mail.mu.Lock()
+	emailCount := 0
+	for _, message := range env.mail.sent {
+		if strings.HasPrefix(message.To.Address, env.prefix+"csv-") {
+			emailCount++
+			if len(message.Attachments) != 1 {
+				t.Errorf("pass email to %s has %d attachments", message.To.Address, len(message.Attachments))
+			}
+		}
+	}
+	env.mail.mu.Unlock()
+	if emailCount != 2 {
+		t.Errorf("imported pass emails sent %d, want 2", emailCount)
+	}
+
+	for _, invalidCSV := range [][]byte{
+		[]byte("Name,Email,Title\nDuplicate," + env.prefix + "csv-one@test.local,Engineer\n"),
+		[]byte("Name,Email,Title\nThird Person," + env.prefix + "csv-three@test.local,Guest\n"),
+	} {
+		res := uploadAs(t, owner, page, "csv", nil, invalidCSV)
+		html := body(res)
+		if res.StatusCode != http.StatusConflict || !strings.Contains(html, "already") && !strings.Contains(html, "capacity") {
+			t.Errorf("expected a safe duplicate/capacity conflict, got HTTP %d: %s", res.StatusCode, html)
+		}
+	}
+	_, b = owner.api("GET", base+"/"+ev.ID+"/participants", nil)
+	if err := json.Unmarshal(b, &list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Participants) != 2 {
+		t.Errorf("failed imports changed participant count to %d", len(list.Participants))
+	}
+}
 
 func TestRegistrationJourney(t *testing.T) {
 	env := newSaaSEnv(t)

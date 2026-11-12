@@ -90,6 +90,12 @@ func (s *PassService) Card(pc *domain.PassContext) (passes.Card, error) {
 			c.Answers[f.Key] = v
 		}
 	}
+	if pc.Participant.Source == "import" && c.Answers["title"] == "" {
+		if title := answerText(pc.Participant.Answers["title"]); title != "" {
+			c.Lines = append(c.Lines, passes.Line{Label: "Title", Value: title})
+			c.Answers["title"] = title
+		}
+	}
 	if len(pc.Design) > 0 {
 		var d passes.Design
 		if err := json.Unmarshal(pc.Design, &d); err != nil {

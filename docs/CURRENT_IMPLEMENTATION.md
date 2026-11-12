@@ -78,12 +78,28 @@ signed pass tokens and renders pass images. When SMTP is configured,
 participant emails are queued and processed asynchronously by the API process.
 The participant portal lets a pass holder access their passes.
 
+Event editors can also import up to 500 people from a CSV on the Participants
+page. The file must have `Name`, `Email`, and `Title` headers. The import is
+atomic: duplicate addresses or a batch that exceeds event capacity are
+rejected without partial inserts. Imported people are immediately registered
+even when public registrations require approval or are closed; event capacity
+still applies. Their title is stored with the participant and included in pass
+data; the default pass prints it, while a custom design can show it through an
+Answers element or `answers.title`. Pass emails are added to the same outbox
+used for public registrations.
+
+Participant-list and pass-check API responses are role-aware: owners and
+editors can see organizer-only answers and birth-date data, while other event
+roles receive only answers whose form fields are not marked organizer-only.
+Those responses omit the birth date and derived age for non-editor roles.
+
 ### Check-in and live updates
 
 Event staff use the scanner and check-in pages to validate participants,
 record attendance, and manage workshops and checkpoints. Check-in data is
-persisted in PostgreSQL. A live-feed service runs in the API process to support
-updates in the application.
+persisted in PostgreSQL. Scanner lookup responses omit organizer-only answers.
+A live-feed service runs in the API process to support updates in the
+application.
 
 ### Templates, integrations, and participant profiles
 

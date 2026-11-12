@@ -1,6 +1,19 @@
 {{define "content"}}
 {{template "eventhead" .}}
 {{$d := .Data}}{{$csrf := .CSRF}}{{$edit := $d.Can "event.edit"}}
+{{if $edit}}
+<section class="card">
+  <h2>Import participants from CSV</h2>
+  <p>Upload a CSV with <code>Name</code>, <code>Email</code>, and <code>Title</code> columns (Title may be blank). This bypasses public registration dates and approval: every imported participant is registered immediately. Event capacity still applies. Pass emails are queued; SMTP must be configured for delivery.</p>
+  <p class="muted">Example: <code>Name,Email,Title</code> / <code>Ann Perera,ann@example.com,Engineer</code>. Titles are included in the pass data; custom designs can display them with an Answers element or the <code>answers.title</code> variable.</p>
+  <form method="post" action="{{$d.Base}}/participants/import" enctype="multipart/form-data">
+    <input type="hidden" name="csrf" value="{{$csrf}}">
+    <label for="participant-csv">CSV file</label>
+    <input id="participant-csv" type="file" name="csv" accept=".csv,text/csv" required>
+    <button class="btn" type="submit">Import and queue pass emails</button>
+  </form>
+</section>
+{{end}}
 <nav class="filters" aria-label="Filter by status">
   {{range $d.Statuses}}<a href="{{$d.Href .Key}}"{{if eq .Key $d.Filter}} aria-current="page"{{end}}>{{.Label}} <span class="count">{{$d.Count .Key}}</span></a>{{end}}
 </nav>
@@ -15,7 +28,7 @@
 <ul class="people card">
   {{range $d.Participants}}
   <li>
-    <div class="who">{{template "avatar" (dict "Name" .FullName "Email" .Email)}}<b>{{.FullName}}{{if .Minor}} <span class="chip chip-minor" title="Under 18 on {{$d.AgeOn}} (age {{deref .Age}}): follow the safeguarding policy">Under 18</span>{{end}}</b><span>{{.Email}} · <code>{{.PassID}}</code> · {{when .RegisteredAt}}</span></div>
+    <div class="who">{{template "avatar" (dict "Name" .FullName "Email" .Email)}}<b>{{.FullName}}{{if .Minor}} <span class="chip chip-minor" title="Under 18 on {{$d.AgeOn}} (age {{deref .Age}}): follow the safeguarding policy">Under 18</span>{{end}}</b>{{if and (eq .Source "import") (index .Answers "title")}}<span>{{index .Answers "title"}}</span>{{end}}<span>{{.Email}} · <code>{{.PassID}}</code> · {{when .RegisteredAt}}</span></div>
     <div class="actions">
       <span class="pstatus pstatus-{{.Status}}">{{statusWord .Status}}</span>
       <a class="btn btn-quiet" href="{{$d.Base}}/participants/{{.ID}}/pass.png" target="_blank" rel="noopener">Pass</a>

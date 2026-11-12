@@ -27,6 +27,7 @@ type RegistrationStore interface {
 	MoveField(ctx context.Context, es authz.EventScope, fieldID string, up bool) error
 	PublicEvent(ctx context.Context, orgSlug, eventSlug string) (*domain.PublicEvent, error)
 	Register(ctx context.Context, ev *domain.Event, p domain.EventParticipant, passID func() string) (*domain.EventParticipant, error)
+	ImportParticipants(ctx context.Context, es authz.EventScope, participants []domain.EventParticipant, passID func() string) error
 	ListParticipants(ctx context.Context, es authz.EventScope, q domain.ParticipantQuery) ([]domain.EventParticipant, domain.ParticipantCounts, error)
 	GetParticipant(ctx context.Context, es authz.EventScope, id string) (*domain.EventParticipant, error)
 	SetStatus(ctx context.Context, es authz.EventScope, id, status string) error
@@ -456,6 +457,91 @@ func (s *RegistrationService) Participants(ctx context.Context, es authz.EventSc
 	}
 	q.Q = strings.TrimSpace(q.Q)
 	return s.store.ListParticipants(ctx, es, q)
+}
+
+// ParticipantView is the participant data returned by organizer-facing APIs.
+type ParticipantView struct {
+	ID           string         `json:"id"`
+	EventID      string         `json:"event_id"`
+	AccountID    string         `json:"account_id,omitempty"`
+	Email        string         `json:"email"`
+	FullName     string         `json:"full_name"`
+	Status       string         `json:"status"`
+	PassID       string         `json:"pass_id"`
+	Answers      map[string]any `json:"answers"`
+	Source       string         `json:"source"`
+	BirthDate    string         `json:"birth_date,omitempty"`
+	Age          *int           `json:"age,omitempty"`
+	RegisteredAt time.Time      `json:"registered_at"`
+	UpdatedAt    time.Time      `json:"updated_at"`
+}
+
+// ParticipantViews limits organizer-only answers and birth-date data to
+// event owners and editors. Unknown answer keys are omitted for other roles.
+func (s *RegistrationService) ParticipantViews(ctx context.Context, es authz.EventScope, participants []domain.EventParticipant) ([]ParticipantView, error) {
+	canSeeOrganizerData := es.Can(authz.EventEdit)
+	visibleAnswers := map[string]bool{}
+	if !canSeeOrganizerData {
+		if len(participants) == 0 {
+			return []ParticipantView{}, nil
+		}
+		fields, err := s.store.ListFields(ctx, es)
+		if err != nil {
+			return nil, err
+		}
+		visibleAnswers = visibleParticipantAnswers(fields)
+	}
+	return participantViews(participants, canSeeOrganizerData, visibleAnswers), nil
+}
+
+func participantViews(participants []domain.EventParticipant, canSeeOrganizerData bool, visibleAnswers map[string]bool) []ParticipantView {
+	views := make([]ParticipantView, 0, len(participants))
+	for _, p := range participants {
+		view := ParticipantView{
+			ID: p.ID, EventID: p.EventID, AccountID: p.AccountID, Email: p.Email, FullName: p.FullName,
+			Status: p.Status, PassID: p.PassID, Source: p.Source, RegisteredAt: p.RegisteredAt, UpdatedAt: p.UpdatedAt,
+			Answers: make(map[string]any, len(p.Answers)),
+		}
+		if canSeeOrganizerData {
+			for key, answer := range p.Answers {
+				view.Answers[key] = answer
+			}
+			view.BirthDate, view.Age = p.BirthDate, p.Age
+		} else {
+			for key, answer := range p.Answers {
+				if visibleAnswers[key] {
+					view.Answers[key] = answer
+				}
+			}
+		}
+		views = append(views, view)
+	}
+	return views
+}
+
+func visibleParticipantAnswers(fields []domain.FormField) map[string]bool {
+	visible := make(map[string]bool, len(fields))
+	for _, field := range fields {
+		if field.Visibility != "admin" {
+			visible[field.Key] = true
+		}
+	}
+	return visible
+}
+
+// ImportParticipants registers organizer-provided attendees immediately and
+// queues their pass emails. Event capacity still applies to manual imports.
+func (s *RegistrationService) ImportParticipants(ctx context.Context, es authz.EventScope, ev *domain.Event, participants []domain.EventParticipant) error {
+	if err := es.Require(authz.EventEdit); err != nil {
+		return err
+	}
+	if ev == nil || ev.ID != es.EventID() || ev.OrgID != es.OrgID() {
+		return domain.ErrNotFound
+	}
+	if len(participants) == 0 || len(participants) > MaxParticipantImportRows {
+		return invalid("CSV must contain between 1 and %d participant rows", MaxParticipantImportRows)
+	}
+	return s.store.ImportParticipants(ctx, es, participants, func() string { return NewPassID(ev.PassPrefix) })
 }
 
 // SetStatus approves, cancels, restores or moves someone off the waitlist.

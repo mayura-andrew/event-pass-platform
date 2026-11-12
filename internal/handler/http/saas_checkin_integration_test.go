@@ -322,6 +322,106 @@ func TestCheckpointRulesUndoAndLookup(t *testing.T) {
 	}
 }
 
+func TestOrganizerOnlyParticipantDataHiddenFromEventRoles(t *testing.T) {
+	f := newCheckinFixture(t, 1)
+	participant := f.people[0]
+	if status, b := f.owner.api("POST", f.api+"/fields", map[string]any{
+		"label": "Medical note", "type": "text", "visibility": "admin",
+	}); status != http.StatusCreated {
+		t.Fatalf("add organizer-only field: HTTP %d %s", status, b)
+	}
+
+	answers, err := json.Marshal(map[string]string{
+		"food": "Vegan", "phone": "+94 77 000 0000", "medical_note": "Restricted note", "birth_date": "2000-01-02",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.env.db.ExecContext(context.Background(),
+		`UPDATE event_participants SET answers = $1::jsonb, birth_date = $2 WHERE id = $3`,
+		answers, "2000-01-02", participant.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	viewer := f.env.newBrowser(t, "restricted-viewer")
+	viewer.signIn("")
+	if status, b := f.owner.api("PUT", f.api+"/shares", map[string]string{"email": viewer.email, "role": "viewer"}); status != http.StatusCreated {
+		t.Fatalf("share event with viewer: HTTP %d %s", status, b)
+	}
+
+	assertRestricted := func(label string, body []byte) {
+		t.Helper()
+		var response struct {
+			Participant map[string]json.RawMessage `json:"participant"`
+		}
+		if err := json.Unmarshal(body, &response); err != nil {
+			t.Fatalf("%s response: %v: %s", label, err, body)
+		}
+		assertRedactedParticipant(t, label, response.Participant)
+	}
+
+	status, b := viewer.api("GET", f.api+"/participants", nil)
+	if status != http.StatusOK {
+		t.Fatalf("viewer participant list: HTTP %d %s", status, b)
+	}
+	var list struct {
+		Participants []map[string]json.RawMessage `json:"participants"`
+	}
+	if err := json.Unmarshal(b, &list); err != nil || len(list.Participants) != 1 {
+		t.Fatalf("viewer participant list: %v: %s", err, b)
+	}
+	assertRedactedParticipant(t, "viewer participant list", list.Participants[0])
+
+	for _, caller := range []struct {
+		name string
+		user *user
+	}{{"viewer", viewer}, {"check-in staff", f.phones[1]}} {
+		status, b = caller.user.api("POST", f.api+"/passes/check", map[string]string{"payload": f.tokens[participant.ID]})
+		if status != http.StatusOK || !strings.Contains(string(b), `"result":"valid"`) {
+			t.Fatalf("%s pass check: HTTP %d %s", caller.name, status, b)
+		}
+		assertRestricted(caller.name+" pass check", b)
+	}
+
+	status, b = f.owner.api("GET", f.api+"/participants", nil)
+	if status != http.StatusOK {
+		t.Fatalf("owner participant list: HTTP %d %s", status, b)
+	}
+	if !strings.Contains(string(b), `"birth_date":"2000-01-02"`) ||
+		!strings.Contains(string(b), `"medical_note":"Restricted note"`) {
+		t.Errorf("owner participant list lost organizer data: %s", b)
+	}
+	status, b = f.owner.api("POST", f.api+"/passes/check", map[string]string{"payload": f.tokens[participant.ID]})
+	if status != http.StatusOK || !strings.Contains(string(b), `"birth_date":"2000-01-02"`) ||
+		!strings.Contains(string(b), `"medical_note":"Restricted note"`) {
+		t.Errorf("owner pass check lost organizer data: HTTP %d %s", status, b)
+	}
+}
+
+func assertRedactedParticipant(t *testing.T, label string, participant map[string]json.RawMessage) {
+	t.Helper()
+	if participant == nil {
+		t.Fatalf("%s omitted the participant", label)
+	}
+	for _, key := range []string{"birth_date", "age"} {
+		if _, ok := participant[key]; ok {
+			t.Errorf("%s exposed %s", label, key)
+		}
+	}
+	var answers map[string]json.RawMessage
+	if err := json.Unmarshal(participant["answers"], &answers); err != nil {
+		t.Fatalf("%s answers: %v", label, err)
+	}
+	if _, ok := answers["food"]; !ok {
+		t.Errorf("%s omitted a non-restricted answer", label)
+	}
+	for _, key := range []string{"phone", "medical_note", "birth_date"} {
+		if _, ok := answers[key]; ok {
+			t.Errorf("%s exposed organizer-only answer %q", label, key)
+		}
+	}
+}
+
 // The live stream says "change" soon after a scan on another phone.
 func TestLiveStream(t *testing.T) {
 	f := newCheckinFixture(t, 1)

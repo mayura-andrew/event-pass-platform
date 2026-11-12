@@ -199,6 +199,9 @@ func (f *matrixFixture) call(p persona, rt eventRoute, te testEvent) (int, strin
 	var res *http.Response
 	if rt.method == "GET" {
 		res = u.get(path)
+	} else if strings.HasSuffix(rt.pattern, "/participants/import") {
+		csv := []byte("Name,Email,Title\nMatrix Import," + f.env.prefix + te.id + "@test.local,Engineer\n")
+		res = uploadAs(f.t, u, path, "csv", nil, csv)
 	} else {
 		form := url.Values{"name": {"Matrix renamed"}, "type": {"hackathon"}, "time_zone": {"UTC"},
 			"visibility": {"private"}, "role": {"viewer"}, "email": {f.env.prefix + "new-" + te.id[len(te.id)-6:] + "@test.local"},
