@@ -530,7 +530,8 @@ func visibleParticipantAnswers(fields []domain.FormField) map[string]bool {
 }
 
 // ImportParticipants registers organizer-provided attendees immediately and
-// queues their pass emails. Event capacity still applies to manual imports.
+// queues pass emails when the import includes real email addresses. Event
+// capacity still applies to manual imports.
 func (s *RegistrationService) ImportParticipants(ctx context.Context, es authz.EventScope, ev *domain.Event, participants []domain.EventParticipant) error {
 	if err := es.Require(authz.EventEdit); err != nil {
 		return err

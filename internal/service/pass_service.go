@@ -90,10 +90,17 @@ func (s *PassService) Card(pc *domain.PassContext) (passes.Card, error) {
 			c.Answers[f.Key] = v
 		}
 	}
-	if pc.Participant.Source == "import" && c.Answers["title"] == "" {
-		if title := answerText(pc.Participant.Answers["title"]); title != "" {
-			c.Lines = append(c.Lines, passes.Line{Label: "Title", Value: title})
-			c.Answers["title"] = title
+	if pc.Participant.Source == "import" {
+		for _, category := range []struct {
+			key, label string
+		}{{"category", "Category"}, {"title", "Title"}} {
+			if c.Answers[category.key] != "" {
+				continue
+			}
+			if value := answerText(pc.Participant.Answers[category.key]); value != "" {
+				c.Lines = append(c.Lines, passes.Line{Label: category.label, Value: value})
+				c.Answers[category.key] = value
+			}
 		}
 	}
 	if len(pc.Design) > 0 {

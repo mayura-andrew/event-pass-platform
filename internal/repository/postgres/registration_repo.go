@@ -416,8 +416,10 @@ func (r *RegistrationRepo) ImportParticipants(ctx context.Context, es authz.Even
 				}
 				return err
 			}
-			if err := enqueueMail(ctx, tx, es.OrgID(), es.EventID(), id, p.Email, domain.MailPassIssued); err != nil {
-				return err
+			if !strings.HasSuffix(p.Email, "@event-pass.local") {
+				if err := enqueueMail(ctx, tx, es.OrgID(), es.EventID(), id, p.Email, domain.MailPassIssued); err != nil {
+					return err
+				}
 			}
 		}
 		return insertAudit(ctx, tx, es.OrgID(), es.AccountID(), domain.Audit{

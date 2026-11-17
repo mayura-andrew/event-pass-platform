@@ -27,9 +27,9 @@ func encodePNG(img image.Image) []byte {
 }
 
 func TestPrepareUpload(t *testing.T) {
-	// Opaque artwork is stored as JPEG; a logo with transparency as PNG.
+	// PNG artwork stays lossless; a JPEG upload remains JPEG.
 	a, err := PrepareUpload(bytes.NewReader(encodePNG(solid(1080, 1920, color.NRGBA{200, 30, 30, 255}))))
-	if err != nil || a.ContentType != "image/jpeg" || a.Width != 1080 || a.Height != 1920 {
+	if err != nil || a.ContentType != "image/png" || a.Width != 1080 || a.Height != 1920 {
 		t.Fatalf("opaque: %+v %v", a, err)
 	}
 	logo := solid(300, 100, color.NRGBA{0, 0, 255, 255})
@@ -140,5 +140,33 @@ func TestImageChecks(t *testing.T) {
 	// Without the image loaded, a placeholder is drawn instead of failing.
 	if _, _, err := RenderDesign(under, Samples(sampleToken)["short"]); err != nil {
 		t.Errorf("missing image: %v", err)
+	}
+}
+
+func TestHighResArtworkRendersSharp(t *testing.T) {
+	const id = "01a16000-0000-7000-8000-00000000abcd"
+	d := ArtworkDesign(id, 1080, 1920)
+	// Artwork at the design's size renders at the design's size.
+	d.Images = map[string]image.Image{id: solid(1080, 1920, color.NRGBA{200, 30, 30, 255})}
+	if k := renderScale(d); k != 1 {
+		t.Errorf("same-size artwork: scale %d, want 1", k)
+	}
+	// Higher-resolution artwork is not downsampled: the pass doubles.
+	d.Images = map[string]image.Image{id: solid(1350, 2400, color.NRGBA{200, 30, 30, 255})}
+	img, _, err := RenderDesign(d, Samples(sampleToken)["short"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if img.Bounds().Dx() != 2160 || img.Bounds().Dy() != 3840 {
+		t.Fatalf("high-res artwork pass is %v, want 2160x3840", img.Bounds())
+	}
+	// The layout scales with it: the QR's white background is where the
+	// design puts it, at twice the coordinates.
+	qr := element(d, "qr")
+	if c := img.RGBAAt(2*qr.X+4, 2*qr.Y+4); c != (color.RGBA{255, 255, 255, 255}) {
+		t.Errorf("QR background at scaled position is %v", c)
+	}
+	if c := img.RGBAAt(5, 5); c.R < 180 || c.G > 60 {
+		t.Errorf("artwork not drawn: corner is %v", c)
 	}
 }

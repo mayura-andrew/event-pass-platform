@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"math"
 	"regexp"
 	"strconv"
 	"strings"
@@ -162,6 +163,13 @@ func RenderDesign(d Design, v Vars) (*image.RGBA, *RenderReport, error) {
 	if d.Size.Width < 100 || d.Size.Height < 100 || d.Size.Width > 3000 || d.Size.Height > 3000 {
 		return nil, nil, fmt.Errorf("design size %dx%d is out of range", d.Size.Width, d.Size.Height)
 	}
+	// Draw uploaded artwork at (up to) its own resolution instead of
+	// squeezing it into the design's pixel grid: everything else is scaled
+	// up with it, so the layout is unchanged and only sharper.
+	k := renderScale(d)
+	if k > 1 {
+		d = d.scaled(k)
+	}
 	renderMu.Lock()
 	defer renderMu.Unlock()
 
@@ -214,9 +222,9 @@ func RenderDesign(d Design, v Vars) (*image.RGBA, *RenderReport, error) {
 			}
 			c.rect(e.X, e.Y, e.X+e.W, e.Y+e.H, band.bg)
 			label := substitute(orDefault(e.Text, "{{participant.statusLabel}}"), vals)
-			lines, sz, _ := fit(label, bold, size, min, e.W-40, 1)
+			lines, sz, _ := fit(label, bold, size, min, e.W-40*k, 1)
 			top := e.Y + (e.H-int(sz*1.0))/2 - int(sz*0.08)
-			drawAligned(c.img, lines, sz, surface, e.X+20, top, e.W-40, 1, "center")
+			drawAligned(c.img, lines, sz, surface, e.X+20*k, top, e.W-40*k, 1, "center")
 		case "text":
 			s := substitute(e.Text, vals)
 			if e.Transform == "upper" {
@@ -267,6 +275,64 @@ func RenderDesign(d Design, v Vars) (*image.RGBA, *RenderReport, error) {
 		return nil, nil, c.err
 	}
 	return c.img, rep, nil
+}
+
+// maxRenderScale and maxRenderSide bound how far a pass is supersampled for
+// its artwork, so passes stay a reasonable size to email.
+const (
+	maxRenderScale = 2
+	maxRenderSide  = 4000
+)
+
+// renderScale is the whole-number factor a design is rendered at: above 1
+// when an image element has more pixels than its box on the pass, so the
+// artwork is not downsampled (and blurred) to the design's resolution.
+func renderScale(d Design) int {
+	ratio := 1.0
+	for _, e := range d.Elements {
+		img := d.Images[AssetID(e.Src)]
+		if e.Type != "image" || img == nil || e.W <= 0 || e.H <= 0 {
+			continue
+		}
+		sw, sh := float64(img.Bounds().Dx()), float64(img.Bounds().Dy())
+		w, h := float64(e.W), float64(e.H)
+		// Cover and contain show the image at the smaller ratio; fill
+		// stretches it, so the larger one keeps every source pixel.
+		r := min(sw/w, sh/h)
+		if e.Fit == "fill" {
+			r = max(sw/w, sh/h)
+		}
+		ratio = max(ratio, r)
+	}
+	if ratio < 1.05 { // a rounding difference isn't worth a bigger pass
+		return 1
+	}
+	k := min(int(math.Ceil(ratio)), maxRenderScale)
+	for k > 1 && max(d.Size.Width, d.Size.Height)*k > maxRenderSide {
+		k--
+	}
+	return k
+}
+
+// scaled is the design with every position and size multiplied by k.
+func (d Design) scaled(k int) Design {
+	f := float64(k)
+	d.Size.Width *= k
+	d.Size.Height *= k
+	els := make([]Element, len(d.Elements))
+	for i, e := range d.Elements {
+		e.X, e.Y, e.W, e.H, e.Size = e.X*k, e.Y*k, e.W*k, e.H*k, e.Size*k
+		if e.Font.Size <= 0 {
+			e.Font.Size = 40 // the renderer's default, before scaling
+		}
+		e.Font.Size *= f
+		if e.ShrinkToFit != nil {
+			e.ShrinkToFit = &Shrink{Min: e.ShrinkToFit.Min * f}
+		}
+		els[i] = e
+	}
+	d.Elements = els
+	return d
 }
 
 func contains(list []string, s string) bool {

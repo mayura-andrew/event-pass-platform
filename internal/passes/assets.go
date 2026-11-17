@@ -40,7 +40,8 @@ var ErrNotImage = errors.New("upload a PNG, JPEG or WebP image")
 // PrepareUpload decodes an uploaded image, scales it down when it's larger
 // than needed, and re-encodes it: JPEG when fully opaque, PNG otherwise.
 // Re-encoding drops metadata (camera, location) and anything else hidden in
-// the file.
+// the file. PNG uploads stay PNG so artwork containing small text and logos
+// does not gain JPEG compression artifacts.
 func PrepareUpload(r io.Reader) (*Asset, error) {
 	raw, err := io.ReadAll(io.LimitReader(r, MaxUploadBytes+1))
 	if err != nil {
@@ -70,12 +71,12 @@ func PrepareUpload(r io.Reader) (*Asset, error) {
 
 	var out bytes.Buffer
 	a := &Asset{Width: w, Height: h}
-	if dst.Opaque() {
-		a.ContentType = "image/jpeg"
-		err = jpeg.Encode(&out, dst, &jpeg.Options{Quality: 90})
-	} else {
+	if format == "png" || !dst.Opaque() {
 		a.ContentType = "image/png"
 		err = (&png.Encoder{CompressionLevel: png.BestCompression}).Encode(&out, dst)
+	} else {
+		a.ContentType = "image/jpeg"
+		err = jpeg.Encode(&out, dst, &jpeg.Options{Quality: 90})
 	}
 	if err != nil {
 		return nil, err

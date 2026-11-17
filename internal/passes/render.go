@@ -7,12 +7,12 @@ package passes
 
 import (
 	"bytes"
+	"compress/zlib"
 	"embed"
 	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
-	"image/jpeg"
 	"image/png"
 	"strings"
 
@@ -144,18 +144,41 @@ func PNG(card Card) ([]byte, error) {
 }
 
 // PDF renders the pass on an A6 page (105 x 148 mm), centered, for printing
-// at actual size. One JPEG image, so no PDF library is needed.
+// at actual size. One losslessly compressed image (Flate with PNG "Up"
+// row prediction), so no PDF library is needed and artwork prints as
+// sharp as it renders — JPEG would blur fine text and colored edges.
 func PDF(card Card) ([]byte, error) {
 	img, err := Render(card)
 	if err != nil {
 		return nil, err
 	}
-	var jpg bytes.Buffer
-	if err := jpeg.Encode(&jpg, img, &jpeg.Options{Quality: 92}); err != nil {
+	w, h := img.Bounds().Dx(), img.Bounds().Dy()
+	var pix bytes.Buffer
+	zw, err := zlib.NewWriterLevel(&pix, zlib.BestSpeed)
+	if err != nil {
+		return nil, err
+	}
+	row, prev := make([]byte, 1+3*w), make([]byte, 3*w)
+	row[0] = 2 // PNG filter "Up"
+	b := img.Bounds()
+	for y := 0; y < h; y++ {
+		off := img.PixOffset(b.Min.X, b.Min.Y+y)
+		src := img.Pix[off : off+4*w]
+		for x := 0; x < w; x++ {
+			for ch := 0; ch < 3; ch++ {
+				v := src[4*x+ch]
+				row[1+3*x+ch] = v - prev[3*x+ch]
+				prev[3*x+ch] = v
+			}
+		}
+		if _, err := zw.Write(row); err != nil {
+			return nil, err
+		}
+	}
+	if err := zw.Close(); err != nil {
 		return nil, err
 	}
 	const mm = 72 / 25.4
-	w, h := img.Bounds().Dx(), img.Bounds().Dy()
 	// Phone designs print centered on A6; badges fill a 4 x 3 inch page.
 	pageW, pageH := 105*mm, 148*mm
 	imgH := pageH - 8*mm
@@ -178,9 +201,9 @@ func PDF(card Card) ([]byte, error) {
 	obj(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
 	obj(3, fmt.Sprintf("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 %.3f %.3f] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>", pageW, pageH))
 	offsets[4] = out.Len()
-	fmt.Fprintf(&out, "4 0 obj\n<< /Type /XObject /Subtype /Image /Width %d /Height %d /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length %d >>\nstream\n",
-		w, h, jpg.Len())
-	out.Write(jpg.Bytes())
+	fmt.Fprintf(&out, "4 0 obj\n<< /Type /XObject /Subtype /Image /Width %d /Height %d /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /DecodeParms << /Predictor 12 /Colors 3 /BitsPerComponent 8 /Columns %d >> /Length %d >>\nstream\n",
+		w, h, w, pix.Len())
+	out.Write(pix.Bytes())
 	out.WriteString("\nendstream\nendobj\n")
 	obj(5, fmt.Sprintf("<< /Length %d >>\nstream\n%sendstream", len(content), content))
 	obj(6, "<< /Title ("+pdfString(card.EventName+" pass")+") /Producer (event-pass-platform) >>")

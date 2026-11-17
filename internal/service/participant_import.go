@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/csv"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"unicode/utf8"
@@ -13,8 +14,9 @@ import (
 // MaxParticipantImportRows is the largest accepted CSV import batch.
 const MaxParticipantImportRows = 500
 
-// ParseParticipantCSV validates the required Name, Email and Title columns.
-// The title is optional for an individual participant.
+// ParseParticipantCSV validates the required Name and Category columns.
+// Email is optional for imports because passes can be downloaded without
+// sending email. The legacy Email and Title column names remain supported.
 func ParseParticipantCSV(r io.Reader) ([]domain.EventParticipant, error) {
 	cr := csv.NewReader(r)
 	cr.FieldsPerRecord = -1
@@ -29,9 +31,9 @@ func ParseParticipantCSV(r io.Reader) ([]domain.EventParticipant, error) {
 	columns := make(map[string]int, len(header))
 	for i, name := range header {
 		name = strings.TrimSpace(strings.TrimPrefix(name, "\ufeff"))
-		name = strings.ToLower(name)
+		name = strings.ToLower(strings.ReplaceAll(name, " ", "_"))
 		switch name {
-		case "name", "full_name", "email", "title":
+		case "name", "full_name", "email", "title", "category":
 			if _, exists := columns[name]; exists {
 				return nil, invalid("CSV has duplicate %q columns", name)
 			}
@@ -47,9 +49,14 @@ func ParseParticipantCSV(r io.Reader) ([]domain.EventParticipant, error) {
 		nameCol, okName = fullNameCol, true
 	}
 	emailCol, okEmail := columns["email"]
-	titleCol, okTitle := columns["title"]
-	if !okName || !okEmail || !okTitle {
-		return nil, invalid("CSV must have Name, Email and Title columns")
+	categoryCol, okCategory := columns["category"]
+	categoryKey := "category"
+	if !okCategory {
+		categoryCol, okCategory = columns["title"]
+		categoryKey = "title"
+	}
+	if !okName || !okCategory {
+		return nil, invalid("CSV must have Name (or Full_Name) and Category columns")
 	}
 
 	participants := make([]domain.EventParticipant, 0)
@@ -62,7 +69,7 @@ func ParseParticipantCSV(r io.Reader) ([]domain.EventParticipant, error) {
 		if err != nil {
 			return nil, invalid("CSV row %d: %v", line, err)
 		}
-		if len(record) <= max(nameCol, emailCol, titleCol) {
+		if len(record) <= max(nameCol, categoryCol) || okEmail && len(record) <= emailCol {
 			return nil, invalid("CSV row %d does not have all required columns", line)
 		}
 		name := strings.TrimSpace(record[nameCol])
@@ -72,24 +79,29 @@ func ParseParticipantCSV(r io.Reader) ([]domain.EventParticipant, error) {
 		if n := utf8.RuneCountInString(name); n < 2 || n > 150 || !ValidDisplayName(name) {
 			return nil, invalid("CSV row %d: Name must be 2 to 150 characters", line)
 		}
-		email, err := NormalizeEmail(record[emailCol])
-		if err != nil {
-			return nil, invalid("CSV row %d: enter a valid Email address", line)
+		email := ""
+		if okEmail {
+			email, err = NormalizeEmail(record[emailCol])
+			if err != nil {
+				return nil, invalid("CSV row %d: enter a valid Email address", line)
+			}
+		} else {
+			email = fmt.Sprintf("imported-%d@event-pass.local", line-1)
 		}
 		if seen[email] {
 			return nil, invalid("CSV row %d: Email %q appears more than once", line, email)
 		}
 		seen[email] = true
-		title := strings.TrimSpace(record[titleCol])
-		if !utf8.ValidString(title) {
-			return nil, invalid("CSV row %d: Title must be valid UTF-8", line)
+		category := strings.TrimSpace(record[categoryCol])
+		if !utf8.ValidString(category) {
+			return nil, invalid("CSV row %d: Category must be valid UTF-8", line)
 		}
-		if utf8.RuneCountInString(title) > 150 || title != "" && !ValidDisplayName(title) {
-			return nil, invalid("CSV row %d: Title must be 150 characters or fewer and on one line", line)
+		if utf8.RuneCountInString(category) > 150 || category != "" && !ValidDisplayName(category) {
+			return nil, invalid("CSV row %d: Category must be 150 characters or fewer and on one line", line)
 		}
 		answers := map[string]any{}
-		if title != "" {
-			answers["title"] = title
+		if category != "" {
+			answers[categoryKey] = category
 		}
 		participants = append(participants, domain.EventParticipant{
 			FullName: name, Email: email, Answers: answers, Source: "import",

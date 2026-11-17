@@ -314,7 +314,7 @@ type view struct {
 // pageCSP: scripts and styles from this site only (no inline code), fonts
 // from Google Fonts, avatars from Google.
 const pageCSP = "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; " +
-	"font-src https://fonts.gstatic.com; img-src 'self' data: https://*.googleusercontent.com; " +
+	"font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://*.googleusercontent.com; " +
 	"form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'"
 
 // scannerCSP lets the camera library style its own preview; scripts stay

@@ -27,6 +27,15 @@ func TestParseParticipantCSV(t *testing.T) {
 	if len(participants) != 1 || len(participants[0].Answers) != 0 {
 		t.Fatalf("blank title: %+v", participants)
 	}
+
+	participants, err = ParseParticipantCSV(strings.NewReader("Full Name,Category\nCasey Perera,Volunteer\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(participants) != 1 || participants[0].Email != "imported-1@event-pass.local" ||
+		participants[0].FullName != "Casey Perera" || participants[0].Answers["category"] != "Volunteer" {
+		t.Fatalf("category import: %+v", participants)
+	}
 }
 
 func TestParseParticipantCSVRejectsInvalidRows(t *testing.T) {

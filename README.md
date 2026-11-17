@@ -44,6 +44,10 @@ DATABASE_URL='postgres://event_pass:event-pass-local-password@127.0.0.1:5433/eve
   go run ./cmd/migrate up
 ```
 
+Organizer participant imports accept a CSV with `Full Name,Category` columns.
+An optional `Email` column queues pass email delivery. After importing, use
+the Participants page to download all registered passes as a PDF or PNG ZIP.
+
 ## Project layout
 
 - `cmd/api`: HTTP server and dependency wiring

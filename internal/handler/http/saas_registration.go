@@ -4,6 +4,7 @@ package httphandler
 // organizer's participant list (milestone M3).
 
 import (
+	"archive/zip"
 	"bytes"
 	"errors"
 	"fmt"
@@ -48,6 +49,7 @@ func init() {
 		{"POST", ev + "/passes/check", true, authz.EventLookup, "", (*Handler).apiCheckPass},
 		{"GET", evPage + "/participants/{participant}/pass.png", false, authz.EventDashboard, "", (*Handler).participantPassPNG},
 		{"GET", evPage + "/participants/{participant}/pass.pdf", false, authz.EventDashboard, "", (*Handler).participantPassPDF},
+		{"GET", evPage + "/participants/passes.zip", false, authz.EventEdit, "", (*Handler).participantPassesZIP},
 	}...)
 }
 
@@ -335,14 +337,14 @@ func (d participantsData) Count(status string) int {
 
 var participantNotices = map[string]string{
 	"status":   "Status updated.",
-	"imported": "CSV imported. Pass emails are queued for delivery.",
+	"imported": "CSV imported. Passes are ready to download.",
 }
 
 func (h *Handler) participantsPage(w http.ResponseWriter, r *http.Request, e *eventReq) {
 	notice := participantNotices[r.URL.Query().Get("notice")]
 	if r.URL.Query().Get("notice") == "imported" {
 		if count, err := strconv.Atoi(r.URL.Query().Get("count")); err == nil && count > 0 {
-			notice = fmt.Sprintf("Imported %d participants. Pass emails are queued for delivery.", count)
+			notice = fmt.Sprintf("Imported %d participants. Passes are ready to download.", count)
 		}
 	}
 	h.renderParticipantsPage(w, r, e, participantQuery(r), http.StatusOK, "", notice)
@@ -543,6 +545,63 @@ func (h *Handler) participantPassPNG(w http.ResponseWriter, r *http.Request, e *
 
 func (h *Handler) participantPassPDF(w http.ResponseWriter, r *http.Request, e *eventReq) {
 	h.participantPass(w, r, e, "pdf")
+}
+
+func (h *Handler) participantPassesZIP(w http.ResponseWriter, r *http.Request, e *eventReq) {
+	kind := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("format")))
+	if kind == "" {
+		kind = "pdf"
+	}
+	if kind != "pdf" && kind != "png" {
+		h.renderError(w, r, e.principal, fmt.Errorf("%w: format must be pdf or png", domain.ErrValidation))
+		return
+	}
+	participants, _, err := h.Registrations.Participants(r.Context(), e.es, domain.ParticipantQuery{Status: domain.PartRegistered})
+	if err != nil {
+		h.renderError(w, r, e.principal, err)
+		return
+	}
+
+	var archive bytes.Buffer
+	zw := zip.NewWriter(&archive)
+	for _, participant := range participants {
+		pc, err := h.Registrations.PassFor(r.Context(), e.es, participant.ID)
+		if err != nil {
+			_ = zw.Close()
+			h.renderError(w, r, e.principal, err)
+			return
+		}
+		var pass []byte
+		if kind == "pdf" {
+			pass, err = h.Passes.PDF(pc)
+		} else {
+			pass, err = h.Passes.PNG(pc)
+		}
+		if err != nil {
+			_ = zw.Close()
+			h.renderError(w, r, e.principal, err)
+			return
+		}
+		file, err := zw.Create(service.PassFilename(participant.PassID, kind))
+		if err != nil {
+			_ = zw.Close()
+			h.renderError(w, r, e.principal, err)
+			return
+		}
+		if _, err := file.Write(pass); err != nil {
+			_ = zw.Close()
+			h.renderError(w, r, e.principal, err)
+			return
+		}
+	}
+	if err := zw.Close(); err != nil {
+		h.renderError(w, r, e.principal, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+service.PassFilename(e.event.Slug, "zip")+`"`)
+	_, _ = w.Write(archive.Bytes())
 }
 
 func (h *Handler) participantPass(w http.ResponseWriter, r *http.Request, e *eventReq, kind string) {
