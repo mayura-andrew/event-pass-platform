@@ -44,6 +44,7 @@ func init() {
 		{"POST", evPage + "/publish", false, authz.EventEdit, "event.publish", (*Handler).publishPost},
 		{"POST", evPage + "/unpublish", false, authz.EventEdit, "event.unpublish", (*Handler).unpublishPost},
 		{"GET", evPage + "/participants", false, authz.EventDashboard, "", (*Handler).participantsPage},
+		{"POST", evPage + "/participants/add", false, authz.EventEdit, "participant.add", (*Handler).participantAddPost},
 		{"POST", evPage + "/participants/import", false, authz.EventEdit, "participant.import", (*Handler).participantImportPost},
 		{"POST", evPage + "/participants/{participant}/status", false, authz.EventEdit, "participant.status", (*Handler).participantStatusPost},
 		{"POST", evPage + "/participants/send-passes", false, authz.EventEdit, "participant.pass.send", (*Handler).sendPassesPost},
@@ -340,6 +341,7 @@ func (d participantsData) Count(status string) int {
 
 var participantNotices = map[string]string{
 	"status":    "Status updated.",
+	"added":     "Participant added. Their pass is ready to download; send the pass email when you're ready.",
 	"imported":  "CSV imported. Passes are ready to download.",
 	"sent":      "Pass emails are on their way.",
 	"sent-one":  "Pass email is on its way.",
@@ -473,6 +475,29 @@ func (h *Handler) participantImportPost(w http.ResponseWriter, r *http.Request, 
 	dest := fmt.Sprintf("/o/%s/events/%s/participants?notice=imported&count=%d",
 		e.org.Slug, e.event.ID, len(participants))
 	http.Redirect(w, r, dest, http.StatusSeeOther)
+}
+
+// participantAddPost registers one participant the organizer typed in. Like
+// the CSV import it sends no email; passes go out via "Send passes".
+func (h *Handler) participantAddPost(w http.ResponseWriter, r *http.Request, e *eventReq) {
+	fail := func(err error) {
+		status, msg := pageErrorStatus(err)
+		if status == http.StatusInternalServerError {
+			h.renderError(w, r, e.principal, err)
+			return
+		}
+		h.renderParticipantsPage(w, r, e, participantQuery(r), status, msg, "")
+	}
+	p, err := service.NewManualParticipant(r.PostFormValue("name"), r.PostFormValue("email"), r.PostFormValue("category"))
+	if err != nil {
+		fail(err)
+		return
+	}
+	if err := h.Registrations.ImportParticipants(r.Context(), e.es, e.event, []domain.EventParticipant{p}); err != nil {
+		fail(err)
+		return
+	}
+	h.backToEvent(w, r, e, "participants", "added")
 }
 
 func (h *Handler) participantStatusPost(w http.ResponseWriter, r *http.Request, e *eventReq) {

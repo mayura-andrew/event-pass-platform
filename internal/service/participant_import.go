@@ -124,3 +124,34 @@ func ParseParticipantCSV(r io.Reader) ([]domain.EventParticipant, error) {
 	}
 	return participants, nil
 }
+
+// NewManualParticipant validates one participant an organizer typed in. Email
+// and category are optional; without an email the pass is download-only.
+func NewManualParticipant(name, email, category string) (domain.EventParticipant, error) {
+	name = strings.TrimSpace(name)
+	if n := utf8.RuneCountInString(name); !utf8.ValidString(name) || n < 2 || n > 150 || !ValidDisplayName(name) {
+		return domain.EventParticipant{}, invalid("Name must be 2 to 150 characters")
+	}
+	email = strings.TrimSpace(email)
+	if email == "" {
+		var rnd [6]byte
+		if _, err := rand.Read(rnd[:]); err != nil {
+			return domain.EventParticipant{}, err
+		}
+		email = "manual-" + hex.EncodeToString(rnd[:]) + domain.PlaceholderEmailDomain
+	} else {
+		var err error
+		if email, err = NormalizeEmail(email); err != nil {
+			return domain.EventParticipant{}, invalid("enter a valid Email address")
+		}
+	}
+	category = strings.TrimSpace(category)
+	if !utf8.ValidString(category) || utf8.RuneCountInString(category) > 150 || category != "" && !ValidDisplayName(category) {
+		return domain.EventParticipant{}, invalid("Category must be 150 characters or fewer and on one line")
+	}
+	answers := map[string]any{}
+	if category != "" {
+		answers["category"] = category
+	}
+	return domain.EventParticipant{FullName: name, Email: email, Answers: answers, Source: "manual"}, nil
+}

@@ -3,6 +3,20 @@
 {{$d := .Data}}{{$csrf := .CSRF}}{{$edit := $d.Can "event.edit"}}
 {{if $edit}}
 <section class="card">
+  <h2>Add a participant</h2>
+  <p>Register one person yourself. They get a pass with a QR code right away; nothing is emailed until you send passes below. Email is optional (without it the pass is download-only). This bypasses public registration dates and approval; event capacity still applies.</p>
+  <form method="post" action="{{$d.Base}}/participants/add">
+    <input type="hidden" name="csrf" value="{{$csrf}}">
+    <label for="add-name">Full name</label>
+    <input id="add-name" type="text" name="name" required minlength="2" maxlength="150" autocomplete="off">
+    <label for="add-category">Category</label>
+    <input id="add-category" type="text" name="category" maxlength="150" placeholder="e.g. Student">
+    <label for="add-email">Email (optional)</label>
+    <input id="add-email" type="email" name="email" autocomplete="off">
+    <button class="btn" type="submit">Add participant</button>
+  </form>
+</section>
+<section class="card">
   <h2>Import participants from CSV</h2>
   <p>Upload a CSV with <code>Full Name</code> (or <code>Name</code>) and <code>Category</code> columns, plus an optional <code>Email</code> column. Every imported participant is registered immediately and gets a pass with its QR code, ready to download. Nothing is emailed yet: send the passes below when you're ready. This bypasses public registration dates and approval; event capacity still applies.</p>
   <p class="muted">Example: <code>Full Name,Category</code> / <code>Ann Perera,Student</code>. Legacy <code>Name,Email,Title</code> files are also supported. Categories are included on passes.</p>
