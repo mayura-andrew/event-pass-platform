@@ -1,10 +1,11 @@
-# Tests every push and pull request; on main, then applies .do/app.yaml to
-# DigitalOcean App Platform, which rebuilds from the Dockerfile and deploys.
+# Tests every push and pull request; on main, then SSHes into the EC2 host and
+# runs deploy/ec2/deploy.sh (build, migrate, restart).
 #
 # Repository secrets this needs (Settings > Secrets and variables > Actions):
-#   DIGITALOCEAN_ACCESS_TOKEN  read/write access to App Platform
-#   DATABASE_URL, JWT_SECRET, PASS_SIGNING_KEYS, SMTP_USERNAME, SMTP_PASSWORD, SMTP_FROM
-#   GOOGLE_MAPS_API_KEY        optional
+#   EC2_HOST      the instance's Elastic IP
+#   EC2_USERNAME  ec2-user (Amazon Linux) or ubuntu
+#   EC2_SSH_KEY   full contents of the .pem file
+# App secrets live in ~/event-pass-platform/deploy/ec2/.env on the server.
 # See README.md for local setup and configuration.
 name: Test and deploy
 
@@ -55,50 +56,21 @@ jobs:
     concurrency:
       group: production-deploy
       cancel-in-progress: false
-    env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      JWT_SECRET: ${{ secrets.JWT_SECRET }}
-      PASS_SIGNING_KEYS: ${{ secrets.PASS_SIGNING_KEYS }}
-      SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
-      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-      SMTP_FROM: ${{ secrets.SMTP_FROM }}
-      GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
     steps:
-      - uses: actions/checkout@v4
-
-      # The action replaces the app's whole spec, so a missing secret would
-      # blank that setting in production. Stop before that can happen.
-      - name: Check secrets
-        env:
-          DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
-        run: |
-          fail=0
-          for name in DIGITALOCEAN_ACCESS_TOKEN DATABASE_URL JWT_SECRET PASS_SIGNING_KEYS SMTP_USERNAME SMTP_PASSWORD SMTP_FROM; do
-            if [ -z "${!name}" ]; then
-              echo "::error::Repository secret $name is not set"
-              fail=1
-            fi
-          done
-          # Values are substituted into single-quoted YAML in .do/app.yaml.
-          for name in DATABASE_URL JWT_SECRET PASS_SIGNING_KEYS SMTP_USERNAME SMTP_PASSWORD SMTP_FROM GOOGLE_MAPS_API_KEY; do
-            case "${!name}" in
-              *"'"* | *$'\n'*)
-                echo "::error::Secret $name contains a single quote or a line break; remove it"
-                fail=1 ;;
-            esac
-          done
-          for name in JWT_SECRET PASS_SIGNING_KEYS; do
-            value=${!name}
-            if [ -n "$value" ] && [ "${#value}" -lt 32 ]; then
-              echo "::error::$name must be at least 32 characters (openssl rand -hex 32)"
-              fail=1
-            fi
-          done
-          exit $fail
-
-      - name: Deploy to App Platform
-        uses: digitalocean/app_action/deploy@v2
+      # Secrets stay in deploy/ec2/.env on the server; GitHub only holds the
+      # SSH details. deploy.sh validates the env, runs migrations, then
+      # restarts api, worker and caddy.
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.0.3
         with:
-          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
-          print_build_logs: true
-          print_deploy_logs: true
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script_stop: true
+          script: |
+            cd ~/event-pass-platform
+            git fetch origin main
+            git reset --hard origin/main
+            bash deploy/ec2/deploy.sh
+            domain=$(grep '^APP_DOMAIN=' deploy/ec2/.env | cut -d= -f2)
+            curl -fsS --retry 5 --retry-delay 5 "https://$domain/healthz"
