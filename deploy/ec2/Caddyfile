@@ -1,3 +1,13 @@
 {$APP_DOMAIN} {
-    reverse_proxy api:8080
+    # Request bodies: the API caps each route lower; this stops anything
+    # bigger before it reaches the container.
+    request_body {
+        max_size 12MB
+    }
+
+    reverse_proxy api:8080 {
+        # The API rate-limits and audits by client IP (CLIENT_IP_HEADER=X-Client-IP).
+        # header_up replaces any X-Client-IP the client sent, so it can't be forged.
+        header_up X-Client-IP {remote_host}
+    }
 }

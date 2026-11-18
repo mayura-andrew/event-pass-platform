@@ -27,6 +27,7 @@ type EventStore interface {
 	SetArchived(ctx context.Context, es authz.EventScope, archived bool) error
 	SetDeleted(ctx context.Context, es authz.EventScope, deleted bool) error
 	UpdateSettings(ctx context.Context, es authz.EventScope, st domain.EventSettings) error
+	UpdatePassEmail(ctx context.Context, es authz.EventScope, subject, body string) error
 	TransferOwnership(ctx context.Context, es authz.EventScope, newOwnerID string) error
 	SetStarred(ctx context.Context, es authz.EventScope, starred bool) error
 	TouchOpened(ctx context.Context, es authz.EventScope) error
@@ -411,6 +412,21 @@ func (s *EventService) UpdateSettings(ctx context.Context, es authz.EventScope, 
 		return err
 	}
 	return s.events.UpdateSettings(ctx, es, st)
+}
+
+func (s *EventService) UpdatePassEmail(ctx context.Context, es authz.EventScope, subject, body string) error {
+	if err := es.Require(authz.EventEdit); err != nil {
+		return err
+	}
+	subject = strings.TrimSpace(subject)
+	body = strings.TrimSpace(body)
+	if len([]rune(subject)) > 150 {
+		return invalid("the pass email subject must be 150 characters or fewer")
+	}
+	if len([]rune(body)) > 5000 {
+		return invalid("the pass email message must be 5,000 characters or fewer")
+	}
+	return s.events.UpdatePassEmail(ctx, es, subject, body)
 }
 
 func (s *EventService) Transfer(ctx context.Context, es authz.EventScope, ev *domain.Event, newOwnerID string) error {

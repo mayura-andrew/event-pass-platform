@@ -67,7 +67,7 @@ func (s *PassService) LoadImages(ctx context.Context, orgID string, d *passes.De
 // Token is what the pass's QR code holds.
 func (s *PassService) Token(pc *domain.PassContext) (string, error) {
 	p := pc.Participant
-	return s.keys.Issue(pc.Event.OrgID, pc.Event.ID, p.ID, p.PassID)
+	return s.keys.Issue(pc.Event.OrgID, pc.Event.ID, p.ID, p.PassID, max(p.PassGeneration, 1))
 }
 
 // Card is the printed content of the pass.

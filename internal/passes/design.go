@@ -32,9 +32,9 @@ type Design struct {
 	Images map[string]image.Image `json:"-"`
 }
 
-// Size presets: a phone screen and a 4 x 3 inch badge.
+// Size presets: a phone screen, a 4 x 3 inch badge, and a 5.5 x 8 cm card.
 type Size struct {
-	Preset string `json:"preset"` // phone | badge
+	Preset string `json:"preset"` // phone | badge | card
 	Width  int    `json:"width"`
 	Height int    `json:"height"`
 }
@@ -42,6 +42,37 @@ type Size struct {
 var Presets = map[string]Size{
 	"phone": {Preset: "phone", Width: 1080, Height: 1920},
 	"badge": {Preset: "badge", Width: 1200, Height: 900},
+	// 55 x 80 mm portrait at 20 px per mm (about 500 DPI).
+	"card": {Preset: "card", Width: 1100, Height: 1600},
+}
+
+// DefaultPreset is the size new templates start with.
+const DefaultPreset = "card"
+
+// PrintSize is how a preset prints: the PDF page, and the image placed on it
+// (all in millimetres; X, Y from the bottom left, as in PDF).
+type PrintSize struct {
+	PageW, PageH     float64
+	ImgW, ImgH, X, Y float64
+	Label            string // for pages and hints
+}
+
+// PrintSizes: phone passes print centered on A6 with a 4 mm margin; badges
+// and cards fill their page exactly, so they can go straight to a card
+// printer or be cut along the page edge.
+var PrintSizes = map[string]PrintSize{
+	"phone": {PageW: 105, PageH: 148, ImgW: 140 * 1080 / 1920.0, ImgH: 140, X: (105 - 140*1080/1920.0) / 2, Y: 4,
+		Label: "Phone screen, prints on A6"},
+	"badge": {PageW: 101.6, PageH: 76.2, ImgW: 101.6, ImgH: 76.2, Label: "4 × 3 inch badge"},
+	"card":  {PageW: 55, PageH: 80, ImgW: 55, ImgH: 80, Label: "5.5 × 8 cm card"},
+}
+
+// SizeLabel describes a preset for people ("5.5 × 8 cm card").
+func SizeLabel(preset string) string {
+	if p, ok := PrintSizes[preset]; ok {
+		return p.Label
+	}
+	return preset
 }
 
 // Element is one thing on the pass. Positions are in pixels from the top
@@ -411,10 +442,11 @@ type GalleryTemplate struct {
 	Design                 Design
 }
 
-// Gallery lists the built-in designs, Classic first.
+// Gallery lists the built-in designs, the default (5.5 x 8 cm card) first.
 func Gallery() []GalleryTemplate {
 	var out []GalleryTemplate
 	for _, g := range []struct{ key, name, desc string }{
+		{"card", "Event card", "A 5.5 x 8 cm card: event, name, QR code and pass ID. Prints at exact size."},
 		{"classic", "Classic status band", "The big colored status band, name and QR code: the current pass."},
 		{"conference", "Conference badge", "A 4 x 3 inch badge for badge printers: name large, QR on the side."},
 		{"minimal", "Minimal", "Name, QR and pass ID on white, no band."},
@@ -433,12 +465,36 @@ func Gallery() []GalleryTemplate {
 }
 
 // Classic is the default design for events without a template.
-func Classic() Design { return Gallery()[0].Design }
+func Classic() Design { return GalleryDesign("classic") }
+
+// GalleryDesign is the gallery design with this key (Classic if unknown).
+func GalleryDesign(key string) Design {
+	for _, g := range Gallery() {
+		if g.Key == key {
+			return g.Design
+		}
+	}
+	return GalleryDesign("classic")
+}
+
+// PresetForArtwork picks the preset closest to an image's shape: wide is a
+// badge, slim portrait a phone screen, anything in between a card.
+func PresetForArtwork(width, height int) string {
+	if width > height {
+		return "badge"
+	}
+	r := float64(width) / float64(max(height, 1))
+	phone, card := 1080/1920.0, 1100/1600.0
+	if r < (phone+card)/2 {
+		return "phone"
+	}
+	return "card"
+}
 
 // ArtworkDesign starts a design from uploaded artwork: the image fills the
 // pass, with a light panel for the name, the QR code and the pass ID on
-// top, ready to be moved in the designer. Wide artwork makes a badge, tall
-// artwork a phone pass. The status shows only when it isn't "registered",
+// top, ready to be moved in the designer. Wide artwork makes a badge, slim
+// portrait artwork a phone pass, and anything near 5.5 x 8 a card. The status shows only when it isn't "registered",
 // so a valid pass is the artwork as designed.
 func ArtworkDesign(assetID string, width, height int) Design {
 	src := "asset:" + assetID
@@ -447,7 +503,19 @@ func ArtworkDesign(assetID string, width, height int) Design {
 			Font: Font{Size: 36, Weight: 700}, Color: "token:danger", Align: align,
 			VisibleFor: []string{"pending", "waitlisted", "cancelled"}}
 	}
-	if width > height {
+	switch PresetForArtwork(width, height) {
+	case "card":
+		return Design{Schema: 1, Size: Presets["card"], Background: "token:surface", Elements: []Element{
+			{ID: "artwork", Type: "image", Src: src, X: 0, Y: 0, W: 1100, H: 1600, Fit: "cover"},
+			{ID: "panel", Type: "rect", X: 80, Y: 540, W: 940, H: 980, Color: "token:surface"},
+			status(120, 560, 860, "center"),
+			{ID: "name", Type: "text", Text: "{{participant.fullName}}", X: 120, Y: 610, W: 860, H: 190,
+				Font: Font{Size: 88, Weight: 700}, Color: "token:ink", Align: "center", MaxLines: 2, ShrinkToFit: &Shrink{Min: 48}},
+			{ID: "qr", Type: "qr", X: 230, Y: 810, Size: 640, FG: "#000000", BG: "#FFFFFF", QuietZone: 4, ECC: "M"},
+			{ID: "passId", Type: "text", Text: "{{pass.id}}", X: 120, Y: 1460, W: 860, H: 60,
+				Font: Font{Size: 52, Weight: 700}, Color: "token:ink", Align: "center", ShrinkToFit: &Shrink{Min: 36}},
+		}}
+	case "badge":
 		return Design{Schema: 1, Size: Presets["badge"], Background: "token:surface", Elements: []Element{
 			{ID: "artwork", Type: "image", Src: src, X: 0, Y: 0, W: 1200, H: 900, Fit: "cover"},
 			{ID: "panel", Type: "rect", X: 40, Y: 560, W: 700, H: 300, Color: "token:surface"},

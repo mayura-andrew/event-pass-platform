@@ -70,7 +70,7 @@ func TestChecksCatchProblems(t *testing.T) {
 //	go test ./internal/passes -run Snapshots -update
 func TestGallerySnapshots(t *testing.T) {
 	kr := DerivedKeyRing([]byte("snapshot"))
-	tok, _ := kr.Issue(org, ev, part, "CSA-7KQ4-M2XD")
+	tok, _ := kr.Issue(org, ev, part, "CSA-7KQ4-M2XD", 1)
 	samples := Samples(tok)
 	for _, g := range Gallery() {
 		for _, key := range []string{"short", "long", "nonlatin"} {
@@ -146,10 +146,39 @@ func TestCardUsesClassic(t *testing.T) {
 	if !strings.Contains(string(mustPDF(t, c)), "/MediaBox [0 0 297.638 419.528]") {
 		t.Error("phone design PDF isn't A6")
 	}
-	d := Gallery()[1].Design
+	d := GalleryDesign("conference")
 	c.Design = &d
 	if !strings.Contains(string(mustPDF(t, c)), "/MediaBox [0 0 288.000 216.000]") {
 		t.Error("badge PDF isn't 4 x 3 inches")
+	}
+	// A 5.5 x 8 cm card fills a 55 x 80 mm page exactly.
+	cd := GalleryDesign("card")
+	c.Design = &cd
+	pdf := string(mustPDF(t, c))
+	if !strings.Contains(pdf, "/MediaBox [0 0 155.906 226.772]") || !strings.Contains(pdf, "q 155.906 0 0 226.772 0.000 0.000 cm") {
+		t.Error("card PDF isn't exactly 55 x 80 mm")
+	}
+}
+
+func TestCardPreset(t *testing.T) {
+	if Presets[DefaultPreset].Width != 1100 || Presets[DefaultPreset].Height != 1600 {
+		t.Fatalf("default preset %+v", Presets[DefaultPreset])
+	}
+	if ps := Check(GalleryDesign("card")); len(ps) != 0 {
+		t.Errorf("card gallery design fails its checks: %+v", ps)
+	}
+	for _, c := range []struct {
+		w, h int
+		want string
+	}{{1100, 1600, "card"}, {1080, 1920, "phone"}, {1200, 900, "badge"}, {650, 945, "card"}, {900, 1600, "phone"}} {
+		if got := PresetForArtwork(c.w, c.h); got != c.want {
+			t.Errorf("artwork %dx%d: %s, want %s", c.w, c.h, got, c.want)
+		}
+	}
+	for _, p := range Check(ArtworkDesign("a", 1100, 1600)) {
+		if p.Element != "artwork" { // no image is uploaded in this test
+			t.Errorf("card artwork design: %+v", p)
+		}
 	}
 }
 

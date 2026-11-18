@@ -11,7 +11,8 @@ import (
 
 // AccountRepo stores accounts, sign-in links and sessions. These are not
 // tenant data: they are read before anyone is known to belong to an org, so
-// they run as the connecting user rather than through withTenant.
+// they run as the API login itself, which migration 017 grants these four
+// tables and nothing else.
 type AccountRepo struct{ db *sql.DB }
 
 func NewAccountRepo(db *sql.DB) *AccountRepo { return &AccountRepo{db: db} }
@@ -95,12 +96,9 @@ func (r *AccountRepo) SignIn(ctx context.Context, provider, subject, email, name
 		return nil, err
 	}
 	a.AvatarURL = avatar.String
-	// Registrations made with this (verified) email become the account's
-	// passes, in every org.
-	if _, err := tx.ExecContext(ctx, `UPDATE event_participants SET account_id = $1 WHERE email = $2 AND account_id IS NULL`,
-		a.ID, a.Email); err != nil {
-		return nil, err
-	}
+	// Registrations made with this email are not linked here: anyone can
+	// type an address into a public form, so the account holder confirms
+	// each one on "My passes" first (PortalRepo.ClaimPass).
 	return &a, tx.Commit()
 }
 
@@ -120,10 +118,12 @@ func (r *AccountRepo) GetAccount(ctx context.Context, id string) (*domain.Accoun
 // ---- Sessions ----------------------------------------------------------------
 
 func (r *AccountRepo) CreateSession(ctx context.Context, accountID string, tokenHash []byte, csrf string, expires time.Time, userAgent, ip string) (*domain.Session, error) {
-	s := &domain.Session{ID: newID(), AccountID: accountID, CSRFToken: csrf, ExpiresAt: expires}
+	now := time.Now()
 	if len(userAgent) > 300 {
 		userAgent = userAgent[:300]
 	}
+	s := &domain.Session{ID: newID(), AccountID: accountID, CSRFToken: csrf, ExpiresAt: expires,
+		CreatedAt: now, LastSeenAt: now, UserAgent: userAgent, IP: ip}
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO sessions (id, token_hash, account_id, csrf_token, expires_at, user_agent, ip)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
@@ -140,11 +140,11 @@ func (r *AccountRepo) SessionByToken(ctx context.Context, tokenHash []byte) (*do
 	var a domain.Account
 	var avatar sql.NullString
 	err := r.db.QueryRowContext(ctx, `
-		SELECT s.id, s.account_id, s.csrf_token, s.expires_at,
+		SELECT s.id, s.account_id, s.csrf_token, s.expires_at, s.created_at, s.last_seen_at, s.user_agent, s.ip,
 		       a.id, a.email, a.name, a.avatar_url, a.created_at, a.last_login_at
 		FROM sessions s JOIN accounts a ON a.id = s.account_id
 		WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > NOW()`, tokenHash,
-	).Scan(&s.ID, &s.AccountID, &s.CSRFToken, &s.ExpiresAt,
+	).Scan(&s.ID, &s.AccountID, &s.CSRFToken, &s.ExpiresAt, &s.CreatedAt, &s.LastSeenAt, &s.UserAgent, &s.IP,
 		&a.ID, &a.Email, &a.Name, &avatar, &a.CreatedAt, &a.LastLoginAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil, domain.ErrNotFound
@@ -160,6 +160,64 @@ func (r *AccountRepo) RevokeSession(ctx context.Context, tokenHash []byte) error
 	_, err := r.db.ExecContext(ctx,
 		`UPDATE sessions SET revoked_at = NOW() WHERE token_hash = $1 AND revoked_at IS NULL`, tokenHash)
 	return err
+}
+
+// TouchSession records activity on a session (for the idle timeout). The
+// service calls it at most every few minutes per session.
+func (r *AccountRepo) TouchSession(ctx context.Context, id string) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE sessions SET last_seen_at = NOW() WHERE id = $1 AND revoked_at IS NULL`, id)
+	return err
+}
+
+// ListSessions returns the account's live sessions, most recently used first.
+func (r *AccountRepo) ListSessions(ctx context.Context, accountID string) ([]domain.Session, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, account_id, expires_at, created_at, last_seen_at, user_agent, ip FROM sessions
+		WHERE account_id = $1 AND revoked_at IS NULL AND expires_at > NOW()
+		ORDER BY last_seen_at DESC LIMIT 100`, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []domain.Session{}
+	for rows.Next() {
+		var s domain.Session
+		if err := rows.Scan(&s.ID, &s.AccountID, &s.ExpiresAt, &s.CreatedAt, &s.LastSeenAt, &s.UserAgent, &s.IP); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
+// RevokeSessionByID signs out one of the account's own sessions; another
+// account's session ID is ErrNotFound.
+func (r *AccountRepo) RevokeSessionByID(ctx context.Context, accountID, id string) error {
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE sessions SET revoked_at = NOW() WHERE id = $1 AND account_id = $2 AND revoked_at IS NULL`, id, accountID)
+	if pgCode(err) == pgInvalidTextRepr {
+		return domain.ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+// RevokeAllSessions signs the account out everywhere except keepID ("" for
+// everywhere) and returns how many sessions ended.
+func (r *AccountRepo) RevokeAllSessions(ctx context.Context, accountID, keepID string) (int, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE sessions SET revoked_at = NOW()
+		WHERE account_id = $1 AND revoked_at IS NULL AND id::text <> $2`, accountID, keepID)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
 }
 
 // FindByEmail returns the account with this (lower-cased) email, or

@@ -4,20 +4,17 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
-	"net/mail"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/mayura-andrew/event-pass-platform/internal/app"
 	"github.com/mayura-andrew/event-pass-platform/internal/config"
 	httphandler "github.com/mayura-andrew/event-pass-platform/internal/handler/http"
-	"github.com/mayura-andrew/event-pass-platform/internal/passes"
 	"github.com/mayura-andrew/event-pass-platform/internal/repository/postgres"
-	"github.com/mayura-andrew/event-pass-platform/internal/secrets"
 	"github.com/mayura-andrew/event-pass-platform/internal/service"
 )
 
@@ -44,13 +41,17 @@ func run() error {
 	}
 	defer db.Close()
 
+	if err := app.CheckDatabaseLogin(ctx, db, cfg); err != nil {
+		return err
+	}
+
 	// Repositories
 	accountRepo := postgres.NewAccountRepo(db)
 	orgRepo := postgres.NewOrgRepo(db)
 	eventRepo := postgres.NewEventRepo(db)
 	registrationRepo := postgres.NewRegistrationRepo(db)
 	outboxRepo := postgres.NewOutboxRepo(db)
-	passKeys, err := passKeyRing(cfg)
+	passKeys, err := app.PassKeyRing(cfg)
 	if err != nil {
 		return err
 	}
@@ -59,8 +60,13 @@ func run() error {
 	passService.Assets = passAssets
 	checkinRepo := postgres.NewCheckinRepo(db)
 	liveFeed := service.NewEventFeed(checkinRepo)
+	liveFeed.Broadcast = checkinRepo.Notify
 
-	mailer, err := newMailer(cfg)
+	mailer, err := app.NewMailer(cfg)
+	if err != nil {
+		return err
+	}
+	workers, err := app.NewWorkers(cfg, db, mailer, passService)
 	if err != nil {
 		return err
 	}
@@ -70,11 +76,13 @@ func run() error {
 		ClientIPHeader:  cfg.ClientIPHeader,
 		LoginRatePerMin: cfg.LoginRatePerMin,
 		PassRatePerMin:  cfg.PassRatePerMin,
+		RateStore:       postgres.NewRateLimitRepo(db),
+		HealthToken:     cfg.HealthToken,
 		MapsAPIKey:      cfg.GoogleMapsAPIKey,
 		MapsMapID:       cfg.GoogleMapsMapID,
 
-		SignIn: service.NewAccountService(accountRepo, mailer, newGoogle(cfg), service.AccountConfig{
-			BaseURL: cfg.AppBaseURL, Product: cfg.ProductName, SessionTTL: cfg.SessionTTL,
+		SignIn: service.NewAccountService(accountRepo, mailer, app.NewGoogle(cfg, "/auth/google/callback"), service.AccountConfig{
+			BaseURL: cfg.AppBaseURL, Product: cfg.ProductName, SessionTTL: cfg.SessionTTL, IdleTimeout: cfg.SessionIdle,
 		}),
 		Orgs:          newOrgService(orgRepo, mailer, cfg),
 		Events:        service.NewEventService(eventRepo, accountRepo, orgRepo, mailer, cfg.AppBaseURL, cfg.ProductName),
@@ -84,17 +92,11 @@ func run() error {
 		Portal:        service.NewPortalService(postgres.NewPortalRepo(db)),
 		Checker:       registrationRepo,
 		LiveFeed:      liveFeed,
+		Integrations:  workers.Integrations, // the connect flow; its sync loop runs with the workers
 		BaseURL:       cfg.AppBaseURL,
 		Product:       cfg.ProductName,
 		CookieKey:     cfg.JWTSecret,
 	}
-
-	box, err := integrationsBox(cfg)
-	if err != nil {
-		return err
-	}
-	h.Integrations = service.NewIntegrationService(postgres.NewIntegrationRepo(db), registrationRepo, newGoogle(cfg),
-		service.NewGoogleAPI(), box, cfg.AppBaseURL+"/auth/google/integration/callback")
 
 	h.StatusPageURL = cfg.StatusPageURL
 	h.Profiles = service.NewProfileService(postgres.NewPortalRepo(db), postgres.NewProfileRepo(db))
@@ -116,21 +118,22 @@ func run() error {
 	feedCtx, stopFeed := context.WithCancel(ctx)
 	defer stopFeed()
 	go liveFeed.Run(feedCtx)
-	go h.Integrations.Run(feedCtx)
+	// Changes made on other replicas arrive by NOTIFY at once; where the
+	// connection can't LISTEN (a transaction pooler), the poll still covers.
+	go postgres.Listen(feedCtx, cfg.DatabaseURL, postgres.FeedChannel, liveFeed.Notify)
 	srv.RegisterOnShutdown(stopFeed)
 
-	// Participant emails (pass issued, approval, waitlist). Like the pass
-	// email queue, only with SMTP configured; queued emails wait otherwise.
-	outboxDone := make(chan struct{})
-	if cfg.SMTPHost != "" {
-		ow := service.NewOutboxWorker(outboxRepo, mailer, passService, cfg.AppBaseURL, cfg.ProductName)
-		go func() {
-			defer close(outboxDone)
-			ow.Run(ctx)
-		}()
+	// Background jobs (emails, Google sync, retention). Production runs them
+	// in cmd/worker with RUN_WORKERS=false here, so an API deploy doesn't
+	// interrupt a send and the jobs use their own, narrower database login.
+	workersDone := make(chan struct{})
+	if cfg.RunWorkers {
+		workersDone = make(chan struct{})
+		done := workers.Run(ctx)
+		go func() { <-done; close(workersDone) }()
 	} else {
-		close(outboxDone)
-		slog.Warn("SMTP_HOST not set: participant emails stay queued")
+		close(workersDone)
+		slog.Info("RUN_WORKERS=false: emails, Google sync and retention run in cmd/worker")
 	}
 
 	errCh := make(chan error, 1)
@@ -152,38 +155,8 @@ func run() error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	err = srv.Shutdown(shutdownCtx)
-	<-outboxDone
+	<-workersDone
 	return err
-}
-
-// passKeyRing loads the pass signing keys, or derives a development key.
-func passKeyRing(cfg *config.Config) (*passes.KeyRing, error) {
-	if cfg.PassSigningKeys != "" {
-		kr, err := passes.ParseKeyRing(cfg.PassSigningKeys)
-		if err != nil {
-			return nil, fmt.Errorf("PASS_SIGNING_KEYS: %w", err)
-		}
-		return kr, nil
-	}
-	slog.Warn("PASS_SIGNING_KEYS not set: pass QR codes use a key derived from JWT_SECRET; set real keys in production (openssl rand -base64 32)")
-	return passes.DerivedKeyRing(cfg.JWTSecret), nil
-}
-
-// integrationsBox loads INTEGRATIONS_KEY, or derives a development key.
-func integrationsBox(cfg *config.Config) (*secrets.Box, error) {
-	if cfg.IntegrationsKey != "" {
-		return secrets.FromBase64(cfg.IntegrationsKey)
-	}
-	slog.Warn("INTEGRATIONS_KEY not set: Google tokens are encrypted with a key derived from JWT_SECRET; set a real key in production (openssl rand -base64 32)")
-	return secrets.Derived(cfg.JWTSecret), nil
-}
-
-// newGoogle returns the Google sign-in client, or nil when it isn't configured.
-func newGoogle(cfg *config.Config) *service.GoogleOAuth {
-	if cfg.GoogleClientID == "" {
-		return nil
-	}
-	return service.NewGoogleOAuth(cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.AppBaseURL+"/auth/google/callback")
 }
 
 // newOrgService lets only PLATFORM_ADMIN_EMAILS create organizations.
@@ -198,43 +171,4 @@ func newOrgService(store service.OrgStore, mailer service.Mailer, cfg *config.Co
 		slog.Info("organization creation limited to platform admins", "count", len(cfg.PlatformAdminEmails))
 	}
 	return s
-}
-
-// newMailer builds the SMTP mailer, or a disabled one when SMTP_HOST is unset
-// (email actions remain queued until SMTP is configured).
-func newMailer(cfg *config.Config) (service.Mailer, error) {
-	if cfg.SMTPHost == "" {
-		slog.Warn("SMTP_HOST not set: staff accounts can't be created from the dashboard")
-		return service.DisabledMailer(), nil
-	}
-	from, err := mail.ParseAddress(cfg.SMTPFrom)
-	if err != nil {
-		return nil, fmt.Errorf("SMTP_FROM: %w", err)
-	}
-	m, err := service.NewSMTPMailer(service.SMTPConfig{
-		Host:     cfg.SMTPHost,
-		Port:     cfg.SMTPPort,
-		Username: cfg.SMTPUsername,
-		Password: cfg.SMTPPassword,
-		From:     *from,
-		Security: cfg.SMTPSecurity,
-	})
-	if err != nil {
-		return nil, err
-	}
-	slog.Info("email enabled", "smtp_host", cfg.SMTPHost, "smtp_port", cfg.SMTPPort, "security", cfg.SMTPSecurity)
-
-	// Check in the background so a slow mail server never delays startup.
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
-		defer cancel()
-		if err := m.Probe(ctx); err != nil {
-			slog.Error("SMTP CHECK FAILED: staff credential emails will not send",
-				"smtp_host", cfg.SMTPHost, "smtp_port", cfg.SMTPPort, "err", err,
-				"hint", "timeout = the host blocks outbound SMTP; auth error = wrong username or app password")
-			return
-		}
-		slog.Info("SMTP check passed: connected and signed in", "smtp_host", cfg.SMTPHost)
-	}()
-	return m, nil
 }

@@ -4,7 +4,7 @@
 {{if $edit}}
 <section class="card">
   <h2>Import participants from CSV</h2>
-  <p>Upload a CSV with <code>Full Name</code> (or <code>Name</code>) and <code>Category</code> columns. An optional <code>Email</code> column sends pass emails; without it, passes can still be downloaded. This bypasses public registration dates and approval: every imported participant is registered immediately. Event capacity still applies.</p>
+  <p>Upload a CSV with <code>Full Name</code> (or <code>Name</code>) and <code>Category</code> columns, plus an optional <code>Email</code> column. Every imported participant is registered immediately and gets a pass with its QR code, ready to download. Nothing is emailed yet: send the passes below when you're ready. This bypasses public registration dates and approval; event capacity still applies.</p>
   <p class="muted">Example: <code>Full Name,Category</code> / <code>Ann Perera,Student</code>. Legacy <code>Name,Email,Title</code> files are also supported. Categories are included on passes.</p>
   <form method="post" action="{{$d.Base}}/participants/import" enctype="multipart/form-data">
     <input type="hidden" name="csrf" value="{{$csrf}}">
@@ -15,6 +15,19 @@
 </section>
 {{end}}
 {{if and $edit (gt $d.Total 0)}}
+<section class="card">
+  <h2>Email passes</h2>
+  {{if gt $d.Unsent 0}}
+  <p>{{$d.Unsent}} registered {{if eq $d.Unsent 1}}participant has{{else}}participants have{{end}} an email address but {{if eq $d.Unsent 1}}hasn't{{else}}haven't{{end}} been sent their pass yet.</p>
+  <form method="post" action="{{$d.Base}}/participants/send-passes" class="inline" onsubmit="return confirm('Send pass emails to {{$d.Unsent}} participant(s)?')">
+    <input type="hidden" name="csrf" value="{{$csrf}}">
+    <button class="btn" type="submit">Send {{$d.Unsent}} pass {{if eq $d.Unsent 1}}email{{else}}emails{{end}}</button>
+  </form>
+  {{else}}
+  <p class="muted">Everyone registered with an email address has been sent their pass. Use <b>Resend</b> next to a person to send it again.</p>
+  {{end}}
+  <p class="muted">Participants imported without an email can't be emailed; download their passes instead.</p>
+</section>
 <section class="card">
   <h2>Download all passes</h2>
   <p class="muted">Download registered participants' passes together in one archive.</p>
@@ -36,12 +49,22 @@
 <ul class="people card">
   {{range $d.Participants}}
   <li>
-    <div class="who">{{template "avatar" (dict "Name" .FullName "Email" .Email)}}<b>{{.FullName}}{{if .Minor}} <span class="chip chip-minor" title="Under 18 on {{$d.AgeOn}} (age {{deref .Age}}): follow the safeguarding policy">Under 18</span>{{end}}</b>{{if and (eq .Source "import") (index .Answers "title")}}<span>{{index .Answers "title"}}</span>{{end}}<span>{{.Email}} · <code>{{.PassID}}</code> · {{when .RegisteredAt}}</span></div>
+    <div class="who">{{template "avatar" (dict "Name" .FullName "Email" .Email)}}<b>{{.FullName}}{{if .Minor}} <span class="chip chip-minor" title="Under 18 on {{$d.AgeOn}} (age {{deref .Age}}): follow the safeguarding policy">Under 18</span>{{end}}</b>{{if and (eq .Source "import") (index .Answers "title")}}<span>{{index .Answers "title"}}</span>{{end}}<span>{{if .HasEmail}}{{.Email}}{{else}}No email{{end}} · <code>{{.PassID}}</code> · {{when .RegisteredAt}}</span></div>
     <div class="actions">
       <span class="pstatus pstatus-{{.Status}}">{{statusWord .Status}}</span>
+      {{if and (eq .Status "registered") .HasEmail}}
+        {{if eq .PassMail "sent"}}<span class="chip" title="The pass email was sent">Pass emailed</span>
+        {{else if or (eq .PassMail "queued") (eq .PassMail "sending")}}<span class="chip" title="The pass email is waiting to go out">Sending…</span>
+        {{else if eq .PassMail "failed"}}<span class="chip chip-minor" title="The pass email could not be delivered">Email failed</span>
+        {{else}}<span class="chip" title="The pass hasn't been emailed yet">Not emailed</span>{{end}}
+        {{if $edit}}
+        <form method="post" action="{{$d.Base}}/participants/{{.ID}}/send-pass" class="inline" onsubmit="return confirm('Send this pass to {{.FullName}}?')"><input type="hidden" name="csrf" value="{{$csrf}}"><button class="btn btn-quiet" type="submit">{{if .PassMail}}Resend{{else}}Send pass{{end}}</button></form>
+        {{end}}
+      {{end}}
       <a class="btn btn-quiet" href="{{$d.Base}}/participants/{{.ID}}/pass.png" target="_blank" rel="noopener">PNG</a>
       <a class="btn btn-quiet" href="{{$d.Base}}/participants/{{.ID}}/pass.pdf?download=1">PDF</a>
       {{if $edit}}
+        <form method="post" action="{{$d.Base}}/participants/{{.ID}}/reissue" class="inline"><input type="hidden" name="csrf" value="{{$csrf}}"><button class="btn btn-quiet" type="submit" title="Issue a new QR code; the old one stops scanning">New QR</button></form>
         {{if or (eq .Status "pending") (eq .Status "waitlisted") (eq .Status "cancelled")}}
         <form method="post" action="{{$d.Base}}/participants/{{.ID}}/status" class="inline"><input type="hidden" name="csrf" value="{{$csrf}}"><input type="hidden" name="status" value="registered"><button class="btn btn-quiet" type="submit">{{if eq .Status "pending"}}Approve{{else if eq .Status "waitlisted"}}Give a place{{else}}Restore{{end}}</button></form>
         {{end}}

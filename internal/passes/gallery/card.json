@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "size": { "preset": "card", "width": 1100, "height": 1600 },
+  "background": "token:surface",
+  "elements": [
+    { "id": "event", "type": "text", "text": "{{event.name}}", "x": 70, "y": 70, "w": 960, "h": 70,
+      "font": { "size": 48, "weight": 700 }, "color": "token:primary", "align": "center", "shrinkToFit": { "min": 32 } },
+    { "id": "when", "type": "text", "text": "{{event.when}}", "x": 70, "y": 150, "w": 960, "h": 56,
+      "font": { "size": 34, "weight": 400 }, "color": "token:muted", "align": "center", "shrinkToFit": { "min": 26 } },
+    { "id": "name", "type": "text", "text": "{{participant.fullName}}", "x": 70, "y": 240, "w": 960, "h": 230,
+      "font": { "size": 104, "weight": 700 }, "color": "token:ink", "align": "center", "maxLines": 2, "shrinkToFit": { "min": 56 } },
+    { "id": "status", "type": "text", "text": "{{participant.statusLabel}}", "x": 70, "y": 485, "w": 960, "h": 50,
+      "font": { "size": 36, "weight": 700 }, "color": "token:danger", "align": "center",
+      "visibleFor": ["pending", "waitlisted", "cancelled"] },
+    { "id": "qr", "type": "qr", "x": 230, "y": 560, "size": 640, "fg": "#000000", "bg": "#FFFFFF", "quietZone": 4, "ecc": "M" },
+    { "id": "passId", "type": "text", "text": "{{pass.id}}", "x": 70, "y": 1230, "w": 960, "h": 80,
+      "font": { "size": 60, "weight": 700 }, "color": "token:ink", "align": "center", "shrinkToFit": { "min": 40 } },
+    { "id": "org", "type": "text", "text": "{{org.name}}", "x": 70, "y": 1330, "w": 960, "h": 56,
+      "font": { "size": 34, "weight": 400 }, "color": "token:muted", "align": "center", "shrinkToFit": { "min": 26 } },
+    { "id": "answers", "type": "answers", "x": 70, "y": 1410, "w": 960, "h": 150,
+      "font": { "size": 32, "weight": 400 }, "color": "token:muted", "align": "center" }
+  ]
+}

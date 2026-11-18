@@ -200,7 +200,7 @@ func TestCheckInGate(t *testing.T) {
 	}
 
 	// A pass for another event is red, not recorded.
-	other, _ := passes.DerivedKeyRing([]byte("test-pass-key")).Issue(f.org.ID, "01a15000-0000-7000-8000-0000000000ee", f.people[0].ID, "X")
+	other, _ := passes.DerivedKeyRing([]byte("test-pass-key")).Issue(f.org.ID, "01a15000-0000-7000-8000-0000000000ee", f.people[0].ID, "X", 1)
 	if r := f.scan(t, phone, other, checkIn, ""); r.Result != service.CheckWrongEvent || r.Tone != "red" {
 		t.Errorf("pass for another event: %+v", r)
 	}
@@ -490,6 +490,7 @@ func TestPortalWorkshopSignups(t *testing.T) {
 		res := anon.form("POST", "/e/"+f.org.Slug+"/"+f.ev.Slug+"/register", map[string][]string{"full_name": {"Name " + u.email[:6]}, "email": {u.email}})
 		res.Body.Close()
 		u.signIn("")
+		u.claimAll()
 		_, b := u.api("GET", "/api/v1/me/passes", nil)
 		var mine []domain.EventParticipant
 		json.Unmarshal(b, &mine)

@@ -35,8 +35,10 @@ const TrashRetention = 30 * 24 * time.Hour
 
 // EventSettings are the owner's switches that change the role matrix.
 type EventSettings struct {
-	EditorsCanShare  bool `json:"editors_can_share"`
-	ViewersCanExport bool `json:"viewers_can_export"`
+	EditorsCanShare  bool   `json:"editors_can_share"`
+	ViewersCanExport bool   `json:"viewers_can_export"`
+	PassEmailSubject string `json:"pass_email_subject,omitempty"`
+	PassEmailBody    string `json:"pass_email_body,omitempty"`
 }
 
 type EventVenue struct {

@@ -140,10 +140,21 @@ func (w *OutboxWorker) Message(pc *domain.PassContext, tmpl string) (Message, er
 			return m, err
 		}
 		m.Subject = "Your pass for " + e.Name
+		if subject := strings.TrimSpace(e.Settings.PassEmailSubject); subject != "" {
+			m.Subject = strings.ReplaceAll(subject, "{{event.name}}", e.Name)
+			m.Subject = strings.ReplaceAll(m.Subject, "{{participant.fullName}}", p.FullName)
+		}
 		pm.Heading = "Your pass"
 		pm.Paragraphs = []string{
 			fmt.Sprintf("Hi %s, you're registered for %s (%s). Show this QR code at the entrance.", p.FullName, e.Name, when),
 			"The pass is also attached as a PDF to print at actual size.",
+		}
+		if body := strings.TrimSpace(e.Settings.PassEmailBody); body != "" {
+			body = strings.ReplaceAll(body, "{{participant.fullName}}", p.FullName)
+			body = strings.ReplaceAll(body, "{{event.name}}", e.Name)
+			body = strings.ReplaceAll(body, "{{event.dateRange}}", e.DateRange())
+			body = strings.ReplaceAll(body, "{{pass.id}}", p.PassID)
+			pm.Paragraphs = strings.Split(body, "\n")
 		}
 		pm.ImageCID = "pass@event"
 		m.Inline = []InlineImage{{ContentID: "pass@event", ContentType: "image/png", Filename: PassFilename(p.PassID, "png"), Data: png}}

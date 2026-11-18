@@ -32,9 +32,14 @@ func TestParseParticipantCSV(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(participants) != 1 || participants[0].Email != "imported-1@event-pass.local" ||
+	if len(participants) != 1 || !domain.IsPlaceholderEmail(participants[0].Email) ||
 		participants[0].FullName != "Casey Perera" || participants[0].Answers["category"] != "Volunteer" {
 		t.Fatalf("category import: %+v", participants)
+	}
+	// A second import without emails doesn't reuse the first one's addresses.
+	again, err := ParseParticipantCSV(strings.NewReader("Full Name,Category\nDan Perera,Volunteer\n"))
+	if err != nil || again[0].Email == participants[0].Email {
+		t.Fatalf("placeholder emails repeat across imports: %v %v", again, err)
 	}
 }
 

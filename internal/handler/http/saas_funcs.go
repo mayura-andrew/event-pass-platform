@@ -8,10 +8,12 @@ import (
 	"unicode/utf8"
 
 	"github.com/mayura-andrew/event-pass-platform/internal/domain"
+	"github.com/mayura-andrew/event-pass-platform/internal/passes"
 )
 
 // pageFuncs are the helpers page templates may call.
 var pageFuncs = template.FuncMap{
+	"sizeLabel":   passes.SizeLabel,
 	"statusLabel": func(s string) string { return statusLabels[s] },
 	"statusIcon":  func(s string) string { return statusIcons[s] },
 	"roleLabel":   roleLabel,

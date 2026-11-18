@@ -1,0 +1,19 @@
+{{define "content"}}
+<h1>Where you're signed in</h1>
+<p class="lede">Devices signed in to {{.Account.Email}}. A device you don't recognise? Sign it out, or sign out everywhere else.</p>
+<section class="card">
+  <ul class="claims" aria-label="Signed-in devices">
+    {{range .Data.Sessions}}
+    <li>
+      <span><strong>{{if .UserAgent}}{{.UserAgent}}{{else}}Unknown device{{end}}</strong>{{if .Current}} <span class="chip">This device</span>{{end}}<br>
+      <span class="muted">Signed in {{.CreatedAt.Format "2 Jan 2006 15:04"}}{{with .IP}} · {{.}}{{end}} · last active {{.LastSeenAt.Format "2 Jan 15:04"}} · expires {{.ExpiresAt.Format "2 Jan 15:04"}}</span></span>
+      <form method="post" action="/account/sessions/{{.ID}}/revoke" class="inline"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="btn btn-quiet" type="submit">Sign out</button></form>
+    </li>
+    {{end}}
+  </ul>
+  <form method="post" action="/account/sessions/revoke-others" class="mt-24">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <button class="btn btn-danger" type="submit">Sign out everywhere else</button>
+  </form>
+</section>
+{{end}}

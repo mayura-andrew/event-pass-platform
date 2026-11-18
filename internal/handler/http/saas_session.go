@@ -23,15 +23,20 @@ import (
 	"github.com/mayura-andrew/event-pass-platform/internal/authz"
 	"github.com/mayura-andrew/event-pass-platform/internal/domain"
 	"github.com/mayura-andrew/event-pass-platform/internal/passes"
+	"github.com/mayura-andrew/event-pass-platform/internal/service"
 	"github.com/mayura-andrew/event-pass-platform/web"
 )
 
 const (
-	sessionCookie = "sid"
-	googleCookie  = "g_oauth"
-	csrfHeader    = "X-CSRF-Token"
-	csrfField     = "csrf"
-	maxPageUpload = passes.MaxUploadBytes + 1<<20 // the image and the other fields
+	// Session cookie names. Over HTTPS the __Host- prefix makes the browser
+	// refuse the cookie unless it is Secure, Path=/ and has no Domain, so a
+	// subdomain or a path mistake can't widen or overwrite it.
+	sessionCookieDev    = "sid"
+	sessionCookieSecure = "__Host-sid"
+	googleCookie        = "g_oauth"
+	csrfHeader          = "X-CSRF-Token"
+	csrfField           = "csrf"
+	maxPageUpload       = passes.MaxUploadBytes + 1<<20 // the image and the other fields
 
 	// pageDeadline covers a page that sends an email (sign-in link, invite).
 	pageDeadline = emailDeadline
@@ -68,9 +73,16 @@ type (
 
 func (h *Handler) secureCookies() bool { return strings.HasPrefix(h.BaseURL, "https://") }
 
+func (h *Handler) sessionCookie() string {
+	if h.secureCookies() {
+		return sessionCookieSecure
+	}
+	return sessionCookieDev
+}
+
 func (h *Handler) setSessionCookie(w http.ResponseWriter, token string, expires time.Time) {
 	http.SetCookie(w, &http.Cookie{
-		Name: sessionCookie, Value: token, Path: "/", Expires: expires,
+		Name: h.sessionCookie(), Value: token, Path: "/", Expires: expires,
 		HttpOnly: true, Secure: h.secureCookies(), SameSite: http.SameSiteLaxMode,
 	})
 }
@@ -84,7 +96,7 @@ func (h *Handler) clearCookie(w http.ResponseWriter, name, path string) {
 
 // currentPrincipal returns the signed-in account, or nil.
 func (h *Handler) currentPrincipal(r *http.Request) (*principal, error) {
-	c, err := r.Cookie(sessionCookie)
+	c, err := r.Cookie(h.sessionCookie())
 	if err != nil || c.Value == "" {
 		return nil, nil
 	}
@@ -120,6 +132,16 @@ func (h *Handler) sameOrigin(r *http.Request) bool {
 	}
 	o, err := url.Parse(origin)
 	return err == nil && o.Host == r.Host
+}
+
+// requireFresh refuses a sensitive action on a session older than
+// service.StepUpWindow: a stolen cookie can't transfer an event, change
+// members or connect Google without the owner signing in again.
+func requireFresh(p *principal) error {
+	if service.Fresh(p.session) {
+		return nil
+	}
+	return service.ErrReauth
 }
 
 func csrfOK(p *principal, got string) bool {
@@ -274,7 +296,7 @@ var pageNames = []string{"login", "login_sent", "verify", "app", "members", "inv
 	"events", "event_new", "event", "event_share", "event_settings", "activity", "link",
 	"event_registration", "event_participants", "public_event", "public_registered", "my_passes", "my_pass",
 	"scanner", "event_dashboard", "event_checkin", "event_workshops",
-	"pass_templates", "designer", "event_pass", "event_integrations", "participant_map", "event_map"}
+	"pass_templates", "designer", "event_pass", "event_integrations", "participant_map", "event_map", "sessions"}
 
 type pageSet map[string]*template.Template
 
@@ -390,6 +412,22 @@ func (h *Handler) renderStatus(w http.ResponseWriter, r *http.Request, p *princi
 // renderError shows a service error as a page.
 func (h *Handler) renderError(w http.ResponseWriter, r *http.Request, p *principal, err error) {
 	status, msg := pageErrorStatus(err)
+	if errors.Is(err, service.ErrReauth) {
+		// Sign in again, then come back to the page the action was on.
+		back := r.URL.RequestURI()
+		if r.Method != http.MethodGet {
+			back = ""
+			if ref, err := url.Parse(r.Referer()); err == nil && (ref.Host == "" || ref.Host == r.Host) {
+				back = ref.RequestURI()
+			}
+		}
+		q := url.Values{"reauth": {"1"}}
+		if next := service.SafeNext(back); next != "" {
+			q.Set("next", next)
+		}
+		http.Redirect(w, r, "/login?"+q.Encode(), http.StatusSeeOther)
+		return
+	}
 	switch status {
 	case http.StatusNotFound:
 		h.renderStatus(w, r, p, status, "Not found", "This page doesn't exist, or you don't have access to it.")

@@ -4,7 +4,9 @@ package httphandler
 // signing in. Each topic's text is web/templates/help/<slug>.html.
 
 import (
+	"crypto/subtle"
 	"net/http"
+	"strings"
 
 	"github.com/mayura-andrew/event-pass-platform/internal/service"
 )
@@ -84,6 +86,10 @@ func (h *Handler) helpPrincipal(r *http.Request) *principal {
 // GET /api/v1/health: for an uptime monitor behind the status page. 200
 // with "ok" or "degraded", 503 when the database is down. /healthz stays
 // the cheap liveness probe for the platform.
+//
+// The per-check detail (how late emails are) is operational information, so
+// it is shown only with "Authorization: Bearer <HEALTH_TOKEN>". Everyone
+// else gets the status word alone, still enough for a public monitor.
 func (h *Handler) apiHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if h.Health == nil {
@@ -95,7 +101,22 @@ func (h *Handler) apiHealth(w http.ResponseWriter, r *http.Request) {
 	if rep.Status == "down" {
 		status = http.StatusServiceUnavailable
 	}
+	if !h.healthAuthorized(r) {
+		up := rep.Status
+		if up == "degraded" {
+			up = "ok" // "degraded" reveals the email queue is behind
+		}
+		rep = service.HealthReport{Status: up, Checks: map[string]string{}}
+	}
 	writeJSON(w, status, rep)
+}
+
+func (h *Handler) healthAuthorized(r *http.Request) bool {
+	if h.HealthToken == "" {
+		return false
+	}
+	got, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	return ok && subtle.ConstantTimeCompare([]byte(got), []byte(h.HealthToken)) == 1
 }
 
 func (h *Handler) helpIndex(w http.ResponseWriter, r *http.Request) {

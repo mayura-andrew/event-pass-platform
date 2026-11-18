@@ -32,6 +32,8 @@ type RegistrationStore interface {
 	GetParticipant(ctx context.Context, es authz.EventScope, id string) (*domain.EventParticipant, error)
 	SetStatus(ctx context.Context, es authz.EventScope, id, status string) error
 	ResendPass(ctx context.Context, p *domain.EventParticipant, orgID string) (bool, error)
+	CountUnsentPasses(ctx context.Context, es authz.EventScope) (int, error)
+	SendPasses(ctx context.Context, es authz.EventScope, participantID string) (int, error)
 }
 
 // PassLoader loads a participant's pass content (postgres.OutboxRepo).
@@ -529,9 +531,10 @@ func visibleParticipantAnswers(fields []domain.FormField) map[string]bool {
 	return visible
 }
 
-// ImportParticipants registers organizer-provided attendees immediately and
-// queues pass emails when the import includes real email addresses. Event
-// capacity still applies to manual imports.
+// ImportParticipants registers organizer-provided attendees immediately, so
+// their passes (and QR codes) are ready to download. Pass emails are not
+// sent here: the organizer sends them later with SendPasses. Event capacity
+// still applies to manual imports.
 func (s *RegistrationService) ImportParticipants(ctx context.Context, es authz.EventScope, ev *domain.Event, participants []domain.EventParticipant) error {
 	if err := es.Require(authz.EventEdit); err != nil {
 		return err
@@ -543,6 +546,25 @@ func (s *RegistrationService) ImportParticipants(ctx context.Context, es authz.E
 		return invalid("CSV must contain between 1 and %d participant rows", MaxParticipantImportRows)
 	}
 	return s.store.ImportParticipants(ctx, es, participants, func() string { return NewPassID(ev.PassPrefix) })
+}
+
+// UnsentPasses counts registered participants with an email whose pass
+// hasn't been emailed yet.
+func (s *RegistrationService) UnsentPasses(ctx context.Context, es authz.EventScope) (int, error) {
+	if err := es.Require(authz.EventEdit); err != nil {
+		return 0, err
+	}
+	return s.store.CountUnsentPasses(ctx, es)
+}
+
+// SendPasses emails passes: to one participant (participantID set; also a
+// resend), or to everyone registered with an email who hasn't had theirs
+// yet. It returns how many emails were queued.
+func (s *RegistrationService) SendPasses(ctx context.Context, es authz.EventScope, participantID string) (int, error) {
+	if err := es.Require(authz.EventEdit); err != nil {
+		return 0, err
+	}
+	return s.store.SendPasses(ctx, es, participantID)
 }
 
 // SetStatus approves, cancels, restores or moves someone off the waitlist.
@@ -609,7 +631,7 @@ func (s *RegistrationService) CheckPass(ctx context.Context, es authz.EventScope
 		return nil, err
 	}
 	switch {
-	case scanned.Claims.PassID != p.PassID:
+	case scanned.Claims.PassID != p.PassID, scanned.Claims.Generation != max(p.PassGeneration, 1):
 		return &PassCheck{Result: CheckInvalid, Message: "This pass was replaced"}, nil
 	}
 	pc := &PassCheck{Participant: p}

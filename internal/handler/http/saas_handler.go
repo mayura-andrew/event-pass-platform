@@ -78,24 +78,75 @@ func (h *Handler) registerSaaS(mux *http.ServeMux, signInLimit *rateLimiter) {
 	mux.HandleFunc("GET /help/{topic}", h.helpPage)
 	// Public event pages and registration. Venue Wi-Fi puts many phones
 	// behind one address, so the limit is generous.
-	h.registerLimit = newRateLimiter(max(h.PassRatePerMin, 60), time.Minute, h.clientIP)
+	h.registerLimit = newRateLimiter("register", max(h.PassRatePerMin, 60), time.Minute, h.clientIP, h.RateStore)
 	h.registerPortal(mux)
+	h.registerSessions(mux)
 	mux.HandleFunc("GET /e/{org}/{event}", h.publicEventPage)
 	mux.HandleFunc("POST /e/{org}/{event}/register", h.registerPost)
 
 	for _, rt := range orgRoutes {
+		fn := rt.fn
+		if needsFreshSignIn(rt.method, rt.pattern) {
+			fn = freshOrg(rt.api, fn)
+		}
 		if rt.api {
-			mux.Handle(rt.method+" "+rt.pattern, h.apiOrg(rt.fn))
+			mux.Handle(rt.method+" "+rt.pattern, h.apiOrg(fn))
 		} else {
-			mux.Handle(rt.method+" "+rt.pattern, h.pageOrg(rt.fn))
+			mux.Handle(rt.method+" "+rt.pattern, h.pageOrg(fn))
 		}
 	}
 	for _, rt := range eventRoutes {
-		if rt.api {
-			mux.Handle(rt.method+" "+rt.pattern, h.apiEvent(rt.action, rt.fn))
-		} else {
-			mux.Handle(rt.method+" "+rt.pattern, h.pageEvent(rt.action, rt.fn))
+		fn := rt.fn
+		if needsFreshSignIn(rt.method, rt.pattern) {
+			fn = freshEvent(rt.api, fn)
 		}
+		if rt.api {
+			mux.Handle(rt.method+" "+rt.pattern, h.apiEvent(rt.action, fn))
+		} else {
+			mux.Handle(rt.method+" "+rt.pattern, h.pageEvent(rt.action, fn))
+		}
+	}
+}
+
+// needsFreshSignIn lists the actions that need a recent sign-in (step-up,
+// security review F7): changing or removing members, transferring an event,
+// and connecting a Google account to an event.
+func needsFreshSignIn(method, pattern string) bool {
+	switch {
+	case strings.HasSuffix(pattern, "/members/{account}") && (method == "PATCH" || method == "DELETE"),
+		strings.HasSuffix(pattern, "/members/{account}/role"), strings.HasSuffix(pattern, "/members/{account}/remove"),
+		strings.HasSuffix(pattern, "/transfer"),
+		strings.Contains(pattern, "/integrations/") && strings.HasSuffix(pattern, "/connect"):
+		return true
+	}
+	return false
+}
+
+func freshOrg(api bool, fn orgFunc) orgFunc {
+	return func(h *Handler, w http.ResponseWriter, r *http.Request, o *orgReq) {
+		if err := requireFresh(o.principal); err != nil {
+			if api {
+				writeDomainError(w, r, err)
+			} else {
+				h.renderError(w, r, o.principal, err)
+			}
+			return
+		}
+		fn(h, w, r, o)
+	}
+}
+
+func freshEvent(api bool, fn eventFunc) eventFunc {
+	return func(h *Handler, w http.ResponseWriter, r *http.Request, e *eventReq) {
+		if err := requireFresh(e.principal); err != nil {
+			if api {
+				writeDomainError(w, r, err)
+			} else {
+				h.renderError(w, r, e.principal, err)
+			}
+			return
+		}
+		fn(h, w, r, e)
 	}
 }
 
@@ -128,7 +179,7 @@ func (h *Handler) apiLogout(w http.ResponseWriter, r *http.Request, p *principal
 		writeDomainError(w, r, err)
 		return
 	}
-	h.clearCookie(w, sessionCookie, "/")
+	h.clearCookie(w, h.sessionCookie(), "/")
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -266,12 +317,16 @@ type loginData struct {
 
 func (h *Handler) loginPage(w http.ResponseWriter, r *http.Request) {
 	next := service.SafeNext(r.URL.Query().Get("next"))
-	if p, _ := h.currentPrincipal(r); p != nil {
+	reauth := r.URL.Query().Get("reauth") == "1"
+	if p, _ := h.currentPrincipal(r); p != nil && !reauth {
 		http.Redirect(w, r, orDefault(next, "/app"), http.StatusSeeOther)
 		return
 	}
-	h.render(w, http.StatusOK, "login", nil, view{Title: "Sign in",
-		Data: loginData{Google: h.SignIn.GoogleEnabled(), Next: next}})
+	v := view{Title: "Sign in", Data: loginData{Google: h.SignIn.GoogleEnabled(), Next: next}}
+	if reauth {
+		v.Notice = "For your security, that action needs a recent sign-in. Sign in again to continue."
+	}
+	h.render(w, http.StatusOK, "login", nil, v)
 }
 
 func (h *Handler) loginPost(w http.ResponseWriter, r *http.Request) {
@@ -286,7 +341,7 @@ func (h *Handler) loginPost(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusForbidden, "That form came from another site. Open the sign-in page and try again.")
 		return
 	}
-	if !h.signInLimit.allow(h.clientIP(r)) {
+	if !h.signInLimit.allow(r.Context(), h.clientIP(r)) {
 		fail(http.StatusTooManyRequests, "Too many attempts. Wait a minute, then try again.")
 		return
 	}
@@ -302,16 +357,22 @@ func (h *Handler) loginPost(w http.ResponseWriter, r *http.Request) {
 	h.render(w, http.StatusOK, "login_sent", nil, view{Title: "Check your email", Data: data})
 }
 
+// verifyPage is where an emailed sign-in link lands. The token is in the URL
+// fragment (#token=...), which browsers never send, so neither this server
+// nor the proxy in front of it logs it; verify.js moves it into the form and
+// removes it from the address bar and history. Links sent before fragments
+// (?token=) still work, but the page drops them from history the same way.
 func (h *Handler) verifyPage(w http.ResponseWriter, r *http.Request) {
-	token := r.URL.Query().Get("token")
-	if token == "" {
-		h.renderStatus(w, r, nil, http.StatusBadRequest, "Link incomplete", "Open the link from your email again, or request a new one.")
-		return
-	}
-	h.render(w, http.StatusOK, "verify", nil, view{Title: "Finish signing in", Data: map[string]string{"Token": token}})
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	h.render(w, http.StatusOK, "verify", nil, view{Title: "Finish signing in",
+		Data: map[string]string{"Token": r.URL.Query().Get("token")}})
 }
 
 func (h *Handler) verifyPost(w http.ResponseWriter, r *http.Request) {
+	if r.PostFormValue("token") == "" {
+		h.renderStatus(w, r, nil, http.StatusBadRequest, "Link incomplete", "Open the link from your email again, or request a new one.")
+		return
+	}
 	if !h.sameOrigin(r) {
 		h.renderStatus(w, r, nil, http.StatusForbidden, "Sign-in refused", "That form came from another site.")
 		return
@@ -326,7 +387,7 @@ func (h *Handler) verifyPost(w http.ResponseWriter, r *http.Request) {
 
 // finishSignIn replaces any earlier session on this browser with the new one.
 func (h *Handler) finishSignIn(w http.ResponseWriter, r *http.Request, ns *service.NewSession) {
-	if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" {
+	if c, err := r.Cookie(h.sessionCookie()); err == nil && c.Value != "" {
 		_ = h.SignIn.SignOut(r.Context(), c.Value)
 	}
 	h.setSessionCookie(w, ns.Token, ns.Session.ExpiresAt)
@@ -388,7 +449,7 @@ func (h *Handler) logoutPost(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	h.clearCookie(w, sessionCookie, "/")
+	h.clearCookie(w, h.sessionCookie(), "/")
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 

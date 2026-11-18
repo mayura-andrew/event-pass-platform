@@ -98,7 +98,7 @@ func newSaaSEnvWith(t *testing.T, google *service.GoogleOAuth) *saasEnv {
 	h := &Handler{
 		LoginRatePerMin: 10_000, PassRatePerMin: 10_000,
 		SignIn: service.NewAccountService(postgres.NewAccountRepo(db), env.mail, google, service.AccountConfig{
-			BaseURL: base, Product: "Event Pass", SessionTTL: time.Hour,
+			BaseURL: base, Product: "Event Pass", SessionTTL: time.Hour, IdleTimeout: 30 * time.Minute,
 		}),
 		Orgs: service.NewOrgService(postgres.NewOrgRepo(db), env.mail, base, "Event Pass"),
 		Events: service.NewEventService(postgres.NewEventRepo(db), postgres.NewAccountRepo(db), postgres.NewOrgRepo(db),
@@ -169,6 +169,25 @@ func (u *user) signIn(next string) *http.Response {
 	res = u.form("POST", "/auth/email/verify", url.Values{"token": {token}})
 	u.loadMe()
 	return res
+}
+
+// claimAll confirms every registration made with the user's email ("This is
+// mine"), which is how a registration becomes one of their passes.
+func (u *user) claimAll() {
+	u.t.Helper()
+	status, b := u.api("GET", "/api/v1/me/claims", nil)
+	if status != http.StatusOK {
+		u.t.Fatalf("GET /api/v1/me/claims: HTTP %d %s", status, b)
+	}
+	var claims []struct {
+		ParticipantID string `json:"participant_id"`
+	}
+	json.Unmarshal(b, &claims)
+	for _, c := range claims {
+		if status, b := u.api("POST", "/api/v1/me/claims/"+c.ParticipantID, nil); status != http.StatusNoContent {
+			u.t.Fatalf("claim %s: HTTP %d %s", c.ParticipantID, status, b)
+		}
+	}
 }
 
 func (u *user) loadMe() {

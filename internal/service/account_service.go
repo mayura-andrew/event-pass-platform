@@ -25,6 +25,10 @@ type AccountStore interface {
 	CreateSession(ctx context.Context, accountID string, tokenHash []byte, csrf string, expires time.Time, userAgent, ip string) (*domain.Session, error)
 	SessionByToken(ctx context.Context, tokenHash []byte) (*domain.Session, *domain.Account, error)
 	RevokeSession(ctx context.Context, tokenHash []byte) error
+	TouchSession(ctx context.Context, id string) error
+	ListSessions(ctx context.Context, accountID string) ([]domain.Session, error)
+	RevokeSessionByID(ctx context.Context, accountID, id string) error
+	RevokeAllSessions(ctx context.Context, accountID, keepID string) (int, error)
 }
 
 const (
@@ -35,13 +39,24 @@ const (
 	// to flood someone's inbox.
 	loginLinksPerWindow = 5
 	loginLinkWindow     = 15 * time.Minute
+
+	// touchEvery bounds writes: last_seen_at moves at most this often.
+	touchEvery = 5 * time.Minute
+	// StepUpWindow: sensitive actions (transfer, member changes, Google
+	// connect) need a sign-in this recent.
+	StepUpWindow = 15 * time.Minute
 )
+
+// ErrReauth means the action needs a fresh sign-in (see StepUpWindow).
+var ErrReauth = fmt.Errorf("%w: for your security, sign in again to do this", domain.ErrForbidden)
 
 // AccountConfig is the platform-level settings for sign-in.
 type AccountConfig struct {
 	BaseURL    string        // APP_BASE_URL, for links in emails
 	Product    string        // platform name in emails
 	SessionTTL time.Duration // staff sessions: 12 h (spec)
+	// IdleTimeout ends a session nobody has used for this long (0: off).
+	IdleTimeout time.Duration
 }
 
 type AccountService struct {
@@ -116,7 +131,10 @@ func (s *AccountService) RequestEmailLink(ctx context.Context, email, next strin
 	if err := s.store.CreateLoginLink(ctx, HashToken(token), email, SafeNext(next), time.Now().Add(LoginLinkTTL)); err != nil {
 		return err
 	}
-	link := s.cfg.BaseURL + "/auth/email/verify?token=" + token
+	// The token rides in the fragment: browsers never send it to the server,
+	// so it can't land in proxy access logs, and the verify page drops it
+	// from history before posting it.
+	link := s.cfg.BaseURL + "/auth/email/verify#token=" + token
 	text, html, err := ActionEmail{
 		Product: s.cfg.Product,
 		Heading: "Your sign-in link",
@@ -208,7 +226,39 @@ func (s *AccountService) Authenticate(ctx context.Context, token string) (*domai
 	if errors.Is(err, domain.ErrNotFound) {
 		return nil, nil, domain.ErrUnauthenticated
 	}
-	return sess, acct, err
+	if err != nil {
+		return nil, nil, err
+	}
+	idle := time.Since(sess.LastSeenAt)
+	if s.cfg.IdleTimeout > 0 && idle > s.cfg.IdleTimeout {
+		_ = s.store.RevokeSession(ctx, HashToken(token))
+		return nil, nil, domain.ErrUnauthenticated
+	}
+	if idle > touchEvery {
+		if err := s.store.TouchSession(ctx, sess.ID); err != nil {
+			slog.Warn("touch session", "err", err)
+		}
+	}
+	return sess, acct, nil
+}
+
+// Fresh reports whether a session signed in recently enough for a sensitive
+// action.
+func Fresh(sess *domain.Session) bool { return time.Since(sess.CreatedAt) < StepUpWindow }
+
+// Sessions lists the account's live sessions ("Where you're signed in").
+func (s *AccountService) Sessions(ctx context.Context, accountID string) ([]domain.Session, error) {
+	return s.store.ListSessions(ctx, accountID)
+}
+
+// RevokeSession signs out one of the account's sessions.
+func (s *AccountService) RevokeSession(ctx context.Context, accountID, sessionID string) error {
+	return s.store.RevokeSessionByID(ctx, accountID, sessionID)
+}
+
+// RevokeOtherSessions signs out every session but keepID.
+func (s *AccountService) RevokeOtherSessions(ctx context.Context, accountID, keepID string) (int, error) {
+	return s.store.RevokeAllSessions(ctx, accountID, keepID)
 }
 
 // SignOut ends the session behind token.

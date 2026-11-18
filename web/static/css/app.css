@@ -416,3 +416,6 @@ a.tile-minor:hover .tile-l { text-decoration: underline; }
   .loading-track-bar { width: 100%; animation: none; }
   .btn.is-loading::before { border-right-color: currentColor; border-top-color: transparent; animation: none; }
 }
+.claims { list-style: none; padding: 0; margin: 0; }
+.claims li { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; padding: .5rem 0; border-top: 1px solid var(--line, #ddd); }
+.claims li:first-child { border-top: 0; }

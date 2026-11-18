@@ -320,12 +320,31 @@ func (r *EventRepo) toggle(ctx context.Context, es authz.EventScope, action, set
 }
 
 func (r *EventRepo) UpdateSettings(ctx context.Context, es authz.EventScope, st domain.EventSettings) error {
-	b, _ := json.Marshal(st)
 	return r.inEvent(ctx, es, domain.Audit{Action: "event.settings",
 		Diff: map[string]any{"editors_can_share": st.EditorsCanShare, "viewers_can_export": st.ViewersCanExport}},
 		func(tx *sql.Tx) error {
-			_, err := tx.ExecContext(ctx, `UPDATE events SET settings = $3, updated_at = NOW() WHERE org_id = $1 AND id = $2`,
-				es.OrgID(), es.EventID(), b)
+			_, err := tx.ExecContext(ctx, `
+				UPDATE events SET settings = jsonb_set(
+					jsonb_set(settings, '{editors_can_share}', to_jsonb($3::boolean)),
+					'{viewers_can_export}', to_jsonb($4::boolean)),
+					updated_at = NOW()
+				WHERE org_id = $1 AND id = $2`,
+				es.OrgID(), es.EventID(), st.EditorsCanShare, st.ViewersCanExport)
+			return err
+		})
+}
+
+func (r *EventRepo) UpdatePassEmail(ctx context.Context, es authz.EventScope, subject, body string) error {
+	return r.inEvent(ctx, es, domain.Audit{Action: "event.pass_email",
+		Diff: map[string]any{"subject": subject, "body": body}},
+		func(tx *sql.Tx) error {
+			_, err := tx.ExecContext(ctx, `
+				UPDATE events SET settings = jsonb_set(
+					jsonb_set(settings, '{pass_email_subject}', to_jsonb($3::text)),
+					'{pass_email_body}', to_jsonb($4::text)),
+					updated_at = NOW()
+				WHERE org_id = $1 AND id = $2`,
+				es.OrgID(), es.EventID(), subject, body)
 			return err
 		})
 }
@@ -702,17 +721,20 @@ func (r *EventRepo) RemoveLink(ctx context.Context, es authz.EventScope) error {
 }
 
 // EventByLink returns the event behind a view-only link token and its org's
-// name. The token is the credential, so this runs outside withTenant.
+// name. The token is the credential and no org is known yet, so this runs
+// through withSystem.
 func (r *EventRepo) EventByLink(ctx context.Context, tokenHash []byte) (*domain.Event, string, error) {
 	var e domain.Event
 	var venue, settings []byte
 	var orgName string
 	dest := append(eventDest(&e, &venue, &settings), &orgName)
-	err := r.db.QueryRowContext(ctx, `SELECT `+eventCols+`, o.name`+eventFrom+`
-		JOIN event_shares s ON s.event_id = e.id AND s.org_id = e.org_id
-		JOIN orgs o ON o.id = e.org_id AND o.status = 'active'
-		WHERE s.link_token_hash = $1 AND (s.expires_at IS NULL OR s.expires_at > NOW()) AND e.deleted_at IS NULL`,
-		tokenHash).Scan(dest...)
+	err := withSystem(ctx, r.db, func(tx *sql.Tx) error {
+		return tx.QueryRowContext(ctx, `SELECT `+eventCols+`, o.name`+eventFrom+`
+			JOIN event_shares s ON s.event_id = e.id AND s.org_id = e.org_id
+			JOIN orgs o ON o.id = e.org_id AND o.status = 'active'
+			WHERE s.link_token_hash = $1 AND (s.expires_at IS NULL OR s.expires_at > NOW()) AND e.deleted_at IS NULL`,
+			tokenHash).Scan(dest...)
+	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, "", domain.ErrNotFound
 	}

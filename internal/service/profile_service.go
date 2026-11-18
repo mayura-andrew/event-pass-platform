@@ -12,6 +12,11 @@ package service
 //     turning the map off, deletes it too.
 //   - Only registered participants (not pending, waitlisted or cancelled)
 //     can see the map.
+//   - Locations are snapped to a grid of about LocationGridMeters before they
+//     are stored, so neither other participants nor the database ever hold
+//     a precise position (security review F6).
+//   - Someone under 18 on the event's age date can't share a location, and
+//     the map query leaves minors out as well.
 
 import (
 	"context"
@@ -32,6 +37,30 @@ import (
 
 // LocationFresh is how long a shared location shows after its last update.
 const LocationFresh = 3 * time.Minute
+
+// LocationGridMeters is the size of the grid shared locations snap to:
+// enough to find a group across a venue, not enough to pinpoint a person.
+const LocationGridMeters = 150
+
+// ErrMinorLocation: participants under 18 can't share their location.
+var ErrMinorLocation = fmt.Errorf("%w: location sharing isn't available for participants under 18", domain.ErrForbidden)
+
+// SnapLocation rounds a position to the centre of its LocationGridMeters
+// cell and reports the cell size as the accuracy.
+func SnapLocation(lat, lng float64) (float64, float64, float64) {
+	const metersPerDegLat = 111_320.0
+	stepLat := LocationGridMeters / metersPerDegLat
+	lat = (math.Floor(lat/stepLat) + 0.5) * stepLat
+	lat = math.Max(-89.9999, math.Min(89.9999, lat))
+	stepLng := LocationGridMeters / (metersPerDegLat * math.Max(math.Cos(lat*math.Pi/180), 0.01))
+	lng = (math.Floor(lng/stepLng) + 0.5) * stepLng
+	if lng > 180 {
+		lng -= 360
+	} else if lng < -180 {
+		lng += 360
+	}
+	return lat, lng, LocationGridMeters
+}
 
 // ProfileStore is postgres.ProfileRepo.
 type ProfileStore interface {
@@ -218,11 +247,16 @@ func (s *ProfileService) ShareLocation(ctx context.Context, as authz.AccountScop
 	if err != nil {
 		return err
 	}
+	if age := pc.Participant.Age; age != nil && *age < 18 {
+		_ = s.store.ClearLocation(ctx, pc.Event.OrgID, participantID)
+		return ErrMinorLocation
+	}
 	if math.IsNaN(lat) || math.IsNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180 || (lat == 0 && lng == 0) {
 		return invalid("that location isn't valid")
 	}
-	if accuracy < 0 || accuracy > 100_000 || math.IsNaN(accuracy) {
-		accuracy = 0
+	lat, lng, grid := SnapLocation(lat, lng)
+	if accuracy < grid || accuracy > 100_000 || math.IsNaN(accuracy) {
+		accuracy = grid
 	}
 	prof, err := s.store.Profile(ctx, pc.Event.OrgID, participantID)
 	if err != nil {

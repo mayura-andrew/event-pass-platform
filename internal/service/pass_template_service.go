@@ -106,7 +106,7 @@ func (s *PassTemplateService) Create(ctx context.Context, sc authz.OrgScope, nam
 	}
 	var design json.RawMessage
 	for _, g := range passes.Gallery() {
-		if g.Key == from || (from == "" && g.Key == "classic") {
+		if g.Key == from || (from == "" && g.Key == passes.DefaultPreset) {
 			design, _ = json.Marshal(g.Design)
 			if name == "" {
 				name = g.Name
@@ -226,7 +226,7 @@ func (s *PassTemplateService) Preview(ctx context.Context, orgID string, design 
 // sampleToken is a real-format token for previews (it verifies nowhere).
 func sampleToken() string {
 	tok, _ := passes.DerivedKeyRing([]byte("preview")).Issue("00000000-0000-7000-8000-000000000001",
-		"00000000-0000-7000-8000-000000000002", "00000000-0000-7000-8000-000000000003", "CSA-7KQ4-M2XD")
+		"00000000-0000-7000-8000-000000000002", "00000000-0000-7000-8000-000000000003", "CSA-7KQ4-M2XD", 1)
 	return tok
 }
 

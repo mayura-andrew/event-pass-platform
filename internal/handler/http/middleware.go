@@ -13,15 +13,27 @@ import (
 
 // ---- Rate limiting -----------------------------------------------------------
 
-// rateLimiter is a small fixed-window limiter keyed by client IP. It protects
-// the login and public pass lookup endpoints from brute force. For multiple
-// API replicas, move this to a shared store or the edge (e.g. Cloudflare).
+// RateStore counts hits in a fixed window shared by every API replica
+// (postgres.RateLimitRepo). Hit returns the count including this hit.
+type RateStore interface {
+	Hit(ctx context.Context, bucket, key string, window time.Duration) (int, error)
+}
+
+// rateLimiter is a fixed-window limiter keyed by client IP. It protects
+// sign-in and public registration from brute force and floods. With a store
+// the counters live in Postgres, so two replicas share one limit; if the
+// store fails, the process falls back to its own in-memory window rather
+// than letting everything through.
 type rateLimiter struct {
-	mu     sync.Mutex
+	bucket string
 	limit  int
 	window time.Duration
-	hits   map[string]*window
 	key    func(*http.Request) string // client identity, usually its IP
+	store  RateStore
+
+	mu       sync.Mutex
+	hits     map[string]*window
+	warnOnce sync.Once
 }
 
 type window struct {
@@ -29,8 +41,8 @@ type window struct {
 	count int
 }
 
-func newRateLimiter(limit int, per time.Duration, key func(*http.Request) string) *rateLimiter {
-	rl := &rateLimiter{limit: limit, window: per, hits: make(map[string]*window), key: key}
+func newRateLimiter(bucket string, limit int, per time.Duration, key func(*http.Request) string, store RateStore) *rateLimiter {
+	rl := &rateLimiter{bucket: bucket, limit: limit, window: per, hits: make(map[string]*window), key: key, store: store}
 	go func() { // evict stale entries so the map can't grow without bound
 		for range time.Tick(per) {
 			rl.mu.Lock()
@@ -45,7 +57,20 @@ func newRateLimiter(limit int, per time.Duration, key func(*http.Request) string
 	return rl
 }
 
-func (rl *rateLimiter) allow(key string) bool {
+func (rl *rateLimiter) allow(ctx context.Context, key string) bool {
+	if rl.store != nil {
+		n, err := rl.store.Hit(ctx, rl.bucket, key, rl.window)
+		if err == nil {
+			return n <= rl.limit
+		}
+		rl.warnOnce.Do(func() {
+			slog.Error("shared rate limit unavailable; using this process's own counters", "bucket", rl.bucket, "err", err)
+		})
+	}
+	return rl.allowLocal(key)
+}
+
+func (rl *rateLimiter) allowLocal(key string) bool {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 	w, ok := rl.hits[key]
@@ -59,7 +84,7 @@ func (rl *rateLimiter) allow(key string) bool {
 
 func (rl *rateLimiter) wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !rl.allow(rl.key(r)) {
+		if !rl.allow(r.Context(), rl.key(r)) {
 			w.Header().Set("Retry-After", "60")
 			writeError(w, http.StatusTooManyRequests, "too many attempts, try again in a minute")
 			return
@@ -68,18 +93,21 @@ func (rl *rateLimiter) wrap(next http.Handler) http.Handler {
 	})
 }
 
-// clientIP returns the caller's address for rate limiting.
+// clientIP returns the caller's address for rate limiting and audit.
 //
-// Behind a load balancer every request arrives from the balancer's address, so
-// all users would share one limit. Set CLIENT_IP_HEADER to the header your
-// platform overwrites with the real client IP (DigitalOcean App Platform:
-// DO-Connecting-IP). Only use a header the proxy sets itself: trusting a
-// client-supplied one such as X-Forwarded-For lets anyone dodge the limiter.
+// Behind a reverse proxy every request arrives from the proxy's address, so
+// all users would share one limit. Set CLIENT_IP_HEADER to a header the proxy
+// overwrites with the address it accepted the connection from (the EC2
+// Caddyfile sets X-Client-IP; DigitalOcean App Platform sets
+// DO-Connecting-IP). Only a single, valid IP is trusted: a list means some
+// hop appended to a value the client sent, which anyone can forge, so the
+// socket address is used instead.
 func (h *Handler) clientIP(r *http.Request) string {
 	if h.ClientIPHeader != "" {
-		if v := strings.TrimSpace(r.Header.Get(h.ClientIPHeader)); v != "" {
-			first, _, _ := strings.Cut(v, ",")
-			return strings.TrimSpace(first)
+		if v := strings.TrimSpace(r.Header.Get(h.ClientIPHeader)); v != "" && !strings.Contains(v, ",") {
+			if ip := net.ParseIP(v); ip != nil {
+				return ip.String()
+			}
 		}
 	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
@@ -87,6 +115,30 @@ func (h *Handler) clientIP(r *http.Request) string {
 		return r.RemoteAddr
 	}
 	return host
+}
+
+// ---- Request bodies ----------------------------------------------------------
+
+// Body limits. Every request body is capped before a handler reads it, so a
+// form post can't stream megabytes into ParseForm. Routes that take files
+// set their own, larger limit; this is the ceiling for them too.
+const (
+	maxFormBody   = 1 << 20  // urlencoded forms and JSON
+	maxUploadBody = 12 << 20 // multipart uploads and CSV import; handlers cap lower
+)
+
+func limitBodies(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Body != nil && r.Body != http.NoBody {
+			limit := int64(maxFormBody)
+			if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/") ||
+				strings.HasPrefix(r.Header.Get("Content-Type"), "text/csv") {
+				limit = maxUploadBody
+			}
+			r.Body = http.MaxBytesReader(w, r.Body, limit)
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // ---- Request deadlines -------------------------------------------------------

@@ -20,7 +20,7 @@ func NewRouter(h *Handler, publicDir, allowedOrigin string) http.Handler {
 
 	// Per client IP. Event venues often put many phones behind one address,
 	// so this limit must cover a crowd signing in at once.
-	loginLimit := newRateLimiter(h.LoginRatePerMin, time.Minute, h.clientIP)
+	loginLimit := newRateLimiter("login", h.LoginRatePerMin, time.Minute, h.clientIP, h.RateStore)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
@@ -41,7 +41,7 @@ func NewRouter(h *Handler, publicDir, allowedOrigin string) http.Handler {
 	// Static PWA and portal
 	mux.Handle("/", staticFiles(publicDir))
 
-	return recoverer(logging(securityHeaders(h.secureCookies(), cors(allowedOrigin, deadlines(mux)))))
+	return recoverer(logging(securityHeaders(h.secureCookies(), cors(allowedOrigin, deadlines(limitBodies(mux))))))
 }
 
 func noCache(next http.Handler) http.Handler {

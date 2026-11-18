@@ -11,10 +11,15 @@ import (
 	"github.com/mayura-andrew/event-pass-platform/internal/domain"
 )
 
-// tenantRole is the database role tenant transactions run as. It has no
-// BYPASSRLS, so the policies in migration 007 apply even though the API
-// connects as the tables' owner.
-const tenantRole = "event_pass_tenant"
+// Database roles (migrations 007 and 017). The API logs in as a member of
+// event_pass_api, which can read only the sign-in tables directly; every
+// other statement runs after SET LOCAL ROLE to one of these. Neither has
+// BYPASSRLS, and the tables FORCE Row Level Security, so a query that skips
+// both helpers fails instead of reading another tenant.
+const (
+	tenantRole = "event_pass_tenant"
+	systemRole = "event_pass_system"
+)
 
 // withTenant runs fn in a transaction scoped to one org and account: wall 2 of
 // tenant isolation. Row Level Security then limits every statement in fn to
@@ -34,6 +39,25 @@ func withTenant(ctx context.Context, db *sql.DB, orgID, accountID string, fn fun
 		`SELECT set_config('app.org_id', $1, true), set_config('app.account_id', $2, true)`,
 		orgID, accountID); err != nil {
 		return fmt.Errorf("set tenant: %w", err)
+	}
+	if err := fn(tx); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// withSystem runs fn as event_pass_system: cross-tenant work that must stay
+// privileged (the outbox and integration workers, lookups by a token that is
+// itself the credential, health). Every caller is listed in
+// systemCallers in tenant_allowlist_test.go; adding one is a review decision.
+func withSystem(ctx context.Context, db *sql.DB, fn func(*sql.Tx) error) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `SET LOCAL ROLE `+systemRole); err != nil {
+		return fmt.Errorf("switch to system role: %w", err)
 	}
 	if err := fn(tx); err != nil {
 		return err

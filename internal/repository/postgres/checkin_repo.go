@@ -373,7 +373,17 @@ func buckets(ctx context.Context, tx *sql.Tx, q string, args ...any) ([]domain.B
 // since the given time: the live feed's poll. System path: one query serves
 // every connected dashboard.
 func (r *CheckinRepo) ActiveEvents(ctx context.Context, since time.Time) ([]string, error) {
-	rows, err := r.db.QueryContext(ctx, `
+	var out []string
+	err := withSystem(ctx, r.db, func(tx *sql.Tx) error {
+		var err error
+		out, err = activeEvents(ctx, tx, since)
+		return err
+	})
+	return out, err
+}
+
+func activeEvents(ctx context.Context, tx *sql.Tx, since time.Time) ([]string, error) {
+	rows, err := tx.QueryContext(ctx, `
 		SELECT event_id FROM checkins WHERE created_at > $1 OR undone_at > $1
 		UNION
 		SELECT event_id FROM event_participants WHERE updated_at > $1 OR registered_at > $1

@@ -3,10 +3,13 @@
   <h1>Finish signing in</h1>
   <p class="lede">Continue to sign in on this device.</p>
   {{/* A button rather than signing in on page load: mail scanners open
-       links in emails, which would use up the one-time link. */}}
-  <form method="post" action="/auth/email/verify">
-    <input type="hidden" name="token" value="{{.Data.Token}}">
+       links in emails, which would use up the one-time link. The token
+       arrives in the URL fragment; verify.js copies it into the form. */}}
+  <form method="post" action="/auth/email/verify" id="verify-form">
+    <input type="hidden" name="token" id="verify-token" value="{{.Data.Token}}">
     <button class="btn btn-block" type="submit">Sign in</button>
   </form>
+  <p class="hint" id="verify-missing" hidden>This link is incomplete. Open it from your email again, or <a href="/login">request a new one</a>.</p>
 </section>
+<script src="/static/js/verify.js" defer></script>
 {{end}}

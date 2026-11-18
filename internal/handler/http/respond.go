@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/mayura-andrew/event-pass-platform/internal/domain"
+	"github.com/mayura-andrew/event-pass-platform/internal/service"
 )
 
 type errorBody struct {
@@ -47,6 +48,8 @@ func writeDomainError(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, http.StatusServiceUnavailable, strings.TrimPrefix(err.Error(), domain.ErrEmailUnavailable.Error()+": "))
 	case errors.Is(err, domain.ErrUnauthenticated):
 		writeError(w, http.StatusUnauthorized, domain.ErrUnauthenticated.Error())
+	case errors.Is(err, service.ErrReauth):
+		writeJSON(w, http.StatusForbidden, errorBody{Error: "sign in again to do this", Code: "REAUTH"})
 	case errors.Is(err, domain.ErrForbidden):
 		writeError(w, http.StatusForbidden, strings.TrimPrefix(err.Error(), domain.ErrForbidden.Error()+": "))
 	case errors.Is(err, domain.ErrRateLimited):

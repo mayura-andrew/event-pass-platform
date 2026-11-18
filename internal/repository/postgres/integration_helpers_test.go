@@ -11,7 +11,7 @@ import (
 
 func openTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	dsn := os.Getenv("EVENT_PASS_TEST_DATABASE_URL")
+	dsn := testDSN()
 	if dsn == "" {
 		t.Skip("EVENT_PASS_TEST_DATABASE_URL not set")
 	}
@@ -28,3 +28,5 @@ func randTag() string {
 	_, _ = rand.Read(b[:])
 	return hex.EncodeToString(b[:])
 }
+
+func testDSN() string { return os.Getenv("EVENT_PASS_TEST_DATABASE_URL") }

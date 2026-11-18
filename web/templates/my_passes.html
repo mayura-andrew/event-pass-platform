@@ -1,9 +1,24 @@
 {{define "content"}}
 <h1>My passes</h1>
 <p class="lede">Every event you've registered for with {{.Account.Email}}.</p>
-{{if .Data}}
+{{with .Data.Claims}}
+<section class="card" aria-labelledby="claims-h">
+  <h2 id="claims-h">Registrations waiting for you</h2>
+  <p class="muted">These were made with your email address. Add the ones you made yourself. If you don't recognise one, choose "Not me": it stays hidden from your account, and its answers are never shown to you.</p>
+  <ul class="claims">
+    {{range .}}
+    <li>
+      <strong>{{.EventName}}</strong> <span class="muted">· {{.OrgName}} · registered {{.RegisteredAt.Format "2 Jan 2006"}}</span>
+      <form method="post" action="/me/claims/{{.ParticipantID}}" class="inline"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="btn" type="submit">This is mine</button></form>
+      <form method="post" action="/me/claims/{{.ParticipantID}}/decline" class="inline"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="btn btn-quiet" type="submit">Not me</button></form>
+    </li>
+    {{end}}
+  </ul>
+</section>
+{{end}}
+{{if .Data.Passes}}
 <ul class="cards grid" aria-label="Your passes">
-  {{range .Data}}
+  {{range .Data.Passes}}
   <li class="card event-card{{if not .Upcoming}} past{{end}}">
     <div class="ec-top"><span class="pstatus pstatus-{{.Participant.Status}}">{{statusWord .Participant.Status}}</span>{{if not .Upcoming}}<span class="chip">Finished</span>{{end}}</div>
     <h3><a href="/me/passes/{{.Participant.ID}}">{{.Event.Name}}</a></h3>
@@ -13,7 +28,7 @@
   </li>
   {{end}}
 </ul>
-{{else}}
-<div class="card empty">No passes yet. When you register for an event with this email address, its pass appears here.</div>
+{{else if not .Data.Claims}}
+<div class="card empty">No passes yet. When you register for an event with this email address, it appears here for you to add.</div>
 {{end}}
 {{end}}

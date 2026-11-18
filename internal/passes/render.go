@@ -143,7 +143,7 @@ func PNG(card Card) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// PDF renders the pass on an A6 page (105 x 148 mm), centered, for printing
+// PDF renders the pass on a page sized for its preset (see PrintSizes), for printing
 // at actual size. One losslessly compressed image (Flate with PNG "Up"
 // row prediction), so no PDF library is needed and artwork prints as
 // sharp as it renders — JPEG would blur fine text and colored edges.
@@ -179,15 +179,18 @@ func PDF(card Card) ([]byte, error) {
 		return nil, err
 	}
 	const mm = 72 / 25.4
-	// Phone designs print centered on A6; badges fill a 4 x 3 inch page.
-	pageW, pageH := 105*mm, 148*mm
-	imgH := pageH - 8*mm
-	imgW := imgH * float64(w) / float64(h)
-	x, y := (pageW-imgW)/2, 4*mm
-	if w > h {
-		pageW, pageH = 101.6*mm, 76.2*mm
-		imgW, imgH, x, y = pageW, pageH, 0, 0
+	// The page follows the design's preset (PrintSizes): phone passes
+	// centered on A6, badges and 5.5 x 8 cm cards at exactly their size.
+	preset := Classic().Size.Preset
+	if card.Design != nil {
+		preset = card.Design.Size.Preset
 	}
+	ps, ok := PrintSizes[preset]
+	if !ok {
+		ps = PrintSizes["phone"]
+	}
+	pageW, pageH := ps.PageW*mm, ps.PageH*mm
+	imgW, imgH, x, y := ps.ImgW*mm, ps.ImgH*mm, ps.X*mm, ps.Y*mm
 	content := fmt.Sprintf("q %.3f 0 0 %.3f %.3f %.3f cm /Im0 Do Q\n", imgW, imgH, x, y)
 
 	var out bytes.Buffer

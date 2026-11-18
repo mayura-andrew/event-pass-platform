@@ -1,7 +1,9 @@
 package service
 
 import (
+	"crypto/rand"
 	"encoding/csv"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -61,6 +63,11 @@ func ParseParticipantCSV(r io.Reader) ([]domain.EventParticipant, error) {
 
 	participants := make([]domain.EventParticipant, 0)
 	seen := make(map[string]bool)
+	var rnd [6]byte
+	if _, err := rand.Read(rnd[:]); err != nil {
+		return nil, err
+	}
+	batch := hex.EncodeToString(rnd[:])
 	for line := 2; ; line++ {
 		record, err := cr.Read()
 		if errors.Is(err, io.EOF) {
@@ -86,7 +93,9 @@ func ParseParticipantCSV(r io.Reader) ([]domain.EventParticipant, error) {
 				return nil, invalid("CSV row %d: enter a valid Email address", line)
 			}
 		} else {
-			email = fmt.Sprintf("imported-%d@event-pass.local", line-1)
+			// Unique across imports, so a second CSV without emails
+			// doesn't collide with the first one's rows.
+			email = fmt.Sprintf("imported-%d-%s%s", line-1, batch, domain.PlaceholderEmailDomain)
 		}
 		if seen[email] {
 			return nil, invalid("CSV row %d: Email %q appears more than once", line, email)

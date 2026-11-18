@@ -40,7 +40,7 @@
     <section class="card" aria-labelledby="resend-title">
       <h2 id="resend-title">Re-send passes</h2>
       <p class="muted">Email the current design to {{plural $d.Registered "registered participant" "registered participants"}}. Their QR codes stay the same.</p>
-      <form method="post" action="{{$d.Base}}/pass/resend">
+      <form method="post" action="{{$d.Base}}/pass/resend" onsubmit="return confirm('Send pass emails to all registered participants?')">
         <input type="hidden" name="csrf" value="{{$csrf}}">
         <button class="btn btn-line" type="submit"{{if eq $d.Registered 0}} disabled{{end}}>Re-send {{plural $d.Registered "pass" "passes"}}</button>
       </form>

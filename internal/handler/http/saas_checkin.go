@@ -142,7 +142,7 @@ func (h *Handler) scanReply(w http.ResponseWriter, r *http.Request, e *eventReq,
 		return
 	}
 	if res.Result == domain.ScanRecorded && h.LiveFeed != nil {
-		h.LiveFeed.Notify(e.event.ID) // dashboards on this server update at once
+		h.LiveFeed.Publish(e.event.ID) // dashboards on every replica update at once
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, res)
@@ -151,7 +151,7 @@ func (h *Handler) scanReply(w http.ResponseWriter, r *http.Request, e *eventReq,
 func (h *Handler) apiUndo(w http.ResponseWriter, r *http.Request, e *eventReq) {
 	err := h.Checkins.Undo(r.Context(), e.es, r.PathValue("checkin"))
 	if err == nil && h.LiveFeed != nil {
-		h.LiveFeed.Notify(e.event.ID)
+		h.LiveFeed.Publish(e.event.ID)
 	}
 	noContent(w, r, err)
 }

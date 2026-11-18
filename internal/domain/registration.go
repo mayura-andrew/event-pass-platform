@@ -2,6 +2,7 @@ package domain
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 )
 
@@ -67,16 +68,19 @@ type FieldConfig struct {
 
 // EventParticipant is one person's registration for one event.
 type EventParticipant struct {
-	ID          string         `json:"id"`
-	EventID     string         `json:"event_id"`
-	AccountID   string         `json:"account_id,omitempty"`
-	Email       string         `json:"email"`
-	FullName    string         `json:"full_name"`
-	Status      string         `json:"status"`
-	PassID      string         `json:"pass_id"`
-	Answers     map[string]any `json:"answers"`
-	Source      string         `json:"source"`
-	ExternalRef string         `json:"-"` // e.g. a Google Form response ID, imported once
+	ID        string `json:"id"`
+	EventID   string `json:"event_id"`
+	AccountID string `json:"account_id,omitempty"`
+	Email     string `json:"email"`
+	FullName  string `json:"full_name"`
+	Status    string `json:"status"`
+	PassID    string `json:"pass_id"`
+	// PassGeneration is signed into the QR code; reissuing the pass bumps
+	// it so older QR codes stop scanning (migration 018).
+	PassGeneration int            `json:"-"`
+	Answers        map[string]any `json:"answers"`
+	Source         string         `json:"source"`
+	ExternalRef    string         `json:"-"` // e.g. a Google Form response ID, imported once
 	// BirthDate is the answer to the event's birth date question
 	// (YYYY-MM-DD, "" when not asked or not given), and Age the person's age
 	// on the event's cut-off date (nil without a birth date).
@@ -84,6 +88,9 @@ type EventParticipant struct {
 	Age          *int      `json:"age,omitempty"`
 	RegisteredAt time.Time `json:"registered_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
+	// PassMail is the status of the newest pass email (see PassMail*),
+	// filled in on the organizer's participant list.
+	PassMail string `json:"pass_email,omitempty"`
 }
 
 // RegistrationSettings are the organizer's choices for an event's form.
@@ -142,6 +149,26 @@ const CountMinors = "minors"
 
 // Minor says whether the person is under 18 on the event's cut-off date.
 func (p EventParticipant) Minor() bool { return p.Age != nil && *p.Age < 18 }
+
+// PlaceholderEmailDomain is the address domain given to imported
+// participants without an email: unique per event, but never mailed.
+const PlaceholderEmailDomain = "@event-pass.local"
+
+// IsPlaceholderEmail says whether an address is a stand-in, not a mailbox.
+func IsPlaceholderEmail(email string) bool { return strings.HasSuffix(email, PlaceholderEmailDomain) }
+
+// HasEmail says whether the participant can be emailed.
+func (p EventParticipant) HasEmail() bool { return p.Email != "" && !IsPlaceholderEmail(p.Email) }
+
+// Pass email states (PassMail): the newest pass email's outbox status, or
+// PassMailNone when no pass has been emailed yet.
+const (
+	PassMailNone    = ""
+	PassMailQueued  = "queued"
+	PassMailSending = "sending"
+	PassMailSent    = "sent"
+	PassMailFailed  = "failed"
+)
 
 // ParticipantCounts are the per-status totals for an event.
 type ParticipantCounts map[string]int

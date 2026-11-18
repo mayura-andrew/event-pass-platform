@@ -46,10 +46,16 @@ type Account struct {
 
 // Session is a signed-in browser. The token itself is never stored.
 type Session struct {
-	ID        string
-	AccountID string
-	CSRFToken string
-	ExpiresAt time.Time
+	ID        string    `json:"id"`
+	AccountID string    `json:"-"`
+	CSRFToken string    `json:"-"`
+	ExpiresAt time.Time `json:"expires_at"`
+	// CreatedAt is when this sign-in happened (step-up checks it); LastSeenAt
+	// is refreshed at most every few minutes (idle timeout checks it).
+	CreatedAt  time.Time `json:"created_at"`
+	LastSeenAt time.Time `json:"last_seen_at"`
+	UserAgent  string    `json:"user_agent"`
+	IP         string    `json:"ip"`
 }
 
 type Org struct {

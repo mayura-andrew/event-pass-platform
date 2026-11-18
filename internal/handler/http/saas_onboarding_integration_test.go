@@ -136,8 +136,20 @@ func TestHealthCheck(t *testing.T) {
 	h := service.NewHealth(postgres.NewHealthRepo(env.db), true)
 	h.EmailLate = 1000 * time.Hour // other tests leave emails queued (no worker runs)
 	env.h.Health = h
+	// Without the monitor token: the status word only.
 	status, b := anon.api("GET", "/api/v1/health", nil)
-	if status != http.StatusOK || !strings.Contains(string(b), `"status":"ok"`) || !strings.Contains(string(b), `"database":"ok"`) {
-		t.Errorf("health: HTTP %d %s", status, b)
+	if status != http.StatusOK || !strings.Contains(string(b), `"status":"ok"`) || strings.Contains(string(b), `"database"`) {
+		t.Errorf("anonymous health: HTTP %d %s, want status only", status, b)
+	}
+	// With it: the checks.
+	env.h.HealthToken = "monitor-" + env.prefix
+	req, _ := http.NewRequest("GET", env.srv.URL+"/api/v1/health", nil)
+	req.Header.Set("Authorization", "Bearer "+env.h.HealthToken)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page := body(res); res.StatusCode != http.StatusOK || !strings.Contains(page, `"database":"ok"`) {
+		t.Errorf("monitor health: HTTP %d %s", res.StatusCode, page)
 	}
 }

@@ -383,10 +383,11 @@ func revokeInvite(ctx context.Context, db *sql.DB, orgID, accountID, eventID, in
 }
 
 // InviteByToken finds an invite by its emailed token. The token is the
-// credential, so this runs before any org is known, outside withTenant.
+// credential, so this runs before any org is known, through withSystem.
 func (r *OrgRepo) InviteByToken(ctx context.Context, tokenHash []byte) (*domain.InviteDetails, error) {
 	var d domain.InviteDetails
-	err := r.db.QueryRowContext(ctx, `
+	err := withSystem(ctx, r.db, func(tx *sql.Tx) error {
+		return tx.QueryRowContext(ctx, `
 		SELECT `+inviteCols+`, o.slug, o.name, COALESCE(e.name, ''),
 		       i.accepted_at IS NOT NULL, i.revoked_at IS NOT NULL OR e.deleted_at IS NOT NULL
 		FROM invites i
@@ -394,8 +395,9 @@ func (r *OrgRepo) InviteByToken(ctx context.Context, tokenHash []byte) (*domain.
 		LEFT JOIN events e ON e.id = i.event_id
 		LEFT JOIN accounts a ON a.id = i.invited_by
 		WHERE i.token_hash = $1 AND o.status = 'active'`, tokenHash,
-	).Scan(&d.ID, &d.OrgID, &d.EventID, &d.Email, &d.Role, &d.InvitedBy, &d.CreatedAt, &d.ExpiresAt,
-		&d.OrgSlug, &d.OrgName, &d.EventName, &d.Accepted, &d.Revoked)
+		).Scan(&d.ID, &d.OrgID, &d.EventID, &d.Email, &d.Role, &d.InvitedBy, &d.CreatedAt, &d.ExpiresAt,
+			&d.OrgSlug, &d.OrgName, &d.EventName, &d.Accepted, &d.Revoked)
+	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, domain.ErrNotFound
 	}

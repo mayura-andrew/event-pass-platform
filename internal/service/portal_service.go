@@ -12,6 +12,9 @@ import (
 type PortalStore interface {
 	MyPasses(ctx context.Context, as authz.AccountScope) ([]domain.PassContext, error)
 	MyPass(ctx context.Context, as authz.AccountScope, participantID string) (*domain.PassContext, error)
+	PendingClaims(ctx context.Context, as authz.AccountScope) ([]domain.PassClaim, error)
+	ClaimPass(ctx context.Context, as authz.AccountScope, participantID string) error
+	DeclineClaim(ctx context.Context, as authz.AccountScope, participantID string) error
 }
 
 // PortalService is "My passes": one account, every registration across orgs.
@@ -25,6 +28,22 @@ func (s *PortalService) MyPasses(ctx context.Context, as authz.AccountScope) ([]
 
 func (s *PortalService) MyPass(ctx context.Context, as authz.AccountScope, participantID string) (*domain.PassContext, error) {
 	return s.store.MyPass(ctx, as, participantID)
+}
+
+// PendingClaims are registrations made with the account's email that it has
+// not confirmed yet.
+func (s *PortalService) PendingClaims(ctx context.Context, as authz.AccountScope) ([]domain.PassClaim, error) {
+	return s.store.PendingClaims(ctx, as)
+}
+
+// ClaimPass links a registration made with the account's email ("This is
+// mine"). DeclineClaim hides it ("Not me").
+func (s *PortalService) ClaimPass(ctx context.Context, as authz.AccountScope, participantID string) error {
+	return s.store.ClaimPass(ctx, as, participantID)
+}
+
+func (s *PortalService) DeclineClaim(ctx context.Context, as authz.AccountScope, participantID string) error {
+	return s.store.DeclineClaim(ctx, as, participantID)
 }
 
 // ParticipantAnswers are the answers a participant may see on their own

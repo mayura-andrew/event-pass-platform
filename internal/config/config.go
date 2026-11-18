@@ -12,6 +12,11 @@ import (
 )
 
 type Config struct {
+	// Env is APP_ENV: "production" makes the process refuse to start with
+	// development fallbacks (derived keys, plain-HTTP links, no client IP
+	// header, an owner database login). Anything else is development.
+	Env string
+
 	Port             string // HTTP listen port
 	DatabaseURL      string // Supabase Postgres connection string
 	JWTSecret        []byte // signing key for session and development encryption
@@ -46,6 +51,7 @@ type Config struct {
 	GoogleClientSecret string
 	ProductName        string        // platform name in pages and emails
 	SessionTTL         time.Duration // signed-in session lifetime
+	SessionIdle        time.Duration // sign out after this long unused (0: never)
 
 	// PlatformAdminEmails (PLATFORM_ADMIN_EMAILS, comma-separated) are the
 	// only accounts that may create organizations. Everyone else signs in
@@ -64,6 +70,15 @@ type Config struct {
 
 	// Public status page (Better Stack, Instatus, ...), linked from help.
 	StatusPageURL string
+	// HEALTH_TOKEN: bearer token an uptime monitor sends to see the detailed
+	// /api/v1/health checks. Empty: only the status word is ever shown.
+	HealthToken string
+	// BirthDateRetention (BIRTH_DATE_RETENTION): how long after an event
+	// ends its participants' birth dates are kept. 0 keeps them.
+	BirthDateRetention time.Duration
+	// RunWorkers (RUN_WORKERS, default true): run the background jobs in the
+	// API process. Set false when cmd/worker runs them.
+	RunWorkers bool
 
 	// Map tiles for the participant map (beta): a {z}/{x}/{y} URL template
 	// and its attribution (HTML). Default: OpenStreetMap's own servers,
@@ -74,6 +89,7 @@ type Config struct {
 
 func Load() (*Config, error) {
 	c := &Config{
+		Env:              strings.ToLower(strings.TrimSpace(getenv("APP_ENV", "development"))),
 		Port:             getenv("PORT", "8080"),
 		DatabaseURL:      os.Getenv("DATABASE_URL"),
 		JWTSecret:        []byte(os.Getenv("JWT_SECRET")),
@@ -96,10 +112,18 @@ func Load() (*Config, error) {
 		PassSigningKeys:    os.Getenv("PASS_SIGNING_KEYS"),
 		IntegrationsKey:    os.Getenv("INTEGRATIONS_KEY"),
 		StatusPageURL:      os.Getenv("STATUS_PAGE_URL"),
+		HealthToken:        os.Getenv("HEALTH_TOKEN"),
 		MapTileURL:         os.Getenv("MAP_TILE_URL"),
 		MapTileAttribution: os.Getenv("MAP_TILE_ATTRIBUTION"),
 	}
 	c.ClientIPHeader = os.Getenv("CLIENT_IP_HEADER")
+	switch strings.ToLower(getenv("RUN_WORKERS", "true")) {
+	case "true", "1", "yes":
+		c.RunWorkers = true
+	case "false", "0", "no":
+	default:
+		return nil, errors.New("RUN_WORKERS must be true or false")
+	}
 	for _, e := range strings.Split(os.Getenv("PLATFORM_ADMIN_EMAILS"), ",") {
 		if e = strings.ToLower(strings.TrimSpace(e)); e != "" {
 			c.PlatformAdminEmails = append(c.PlatformAdminEmails, e)
@@ -149,6 +173,12 @@ func Load() (*Config, error) {
 	if c.SessionTTL, err = time.ParseDuration(getenv("SESSION_TTL", "12h")); err != nil || c.SessionTTL < 5*time.Minute {
 		return nil, errors.New("SESSION_TTL must be a duration of at least 5m (e.g. 12h)")
 	}
+	if c.SessionIdle, err = time.ParseDuration(getenv("SESSION_IDLE_TIMEOUT", "4h")); err != nil || (c.SessionIdle != 0 && c.SessionIdle < 10*time.Minute) {
+		return nil, errors.New("SESSION_IDLE_TIMEOUT must be 0 (off) or a duration of at least 10m (e.g. 4h)")
+	}
+	if c.BirthDateRetention, err = time.ParseDuration(getenv("BIRTH_DATE_RETENTION", "720h")); err != nil || c.BirthDateRetention < 0 {
+		return nil, errors.New("BIRTH_DATE_RETENTION must be a duration (e.g. 720h for 30 days, 0 to keep)")
+	}
 	if (c.GoogleClientID == "") != (c.GoogleClientSecret == "") {
 		return nil, errors.New("set both GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET, or neither")
 	}
@@ -168,7 +198,39 @@ func Load() (*Config, error) {
 	if len(c.JWTSecret) < 32 {
 		return nil, errors.New("JWT_SECRET must be at least 32 bytes")
 	}
+	if c.Production() {
+		if err := c.checkProduction(); err != nil {
+			return nil, err
+		}
+	}
 	return c, nil
+}
+
+// Production reports whether APP_ENV=production.
+func (c *Config) Production() bool { return c.Env == "production" }
+
+// checkProduction fails closed: every development fallback that would weaken
+// a production deployment is a startup error rather than a log line.
+func (c *Config) checkProduction() error {
+	var problems []string
+	if strings.TrimSpace(c.PassSigningKeys) == "" {
+		problems = append(problems, "PASS_SIGNING_KEYS is required (pass QR keys must not be derived from JWT_SECRET)")
+	}
+	if strings.TrimSpace(c.IntegrationsKey) == "" {
+		problems = append(problems, "INTEGRATIONS_KEY is required (Google tokens must not be encrypted with a key derived from JWT_SECRET)")
+	}
+	if u, err := url.Parse(c.AppBaseURL); err != nil || u.Scheme != "https" || u.Host == "" {
+		problems = append(problems, "APP_BASE_URL must be the site's https:// URL")
+	}
+	if c.ClientIPHeader == "" {
+		problems = append(problems, "CLIENT_IP_HEADER is required (the header your proxy overwrites with the client IP; rate limits are per client)")
+	} else if strings.EqualFold(c.ClientIPHeader, "X-Forwarded-For") {
+		problems = append(problems, "CLIENT_IP_HEADER must not be X-Forwarded-For: clients can prepend to it; use a header the proxy overwrites (e.g. X-Client-IP)")
+	}
+	if len(problems) > 0 {
+		return errors.New("APP_ENV=production refuses to start: " + strings.Join(problems, "; "))
+	}
+	return nil
 }
 
 func validateAppBaseURL(u *url.URL) error {

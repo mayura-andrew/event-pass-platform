@@ -8,6 +8,12 @@ type Handler struct {
 	ClientIPHeader  string
 	LoginRatePerMin int
 	PassRatePerMin  int
+	RateStore       RateStore // shared counters (Postgres); nil: per-process only
+
+	// HealthToken, when set, is required (Authorization: Bearer) to see the
+	// detailed /api/v1/health checks. Without it the endpoint says only
+	// whether the service is up.
+	HealthToken string
 
 	// Values exposed to browsers through the public configuration endpoint.
 	MapsAPIKey string

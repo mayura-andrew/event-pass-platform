@@ -23,6 +23,13 @@
       <a class="btn btn-line" href="/me/passes/{{$p.ID}}/pass.pdf?download=1">Print-ready PDF</a>
     </div>
     <p class="hint">Print the PDF at actual size (100%).</p>
+    {{if ne $p.Status "cancelled"}}
+    <form method="post" action="/me/passes/{{$p.ID}}/reissue" class="mt-24">
+      <input type="hidden" name="csrf" value="{{$.CSRF}}">
+      <button class="btn btn-quiet" type="submit">Lost your pass? Get a new QR code</button>
+      <p class="hint">Your current QR code, and any photo or printout of it, stops working.</p>
+    </form>
+    {{end}}
   </section>
 </div>
 {{with .Data.Profile}}{{$pr := .}}{{$f := $.Data.ProfileForm}}{{$errs := $.Data.ProfileErrors}}

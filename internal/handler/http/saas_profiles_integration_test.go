@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/mayura-andrew/event-pass-platform/internal/domain"
+	"github.com/mayura-andrew/event-pass-platform/internal/service"
 )
 
 type mapResponse struct {
@@ -46,7 +47,7 @@ func TestParticipantMap(t *testing.T) {
 	for i, name := range []string{"p00", "p01", "p02"} {
 		u := env.newBrowser(t, name)
 		u.signIn("")
-		u.get("/me").Body.Close() // links the registration to the account
+		u.claimAll() // links the registration to the account
 		people[f.people[i].ID] = u
 	}
 	annID, bobID, caraID := f.people[0].ID, f.people[1].ID, f.people[2].ID
@@ -116,8 +117,15 @@ func TestParticipantMap(t *testing.T) {
 		t.Fatalf("share: HTTP %d %s", status, b)
 	}
 	_, m = getMap(t, bob, bobID)
-	if a := findPerson(m, annID); a == nil || a.Lat == nil || *a.Lat != 6.9010 {
-		t.Fatalf("ann not on bob's map: %+v", a)
+	wantLat, wantLng, _ := service.SnapLocation(6.9010, 79.8722)
+	if a := findPerson(m, annID); a == nil || a.Lat == nil || *a.Lat != wantLat || *a.Lng != wantLng {
+		t.Fatalf("ann not on bob's map at her grid cell: %+v", a)
+	}
+	// Only the grid cell is stored, never the precise position.
+	var storedLat float64
+	env.db.QueryRowContext(ctx, `SELECT lat FROM participant_locations WHERE participant_id = $1`, annID).Scan(&storedLat)
+	if storedLat == 6.9010 {
+		t.Error("precise latitude stored")
 	}
 	// Ann never sees Bob: his profile is private.
 	_, m = getMap(t, ann, annID)

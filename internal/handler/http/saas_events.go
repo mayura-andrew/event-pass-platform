@@ -64,6 +64,7 @@ var eventRoutes = []eventRoute{
 	{"GET", evPage + "/activity", false, authz.EventViewAudit, "", (*Handler).eventActivityPage},
 	{"GET", evPage + "/settings", false, authz.EventEdit, "", (*Handler).eventSettingsPage},
 	{"POST", evPage + "/settings", false, authz.EventTransfer, "event.settings", (*Handler).eventSettingsPost},
+	{"POST", evPage + "/settings/pass-email", false, authz.EventEdit, "event.pass_email", (*Handler).passEmailSettingsPost},
 	{"POST", evPage + "/archive", false, authz.EventEdit, "event.archive", (*Handler).archivePost},
 	{"POST", evPage + "/unarchive", false, authz.EventEdit, "event.unarchive", (*Handler).unarchivePost},
 	{"POST", evPage + "/delete", false, authz.EventDelete, "event.delete", (*Handler).deletePost},
@@ -603,6 +604,7 @@ var eventNotices = map[string]string{
 	"restored":   "Event restored from Trash.",
 	"transfer":   "Ownership transferred. You keep editor access.",
 	"settings":   "Settings saved.",
+	"pass-email": "Pass email settings saved.",
 	"starred":    "Starred.",
 	"unstarred":  "Removed from Starred.",
 }
@@ -770,6 +772,12 @@ func (h *Handler) eventSettingsPost(w http.ResponseWriter, r *http.Request, e *e
 		ViewersCanExport: r.PostFormValue("viewers_can_export") == "on",
 	}
 	h.eventAction(w, r, e, "settings", "settings", h.Events.UpdateSettings(r.Context(), e.es, st))
+}
+
+func (h *Handler) passEmailSettingsPost(w http.ResponseWriter, r *http.Request, e *eventReq) {
+	err := h.Events.UpdatePassEmail(r.Context(), e.es,
+		r.PostFormValue("pass_email_subject"), r.PostFormValue("pass_email_body"))
+	h.eventAction(w, r, e, "settings", "pass-email", err)
 }
 
 func (h *Handler) archivePost(w http.ResponseWriter, r *http.Request, e *eventReq) {

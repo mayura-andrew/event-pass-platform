@@ -17,9 +17,15 @@ type ActivityStore interface {
 // current build's ScanFeed, and for the same reason: polling works through
 // every Supabase connection mode, where LISTEN/NOTIFY does not
 // (docs/decisions/0008-checkin-and-live-feed.md).
+//
+// With several API replicas a change made on one reaches dashboards on the
+// others at the next poll. Broadcast (postgres NOTIFY, when the connection
+// supports it) makes that immediate; the poll stays as the fallback.
 type EventFeed struct {
 	store    ActivityStore
 	Interval time.Duration
+	// Broadcast tells the other replicas an event changed (optional).
+	Broadcast func(ctx context.Context, eventID string) error
 
 	mu   sync.Mutex
 	subs map[string]map[chan struct{}]struct{} // event ID -> subscribers
@@ -60,6 +66,22 @@ func (f *EventFeed) Notify(eventID string) {
 		default: // a signal is already pending
 		}
 	}
+}
+
+// Publish signals this server's subscribers now and broadcasts the change
+// to the other replicas, after a change made by this server.
+func (f *EventFeed) Publish(eventID string) {
+	f.Notify(eventID)
+	if f.Broadcast == nil {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if err := f.Broadcast(ctx, eventID); err != nil {
+			slog.Debug("event feed broadcast", "err", err)
+		}
+	}()
 }
 
 func (f *EventFeed) watching() bool {

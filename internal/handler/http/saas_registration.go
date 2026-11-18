@@ -46,6 +46,8 @@ func init() {
 		{"GET", evPage + "/participants", false, authz.EventDashboard, "", (*Handler).participantsPage},
 		{"POST", evPage + "/participants/import", false, authz.EventEdit, "participant.import", (*Handler).participantImportPost},
 		{"POST", evPage + "/participants/{participant}/status", false, authz.EventEdit, "participant.status", (*Handler).participantStatusPost},
+		{"POST", evPage + "/participants/send-passes", false, authz.EventEdit, "participant.pass.send", (*Handler).sendPassesPost},
+		{"POST", evPage + "/participants/{participant}/send-pass", false, authz.EventEdit, "participant.pass.send", (*Handler).sendPassPost},
 		{"POST", ev + "/passes/check", true, authz.EventLookup, "", (*Handler).apiCheckPass},
 		{"GET", evPage + "/participants/{participant}/pass.png", false, authz.EventDashboard, "", (*Handler).participantPassPNG},
 		{"GET", evPage + "/participants/{participant}/pass.pdf", false, authz.EventDashboard, "", (*Handler).participantPassPDF},
@@ -308,6 +310,7 @@ type participantsData struct {
 	Filter, Q    string // Filter: the status shown ("" = all, "minors"); Status is the event's
 	Statuses     []viewLink
 	AgeOn        string // the under-18 cut-off, as shown
+	Unsent       int    // registered people with an email not yet sent their pass
 }
 
 var statusFilterLabels = []viewLink{{"", "All"}, {domain.PartRegistered, "Registered"}, {domain.PartPending, "Waiting for approval"},
@@ -336,18 +339,63 @@ func (d participantsData) Count(status string) int {
 }
 
 var participantNotices = map[string]string{
-	"status":   "Status updated.",
-	"imported": "CSV imported. Passes are ready to download.",
+	"status":    "Status updated.",
+	"imported":  "CSV imported. Passes are ready to download.",
+	"sent":      "Pass emails are on their way.",
+	"sent-one":  "Pass email is on its way.",
+	"reissued":  "New QR code issued. The old one no longer scans; send the pass again.",
+	"sent-none": "Everyone with an email address has already been sent their pass.",
 }
 
 func (h *Handler) participantsPage(w http.ResponseWriter, r *http.Request, e *eventReq) {
 	notice := participantNotices[r.URL.Query().Get("notice")]
-	if r.URL.Query().Get("notice") == "imported" {
-		if count, err := strconv.Atoi(r.URL.Query().Get("count")); err == nil && count > 0 {
-			notice = fmt.Sprintf("Imported %d participants. Passes are ready to download.", count)
+	count, _ := strconv.Atoi(r.URL.Query().Get("count"))
+	switch r.URL.Query().Get("notice") {
+	case "imported":
+		if count > 0 {
+			notice = fmt.Sprintf("Imported %d participants. Their passes and QR codes are ready to download; send the pass emails when you're ready.", count)
+		}
+	case "sent":
+		if count > 0 {
+			notice = fmt.Sprintf("Sending %d pass emails. Each person's status below updates as they go out.", count)
 		}
 	}
 	h.renderParticipantsPage(w, r, e, participantQuery(r), http.StatusOK, "", notice)
+}
+
+// sendPassesPost emails passes to everyone registered with an email who
+// hasn't been sent theirs yet.
+func (h *Handler) sendPassesPost(w http.ResponseWriter, r *http.Request, e *eventReq) {
+	n, err := h.Registrations.SendPasses(r.Context(), e.es, "")
+	if err != nil {
+		h.participantsActionError(w, r, e, err)
+		return
+	}
+	notice := "sent-none"
+	if n > 0 {
+		notice = fmt.Sprintf("sent&count=%d", n)
+	}
+	h.backToEvent(w, r, e, "participants", notice)
+}
+
+// sendPassPost emails (or re-emails) one participant's pass.
+func (h *Handler) sendPassPost(w http.ResponseWriter, r *http.Request, e *eventReq) {
+	if _, err := h.Registrations.SendPasses(r.Context(), e.es, r.PathValue("participant")); err != nil {
+		h.participantsActionError(w, r, e, err)
+		return
+	}
+	h.backToEvent(w, r, e, "participants", "sent-one")
+}
+
+// participantsActionError shows a user error on the participant list, or
+// the error page for anything else.
+func (h *Handler) participantsActionError(w http.ResponseWriter, r *http.Request, e *eventReq, err error) {
+	status, msg := pageErrorStatus(err)
+	if status == http.StatusInternalServerError || status == http.StatusNotFound || status == http.StatusForbidden {
+		h.renderError(w, r, e.principal, err)
+		return
+	}
+	h.renderParticipantsPage(w, r, e, participantQuery(r), status, msg, "")
 }
 
 func (h *Handler) renderParticipantsPage(w http.ResponseWriter, r *http.Request, e *eventReq, q domain.ParticipantQuery, status int, errMsg, notice string) {
@@ -371,6 +419,12 @@ func (h *Handler) renderParticipantsPage(w http.ResponseWriter, r *http.Request,
 	}
 	if e.event.StartsAt != nil || e.event.AgeOn != nil {
 		d.AgeOn = service.AgeOn(e.event).Format("2 Jan 2006")
+	}
+	if e.es.Can(authz.EventEdit) {
+		if d.Unsent, err = h.Registrations.UnsentPasses(r.Context(), e.es); err != nil {
+			h.renderError(w, r, e.principal, err)
+			return
+		}
 	}
 	h.render(w, status, "event_participants", e.principal, view{Title: "Participants · " + e.event.Name,
 		Error: errMsg, Notice: notice, Data: d})
@@ -496,7 +550,7 @@ func (h *Handler) registerPost(w http.ResponseWriter, r *http.Request) {
 		h.renderStatus(w, r, nil, http.StatusForbidden, "Registration refused", "That form came from another site.")
 		return
 	}
-	if !h.registerLimit.allow(h.clientIP(r)) {
+	if !h.registerLimit.allow(r.Context(), h.clientIP(r)) {
 		h.renderStatus(w, r, nil, http.StatusTooManyRequests, "Too many attempts", "Wait a minute, then try again.")
 		return
 	}

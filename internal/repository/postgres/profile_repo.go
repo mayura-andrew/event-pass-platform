@@ -112,6 +112,7 @@ func (r *ProfileRepo) People(ctx context.Context, orgID, eventID, meID string, f
 			FROM event_participants p
 			LEFT JOIN participant_profiles pr ON pr.participant_id = p.id
 			LEFT JOIN participant_locations l ON l.participant_id = p.id AND l.updated_at > NOW() - $4 * interval '1 second'
+			     AND NOT `+participantIsMinor+`
 			WHERE p.org_id = $1 AND p.event_id = $2
 			  AND (p.id::text = $3 OR (p.status = 'registered' AND pr.visibility = 'public'))
 			ORDER BY (l.updated_at IS NULL), p.full_name

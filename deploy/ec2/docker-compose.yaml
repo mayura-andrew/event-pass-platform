@@ -8,11 +8,36 @@ services:
     environment:
       PORT: "8080"
       PUBLIC_DIR: /app/public
+      APP_ENV: production
+      # Caddy overwrites this header with the client's address (Caddyfile).
+      CLIENT_IP_HEADER: X-Client-IP
+      # The worker service runs emails, Google sync and retention.
+      RUN_WORKERS: "false"
     expose:
       - "8080"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    entrypoint: ["/app/event-pass-worker"]
+    env_file:
+      - .env
+    environment:
+      APP_ENV: production
+      CLIENT_IP_HEADER: X-Client-IP
+      # A login in event_pass_worker (no access to sessions or sign-in links).
+      DATABASE_URL: ${WORKER_DATABASE_URL:?set WORKER_DATABASE_URL in .env}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1:8081/"]
       interval: 30s
       timeout: 5s
       retries: 3

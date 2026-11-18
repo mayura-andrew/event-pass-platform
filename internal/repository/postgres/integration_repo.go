@@ -168,7 +168,17 @@ func (r *IntegrationRepo) Disconnect(ctx context.Context, es authz.EventScope, k
 // changed since the last sync and that sync is at least debounce old; forms
 // every interval.
 func (r *IntegrationRepo) Due(ctx context.Context, debounce, interval time.Duration) ([]domain.IntegrationJob, error) {
-	rows, err := r.db.QueryContext(ctx, `
+	var out []domain.IntegrationJob
+	err := withSystem(ctx, r.db, func(tx *sql.Tx) error {
+		var err error
+		out, err = dueIntegrations(ctx, tx, debounce, interval)
+		return err
+	})
+	return out, err
+}
+
+func dueIntegrations(ctx context.Context, tx *sql.Tx, debounce, interval time.Duration) ([]domain.IntegrationJob, error) {
+	rows, err := tx.QueryContext(ctx, `
 		SELECT `+integrationCols+`, i.org_id, i.secret FROM integrations i
 		WHERE i.status = 'connected' AND i.secret IS NOT NULL AND (
 		  (i.kind = 'google_sheets' AND (i.last_synced_at IS NULL OR (i.last_synced_at < NOW() - $1 * interval '1 second' AND (
@@ -207,9 +217,11 @@ func (r *IntegrationRepo) Finished(ctx context.Context, id, errMsg string, broke
 	if broken {
 		status = "error"
 	}
-	_, err := r.db.ExecContext(ctx, `UPDATE integrations SET last_synced_at = NOW(), last_error = $2, status = $3,
-		imported = imported + $4, updated_at = NOW() WHERE id = $1`, id, errMsg, status, imported)
-	return err
+	return withSystem(ctx, r.db, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `UPDATE integrations SET last_synced_at = NOW(), last_error = $2, status = $3,
+			imported = imported + $4, updated_at = NOW() WHERE id = $1`, id, errMsg, status, imported)
+		return err
+	})
 }
 
 // SheetData is everything the spreadsheet shows.
@@ -290,7 +302,9 @@ func (r *IntegrationRepo) EventForImport(ctx context.Context, orgID, eventID str
 // read the column, so this runs as the platform.
 func (r *IntegrationRepo) Secret(ctx context.Context, orgID, id string) ([]byte, error) {
 	var b []byte
-	err := r.db.QueryRowContext(ctx, `SELECT secret FROM integrations WHERE org_id = $1 AND id = $2`, orgID, id).Scan(&b)
+	err := withSystem(ctx, r.db, func(tx *sql.Tx) error {
+		return tx.QueryRowContext(ctx, `SELECT secret FROM integrations WHERE org_id = $1 AND id = $2`, orgID, id).Scan(&b)
+	})
 	if errors.Is(err, sql.ErrNoRows) || (err == nil && b == nil) {
 		return nil, domain.ErrNotFound
 	}

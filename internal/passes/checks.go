@@ -33,9 +33,9 @@ func Samples(token string) map[string]Vars {
 // SampleOrder is how samples are offered in the designer.
 var SampleOrder = []string{"short", "long", "nonlatin", "cancelled"}
 
-// Printed widths: phone designs print 78.75 mm wide on A6 (see PDF), badges
-// 101.6 mm (4 inches).
-var printedWidthMM = map[string]float64{"phone": 78.75, "badge": 101.6}
+// printedWidthMM is how wide a preset prints (PrintSizes): phone designs
+// 78.75 mm on A6, badges 101.6 mm (4 inches), cards 55 mm.
+func printedWidthMM(preset string) float64 { return PrintSizes[preset].ImgW }
 
 // Check runs the scan checks on a design: one QR code, dark on light with at
 // least 7:1 contrast, a quiet zone of at least 4 modules, at least 30 mm when
@@ -45,7 +45,7 @@ func Check(d Design) []Problem {
 	var ps []Problem
 	add := func(el, f string, a ...any) { ps = append(ps, Problem{Element: el, Message: fmt.Sprintf(f, a...)}) }
 	if _, ok := Presets[d.Size.Preset]; !ok {
-		add("", "the size must be phone or badge")
+		add("", "the size must be phone, badge or card")
 		return ps
 	}
 	if d.Size != Presets[d.Size.Preset] {
@@ -172,7 +172,7 @@ func checkQR(d Design, e Element, add func(string, string, ...any)) {
 	if d.Size.Preset == "phone" && float64(e.Size) < 0.4*float64(d.Size.Width) {
 		add(e.ID, "the QR code is %d%% of the screen width; it needs at least 40%%", e.Size*100/d.Size.Width)
 	}
-	if mm := float64(e.Size) / float64(d.Size.Width) * printedWidthMM[d.Size.Preset]; mm < 30 {
+	if mm := float64(e.Size) / float64(d.Size.Width) * printedWidthMM(d.Size.Preset); mm < 30 {
 		add(e.ID, "the QR code prints %.0f mm wide; it needs at least 30 mm", mm)
 	}
 	if n, err := QRModules(sampleToken, e.ECC); err == nil && e.Size/(n+2*max(e.QuietZone, 4)) < 3 {

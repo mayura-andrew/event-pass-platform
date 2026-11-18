@@ -44,7 +44,7 @@
         <input id="up-file" name="file" type="file" required accept="image/png,image/jpeg,image/webp">
       </div>
     </div>
-    <p class="hint">PNG, JPEG or WebP, up to 10 MB. For a phone pass use 1080 × 1920 px (portrait); for a printed badge 1200 × 900 px (landscape). Leave a clear area for the QR code: about half the width on a phone pass. PDF or SVG? Export it as PNG first.</p>
+    <p class="hint">PNG, JPEG or WebP, up to 10 MB. For a 5.5 × 8 cm card use 1100 × 1600 px (portrait); for a phone pass 1080 × 1920 px; for a 4 × 3 inch badge 1200 × 900 px (landscape). Leave a clear area for the QR code: at least 3 cm across when printed (600 px on a card). PDF or SVG? Export it as PNG first.</p>
     <button class="btn" type="submit">Upload and place</button>
   </form>
 </section>
@@ -57,7 +57,7 @@
     <li class="card event-card">
       <h3>{{.Name}}</h3>
       <p class="muted">{{.Description}}</p>
-      <p class="hint">{{if eq .Design.Size.Preset "badge"}}4 × 3 inch badge{{else}}Phone screen, prints on A6{{end}}</p>
+      <p class="hint">{{sizeLabel .Design.Size.Preset}}</p>
       {{if $d.CanManage}}
       <form method="post" action="/o/{{$d.Org.Slug}}/pass-templates" class="ec-foot">
         <input type="hidden" name="csrf" value="{{$csrf}}"><input type="hidden" name="from" value="{{.Key}}">

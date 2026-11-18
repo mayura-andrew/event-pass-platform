@@ -16,7 +16,13 @@ import (
 
 const version = 1
 
-type Box struct{ aead cipher.AEAD }
+type Box struct {
+	aead cipher.AEAD
+	id   [32]byte // SHA-256 of the key, to compare boxes without keeping the key
+}
+
+// SameKey reports whether two boxes use the same key.
+func (b *Box) SameKey(o *Box) bool { return hmac.Equal(b.id[:], o.id[:]) }
 
 // New uses a 32-byte key.
 func New(key []byte) (*Box, error) {
@@ -31,7 +37,7 @@ func New(key []byte) (*Box, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Box{aead: aead}, nil
+	return &Box{aead: aead, id: sha256.Sum256(key)}, nil
 }
 
 // FromBase64 reads INTEGRATIONS_KEY (openssl rand -base64 32).

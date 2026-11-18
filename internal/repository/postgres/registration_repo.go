@@ -210,18 +210,21 @@ func (r *RegistrationRepo) MoveField(ctx context.Context, es authz.EventScope, f
 // ---- Public page and registering ----------------------------------------------
 
 // PublicEvent finds a published, non-private event by its org and event
-// slugs, with its form and how many places are taken. Anyone may call it,
-// so it runs outside withTenant and only returns public events.
+// slugs, with its form and how many places are taken. Anyone may call it and
+// no org is known until the slug resolves, so the lookup runs through
+// withSystem and only returns public events.
 func (r *RegistrationRepo) PublicEvent(ctx context.Context, orgSlug, eventSlug string) (*domain.PublicEvent, error) {
 	var e domain.Event
 	var venue, settings []byte
 	p := &domain.PublicEvent{Event: &e}
 	dest := append(eventDest(&e, &venue, &settings), &p.OrgName, &p.OrgSlug)
-	err := r.db.QueryRowContext(ctx, `SELECT `+eventCols+`, o.name, o.slug`+eventFrom+`
-		JOIN orgs o ON o.id = e.org_id AND o.status = 'active'
-		WHERE o.slug = $1 AND e.slug = $2 AND e.status = 'published'
-		  AND e.visibility <> 'private' AND e.archived_at IS NULL AND e.deleted_at IS NULL`,
-		orgSlug, eventSlug).Scan(dest...)
+	err := withSystem(ctx, r.db, func(tx *sql.Tx) error {
+		return tx.QueryRowContext(ctx, `SELECT `+eventCols+`, o.name, o.slug`+eventFrom+`
+			JOIN orgs o ON o.id = e.org_id AND o.status = 'active'
+			WHERE o.slug = $1 AND e.slug = $2 AND e.status = 'published'
+			  AND e.visibility <> 'private' AND e.archived_at IS NULL AND e.deleted_at IS NULL`,
+			orgSlug, eventSlug).Scan(dest...)
+	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, domain.ErrNotFound
 	}
@@ -260,13 +263,13 @@ var participantIsMinor = `(p.birth_date IS NOT NULL AND ` + participantAge + ` <
 
 var participantCols = `p.id, p.event_id, COALESCE(p.account_id::text, ''), p.email, p.full_name, p.status,
 	p.pass_id, p.answers, p.source, p.registered_at, p.updated_at,
-	COALESCE(to_char(p.birth_date, 'YYYY-MM-DD'), ''), ` + participantAge
+	COALESCE(to_char(p.birth_date, 'YYYY-MM-DD'), ''), ` + participantAge + `, p.pass_generation`
 
 func scanParticipant(row interface{ Scan(...any) error }) (domain.EventParticipant, error) {
 	var p domain.EventParticipant
 	var answers []byte
 	err := row.Scan(&p.ID, &p.EventID, &p.AccountID, &p.Email, &p.FullName, &p.Status,
-		&p.PassID, &answers, &p.Source, &p.RegisteredAt, &p.UpdatedAt, &p.BirthDate, &p.Age)
+		&p.PassID, &answers, &p.Source, &p.RegisteredAt, &p.UpdatedAt, &p.BirthDate, &p.Age, &p.PassGeneration)
 	if err == nil {
 		err = json.Unmarshal(answers, &p.Answers)
 	}
@@ -333,7 +336,11 @@ func (r *RegistrationRepo) Register(ctx context.Context, ev *domain.Event, p dom
 			if out, err = scanParticipant(tx.QueryRowContext(ctx, `SELECT `+participantCols+` FROM event_participants p WHERE p.id = $1`, id)); err != nil {
 				return err
 			}
-			return enqueueMail(ctx, tx, ev.OrgID, ev.ID, out.ID, out.Email, domain.MailForStatus[status])
+			// Passes are sent only after an organizer explicitly confirms sending.
+			if status != domain.PartRegistered {
+				return enqueueMail(ctx, tx, ev.OrgID, ev.ID, out.ID, out.Email, domain.MailForStatus[status])
+			}
+			return nil
 		})
 		if pgCode(err) == pgUniqueViolation && strings.Contains(pgConstraint(err), "pass_id") {
 			continue // pass ID collision: draw another
@@ -348,7 +355,8 @@ func (r *RegistrationRepo) Register(ctx context.Context, ev *domain.Event, p dom
 
 // ImportParticipants registers one validated batch atomically. Imports bypass
 // public registration dates and approval mode, but may not exceed event
-// capacity. Each pass email is queued in the same transaction as its record.
+// capacity. Passes are ready at once (QR codes are signed when rendered) but
+// not emailed: the organizer sends them later with SendPasses.
 func (r *RegistrationRepo) ImportParticipants(ctx context.Context, es authz.EventScope, participants []domain.EventParticipant, passID func() string) error {
 	return withTenant(ctx, r.db, es.OrgID(), es.AccountID(), func(tx *sql.Tx) error {
 		var capacity sql.NullInt64
@@ -416,11 +424,6 @@ func (r *RegistrationRepo) ImportParticipants(ctx context.Context, es authz.Even
 				}
 				return err
 			}
-			if !strings.HasSuffix(p.Email, "@event-pass.local") {
-				if err := enqueueMail(ctx, tx, es.OrgID(), es.EventID(), id, p.Email, domain.MailPassIssued); err != nil {
-					return err
-				}
-			}
 		}
 		return insertAudit(ctx, tx, es.OrgID(), es.AccountID(), domain.Audit{
 			EventID: es.EventID(), Action: "participant.import", TargetType: "participant_batch", TargetID: es.EventID(),
@@ -464,6 +467,9 @@ func (r *RegistrationRepo) ListParticipants(ctx context.Context, es authz.EventS
 		}
 		rows.Close()
 		if err := rows.Err(); err != nil {
+			return err
+		}
+		if err := fillPassMail(ctx, tx, es, out); err != nil {
 			return err
 		}
 		crows, err := tx.QueryContext(ctx, `SELECT status, count(*) FROM event_participants
@@ -528,7 +534,13 @@ func (r *RegistrationRepo) SetStatus(ctx context.Context, es authz.EventScope, i
 		if err != nil || prev == status {
 			return err
 		}
-		if err := enqueueMail(ctx, tx, es.OrgID(), es.EventID(), id, email, domain.MailForStatus[status]); err != nil {
+		// Pass delivery is manual and requires organizer confirmation.
+		// Non-pass status emails (received/waitlist/cancellation) may remain automatic.
+		template := domain.MailForStatus[status]
+		if status == domain.PartRegistered {
+			template = ""
+		}
+		if err := enqueueMail(ctx, tx, es.OrgID(), es.EventID(), id, email, template); err != nil {
 			return err
 		}
 		return insertAudit(ctx, tx, es.OrgID(), es.AccountID(), domain.Audit{
@@ -539,8 +551,9 @@ func (r *RegistrationRepo) SetStatus(ctx context.Context, es authz.EventScope, i
 }
 
 // enqueueMail queues an email to a participant in the caller's transaction.
+// Placeholder addresses (imports without an email) are never mailed.
 func enqueueMail(ctx context.Context, tx *sql.Tx, orgID, eventID, participantID, email, template string) error {
-	if template == "" {
+	if template == "" || email == "" || domain.IsPlaceholderEmail(email) {
 		return nil
 	}
 	_, err := tx.ExecContext(ctx, `
@@ -576,3 +589,134 @@ func (r *RegistrationRepo) ResendPass(ctx context.Context, p *domain.EventPartic
 // ErrAlreadyImported: a participant with this external reference (form
 // response) already exists in the event.
 var ErrAlreadyImported = fmt.Errorf("%w: already imported", domain.ErrConflict)
+
+// ---- Sending passes ------------------------------------------------------------
+
+// fillPassMail sets each participant's PassMail from their newest pass email.
+func fillPassMail(ctx context.Context, tx *sql.Tx, es authz.EventScope, ps []domain.EventParticipant) error {
+	if len(ps) == 0 {
+		return nil
+	}
+	rows, err := tx.QueryContext(ctx, `
+		SELECT DISTINCT ON (participant_id) participant_id, status FROM outbox
+		WHERE org_id = $1 AND event_id = $2 AND template_key = $3 AND participant_id IS NOT NULL
+		ORDER BY participant_id, created_at DESC`, es.OrgID(), es.EventID(), domain.MailPassIssued)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	status := map[string]string{}
+	for rows.Next() {
+		var id, s string
+		if err := rows.Scan(&id, &s); err != nil {
+			return err
+		}
+		status[id] = s
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for i := range ps {
+		ps[i].PassMail = status[ps[i].ID]
+	}
+	return nil
+}
+
+// unsentPassFilter selects registered participants with a real email who
+// have never been sent their pass ($1 org, $2 event, $3 the pass template).
+const unsentPassFilter = `p.org_id = $1 AND p.event_id = $2 AND p.status = 'registered'
+	AND p.email NOT LIKE '%` + domain.PlaceholderEmailDomain + `'
+	AND NOT EXISTS (SELECT 1 FROM outbox o WHERE o.participant_id = p.id AND o.template_key = $3)`
+
+// CountUnsentPasses is how many registered participants with an email have
+// not been sent their pass yet.
+func (r *RegistrationRepo) CountUnsentPasses(ctx context.Context, es authz.EventScope) (int, error) {
+	var n int
+	err := withTenant(ctx, r.db, es.OrgID(), es.AccountID(), func(tx *sql.Tx) error {
+		return tx.QueryRowContext(ctx, `SELECT count(*) FROM event_participants p WHERE `+unsentPassFilter,
+			es.OrgID(), es.EventID(), domain.MailPassIssued).Scan(&n)
+	})
+	return n, err
+}
+
+// SendPasses queues pass emails. With a participant ID it (re)sends that
+// one person's pass, unless one was queued in the last few minutes; without
+// one, it sends every registered participant with an email who hasn't been
+// sent their pass yet. It returns how many emails were queued.
+func (r *RegistrationRepo) SendPasses(ctx context.Context, es authz.EventScope, participantID string) (int, error) {
+	queued := 0
+	err := withTenant(ctx, r.db, es.OrgID(), es.AccountID(), func(tx *sql.Tx) error {
+		type target struct{ id, email string }
+		var targets []target
+		if participantID != "" {
+			var t target
+			var status string
+			err := tx.QueryRowContext(ctx, `SELECT id, email, status FROM event_participants
+				WHERE org_id = $1 AND event_id = $2 AND id = $3 FOR UPDATE`,
+				es.OrgID(), es.EventID(), participantID).Scan(&t.id, &t.email, &status)
+			if errors.Is(err, sql.ErrNoRows) || pgCode(err) == pgInvalidTextRepr {
+				return domain.ErrNotFound
+			}
+			if err != nil {
+				return err
+			}
+			if status != domain.PartRegistered {
+				return fmt.Errorf("%w: only registered participants have a pass to send", domain.ErrValidation)
+			}
+			if domain.IsPlaceholderEmail(t.email) || t.email == "" {
+				return fmt.Errorf("%w: this participant has no email address", domain.ErrValidation)
+			}
+			var recent bool
+			if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM outbox
+				WHERE participant_id = $1 AND template_key = $2 AND created_at > $3)`,
+				t.id, domain.MailPassIssued, time.Now().Add(-domain.MailResendMinimum)).Scan(&recent); err != nil {
+				return err
+			}
+			if recent {
+				return fmt.Errorf("%w: this pass was sent less than %d minutes ago", domain.ErrConflict, int(domain.MailResendMinimum.Minutes()))
+			}
+			targets = append(targets, t)
+		} else {
+			// Lock the event so two clicks can't queue everyone twice.
+			if _, err := tx.ExecContext(ctx, `SELECT 1 FROM events WHERE org_id = $1 AND id = $2 FOR UPDATE`,
+				es.OrgID(), es.EventID()); err != nil {
+				return err
+			}
+			rows, err := tx.QueryContext(ctx, `SELECT p.id, p.email FROM event_participants p WHERE `+unsentPassFilter+`
+				ORDER BY p.registered_at`, es.OrgID(), es.EventID(), domain.MailPassIssued)
+			if err != nil {
+				return err
+			}
+			for rows.Next() {
+				var t target
+				if err := rows.Scan(&t.id, &t.email); err != nil {
+					rows.Close()
+					return err
+				}
+				targets = append(targets, t)
+			}
+			rows.Close()
+			if err := rows.Err(); err != nil {
+				return err
+			}
+		}
+		for _, t := range targets {
+			if err := enqueueMail(ctx, tx, es.OrgID(), es.EventID(), t.id, t.email, domain.MailPassIssued); err != nil {
+				return err
+			}
+		}
+		queued = len(targets)
+		if queued == 0 {
+			return nil
+		}
+		auditTarget, targetType := es.EventID(), "participant_batch"
+		if participantID != "" {
+			auditTarget, targetType = participantID, "participant"
+		}
+		return insertAudit(ctx, tx, es.OrgID(), es.AccountID(), domain.Audit{
+			EventID: es.EventID(), Action: "participant.pass.send", TargetType: targetType, TargetID: auditTarget,
+			Diff: map[string]any{"count": queued},
+		})
+	})
+	return queued, err
+}

@@ -4,6 +4,7 @@ package httphandler
 
 import (
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/mayura-andrew/event-pass-platform/internal/domain"
@@ -18,7 +19,13 @@ func (h *Handler) registerPortal(mux *http.ServeMux) {
 	mux.Handle("GET /me/passes/{participant}/pass.pdf", h.pageAuthed((*Handler).myPassPDF))
 	mux.Handle("POST /me/passes/{participant}/workshops/{workshop}/signup", h.pageAuthed((*Handler).myWorkshopSignUp))
 	mux.Handle("POST /me/passes/{participant}/workshops/{workshop}/cancel", h.pageAuthed((*Handler).myWorkshopCancel))
+	mux.Handle("POST /me/passes/{participant}/reissue", h.pageAuthed((*Handler).myPassReissue))
+	mux.Handle("POST /me/claims/{participant}", h.pageAuthed((*Handler).myClaimAccept))
+	mux.Handle("POST /me/claims/{participant}/decline", h.pageAuthed((*Handler).myClaimDecline))
 	mux.Handle("GET /api/v1/me/passes", h.apiAuthed((*Handler).apiMyPasses))
+	mux.Handle("GET /api/v1/me/claims", h.apiAuthed((*Handler).apiMyClaims))
+	mux.Handle("POST /api/v1/me/claims/{participant}", h.apiAuthed((*Handler).apiClaimAccept))
+	mux.Handle("POST /api/v1/me/claims/{participant}/decline", h.apiAuthed((*Handler).apiClaimDecline))
 	h.registerProfiles(mux)
 }
 
@@ -27,18 +34,88 @@ type portalPass struct {
 	Upcoming bool
 }
 
+type myPassesData struct {
+	Passes []portalPass
+	Claims []domain.PassClaim
+}
+
+var myPassesNotices = map[string]string{
+	"claimed":  "Pass added to your account.",
+	"declined": "Hidden. The organizer still has that registration; contact them if someone used your email by mistake.",
+}
+
 func (h *Handler) myPassesPage(w http.ResponseWriter, r *http.Request, p *principal) {
 	list, err := h.Portal.MyPasses(r.Context(), p.scope())
 	if err != nil {
 		h.renderError(w, r, p, err)
 		return
 	}
-	now := time.Now()
-	var cards []portalPass
-	for _, pc := range list {
-		cards = append(cards, portalPass{PassContext: pc, Upcoming: pc.Event.EndsAt == nil || pc.Event.EndsAt.After(now)})
+	claims, err := h.Portal.PendingClaims(r.Context(), p.scope())
+	if err != nil {
+		h.renderError(w, r, p, err)
+		return
 	}
-	h.render(w, http.StatusOK, "my_passes", p, view{Title: "My passes", Data: cards})
+	now := time.Now()
+	d := myPassesData{Claims: claims}
+	for _, pc := range list {
+		d.Passes = append(d.Passes, portalPass{PassContext: pc, Upcoming: pc.Event.EndsAt == nil || pc.Event.EndsAt.After(now)})
+	}
+	h.render(w, http.StatusOK, "my_passes", p, view{Title: "My passes", Data: d,
+		Notice: myPassesNotices[r.URL.Query().Get("notice")]})
+}
+
+// POST /me/claims/{participant}: "This is mine".
+func (h *Handler) myClaimAccept(w http.ResponseWriter, r *http.Request, p *principal) {
+	if err := h.Portal.ClaimPass(r.Context(), p.scope(), r.PathValue("participant")); err != nil {
+		h.renderError(w, r, p, err)
+		return
+	}
+	http.Redirect(w, r, "/me/passes/"+url.PathEscape(r.PathValue("participant")), http.StatusSeeOther)
+}
+
+// POST /me/claims/{participant}/decline: "Not me".
+func (h *Handler) myClaimDecline(w http.ResponseWriter, r *http.Request, p *principal) {
+	if err := h.Portal.DeclineClaim(r.Context(), p.scope(), r.PathValue("participant")); err != nil {
+		h.renderError(w, r, p, err)
+		return
+	}
+	http.Redirect(w, r, "/me?notice=declined", http.StatusSeeOther)
+}
+
+// GET /api/v1/me/claims
+func (h *Handler) apiMyClaims(w http.ResponseWriter, r *http.Request, p *principal) {
+	claims, err := h.Portal.PendingClaims(r.Context(), p.scope())
+	if err != nil {
+		writeDomainError(w, r, err)
+		return
+	}
+	type item struct {
+		ParticipantID string    `json:"participant_id"`
+		EventName     string    `json:"event_name"`
+		OrgName       string    `json:"org_name"`
+		RegisteredAt  time.Time `json:"registered_at"`
+	}
+	out := make([]item, 0, len(claims))
+	for _, c := range claims {
+		out = append(out, item{c.ParticipantID, c.EventName, c.OrgName, c.RegisteredAt})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (h *Handler) apiClaimAccept(w http.ResponseWriter, r *http.Request, p *principal) {
+	if err := h.Portal.ClaimPass(r.Context(), p.scope(), r.PathValue("participant")); err != nil {
+		writeDomainError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) apiClaimDecline(w http.ResponseWriter, r *http.Request, p *principal) {
+	if err := h.Portal.DeclineClaim(r.Context(), p.scope(), r.PathValue("participant")); err != nil {
+		writeDomainError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 type myPassData struct {
@@ -58,6 +135,7 @@ var myPassNotices = map[string]string{
 	domain.SignupWaitlisted: "That workshop is full, so you're on its waitlist.",
 	"cancelled":             "Sign-up cancelled.",
 	"profile":               "Profile saved.",
+	"reissued":              "New QR code issued. Your old pass no longer scans; download or print this one.",
 }
 
 func (h *Handler) myPassPage(w http.ResponseWriter, r *http.Request, p *principal) {

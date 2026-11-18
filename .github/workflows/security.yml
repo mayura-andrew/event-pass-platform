@@ -1,0 +1,38 @@
+# Dependency and secret scanning (security review, phase 5). The tenant
+# isolation guard (internal/repository/postgres/tenant_allowlist_test.go)
+# runs with every `go test ./...` in deploy.yml.
+name: Security
+
+on:
+  push:
+    branches: [main, 'saas/**']
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '17 3 * * 1' # weekly, for advisories published since the last push
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  govulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # Reports only vulnerabilities in code paths the binaries actually call.
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # scan history, not just the last commit
+      - name: gitleaks
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.21.2 \
+            detect --source /repo --redact --no-banner --exit-code 1

@@ -3,8 +3,15 @@
 //
 // A token is "EP1.<payload>.<signature>", both parts base64url:
 //
-//	payload   = version(1) | keyID(1) | org(16) | event(16) | participant(16) | passID
+//	payload   = version(1) | keyID(1) | org(16) | event(16) | participant(16) | passID          (version 1)
+//	payload   = version(2) | keyID(1) | org(16) | event(16) | participant(16) | generation(2) | passID
 //	signature = Ed25519 over "ep1|" + org + "|" + event + "|" + participant + "|" + passID + "|" + keyID
+//	            (version 2 appends "|g" + generation)
+//
+// The generation is the participant row's pass_generation. Reissuing a pass
+// bumps it, and the scanner refuses a token whose generation is not the
+// current one, so a photographed or lost badge stops working. Version 1
+// tokens (issued before generations) count as generation 1.
 //
 // It carries no personal data and never signs anyone in. Keys are numbered:
 // new passes are signed with the current key, and old keys stay in the ring
@@ -24,8 +31,9 @@ import (
 )
 
 const (
-	prefix  = "EP1."
-	version = 1
+	prefix    = "EP1."
+	versionV1 = 1
+	version   = 2
 )
 
 var (
@@ -41,6 +49,7 @@ type Claims struct {
 	ParticipantID string
 	PassID        string
 	KeyID         int
+	Generation    int // 1 for version 1 tokens
 }
 
 // KeyRing holds the signing keys.
@@ -86,8 +95,25 @@ func DerivedKeyRing(secret []byte) *KeyRing {
 	return &KeyRing{current: 1, keys: map[int]ed25519.PrivateKey{1: ed25519.NewKeyFromSeed(mac.Sum(nil))}}
 }
 
-func message(c Claims) []byte {
-	return []byte("ep1|" + c.OrgID + "|" + c.EventID + "|" + c.ParticipantID + "|" + c.PassID + "|" + strconv.Itoa(c.KeyID))
+// SameAs reports whether any key in kr is also in other, so production can
+// refuse a configured key that is really the development-derived one.
+func (kr *KeyRing) SameAs(other *KeyRing) bool {
+	for _, a := range kr.keys {
+		for _, b := range other.keys {
+			if a.Equal(b) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func message(v byte, c Claims) []byte {
+	m := "ep1|" + c.OrgID + "|" + c.EventID + "|" + c.ParticipantID + "|" + c.PassID + "|" + strconv.Itoa(c.KeyID)
+	if v >= 2 {
+		m += "|g" + strconv.Itoa(c.Generation)
+	}
+	return []byte(m)
 }
 
 func uuidBytes(s string) ([]byte, error) {
@@ -103,10 +129,13 @@ func uuidString(b []byte) string {
 	return h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:32]
 }
 
-// Issue signs a token for one participant's pass.
-func (kr *KeyRing) Issue(orgID, eventID, participantID, passID string) (string, error) {
+// Issue signs a token for one participant's pass at its current generation.
+func (kr *KeyRing) Issue(orgID, eventID, participantID, passID string, generation int) (string, error) {
 	if passID == "" || len(passID) > 40 {
 		return "", errors.New("pass ID must be 1 to 40 characters")
+	}
+	if generation < 1 || generation > 0xffff {
+		return "", errors.New("pass generation must be 1 to 65535")
 	}
 	payload := []byte{version, byte(kr.current)}
 	for _, id := range []string{orgID, eventID, participantID} {
@@ -116,9 +145,10 @@ func (kr *KeyRing) Issue(orgID, eventID, participantID, passID string) (string, 
 		}
 		payload = append(payload, b...)
 	}
+	payload = append(payload, byte(generation>>8), byte(generation))
 	payload = append(payload, passID...)
-	c := Claims{OrgID: orgID, EventID: eventID, ParticipantID: participantID, PassID: passID, KeyID: kr.current}
-	sig := ed25519.Sign(kr.keys[kr.current], message(c))
+	c := Claims{OrgID: orgID, EventID: eventID, ParticipantID: participantID, PassID: passID, KeyID: kr.current, Generation: generation}
+	sig := ed25519.Sign(kr.keys[kr.current], message(version, c))
 	enc := base64.RawURLEncoding
 	return prefix + enc.EncodeToString(payload) + "." + enc.EncodeToString(sig), nil
 }
@@ -137,21 +167,34 @@ func (kr *KeyRing) Verify(token string) (*Claims, error) {
 	enc := base64.RawURLEncoding
 	payload, err1 := enc.DecodeString(body)
 	sig, err2 := enc.DecodeString(sigStr)
-	if err1 != nil || err2 != nil || len(payload) < 2+48+1 || payload[0] != version || len(sig) != ed25519.SignatureSize {
+	if err1 != nil || err2 != nil || len(payload) < 2+48+1 || len(sig) != ed25519.SignatureSize {
 		return nil, ErrMalformed
 	}
+	v := payload[0]
 	c := Claims{
 		KeyID:         int(payload[1]),
 		OrgID:         uuidString(payload[2:18]),
 		EventID:       uuidString(payload[18:34]),
 		ParticipantID: uuidString(payload[34:50]),
-		PassID:        string(payload[50:]),
+		Generation:    1,
+	}
+	switch v {
+	case versionV1:
+		c.PassID = string(payload[50:])
+	case version:
+		if len(payload) < 2+48+2+1 {
+			return nil, ErrMalformed
+		}
+		c.Generation = int(payload[50])<<8 | int(payload[51])
+		c.PassID = string(payload[52:])
+	default:
+		return nil, ErrMalformed
 	}
 	key, ok := kr.keys[c.KeyID]
 	if !ok {
 		return nil, ErrUnknownKey
 	}
-	if !ed25519.Verify(key.Public().(ed25519.PublicKey), message(c), sig) {
+	if !ed25519.Verify(key.Public().(ed25519.PublicKey), message(v, c), sig) {
 		return nil, ErrBadSig
 	}
 	return &c, nil
